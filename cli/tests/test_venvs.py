@@ -7,6 +7,7 @@ followed."""
 from __future__ import annotations
 
 import os
+import subprocess
 from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
@@ -59,11 +60,42 @@ def test_a_uv_lock_with_markers_extras_and_comments_passes_one_line_per_requirem
         f"anyio==4.15.1 ; python_version>'3' --config-settings=x=y --hash=sha256:{H}",
         f"anyio==4.15.1 ; python_version>'3' --global-option=x --hash=sha256:{H}",
         f"anyio==4.15.1 ; python_version>'3' -e . --hash=sha256:{H}",
+        f"anyio==4.15.1 ; python_version>'3' --no-binary=anyio --hash=sha256:{H}",
+        f"anyio==4.15.1 ; python_version>'3' --only-binary=none --hash=sha256:{H}",
+        f"anyio==4.15.1 ; python_version>'3' -i evil --hash=sha256:{H}",
+        f"anyio==4.15.1 ; python_version>'3' --index-url=evil --hash=sha256:{H}",
+        f"anyio==4.15.1 ; python_version>'3-x' --hash=sha256:{H}",  # a '-' in the marker itself
     ],
 )
 def test_anything_but_a_pinned_hashed_requirement_refuses_the_lock(line: str) -> None:
     with pytest.raises(venvs.Unavailable, match="no pinned, hashed requirement"):
         venvs.check_lock(f"anyio==4.15.1 --hash=sha256:{H}\n{line}\n")
+
+
+@pytest.mark.parametrize("sub", ["hub", "cli"])
+def test_the_repositorys_own_locks_pass(sub: str) -> None:
+    """The stricter check still takes this repository's own locks, markers and all."""
+    lock = Path(__file__).resolve().parents[2] / sub / "requirements" / "dev.txt"
+    assert venvs.check_lock(lock.read_text())
+
+
+def test_pips_environment_asks_for_wheels_only_and_reads_no_configuration(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A second hold behind the lock check: wheels only in pip's environment as well, no pip
+    configuration of the user's or the machine's, none of the caller's own PIP_ settings."""
+    seen: dict[str, str] = {}
+
+    def run(argv: list[str], **kwargs: Any) -> Any:
+        seen.update(kwargs["env"])
+        return SimpleNamespace(returncode=0, stderr=b"")
+
+    monkeypatch.setattr(subprocess, "run", run)
+    monkeypatch.setenv("PIP_NO_BINARY", ":all:")
+    monkeypatch.setenv("PIP_INDEX_URL", "https://evil.example/simple")
+    venvs._run(["python3", "-m", "pip", "install"], 10)
+    assert seen["PIP_ONLY_BINARY"] == ":all:" and seen["PIP_CONFIG_FILE"] == os.devnull
+    assert "PIP_NO_BINARY" not in seen and "PIP_INDEX_URL" not in seen
 
 
 def test_an_empty_or_oversized_lock_is_refused() -> None:

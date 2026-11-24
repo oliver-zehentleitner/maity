@@ -45,7 +45,8 @@ PIP_TIMEOUT = 20 * 60
 _NAME = r"[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?"
 _REQUIREMENT = re.compile(
     rf"{_NAME}(?:\[{_NAME}(?:,{_NAME})*\])?==[A-Za-z0-9.+!_-]+"
-    r"(?:\s*;\s*[A-Za-z0-9_ .<>=!'\"(),~-]+?)?"
+    # No '-' in a marker: an option could ride there (the token check below refuses it too).
+    r"(?:\s*;\s*[A-Za-z0-9_ .<>=!'\"(),~]+?)?"
     r"(?:\s+--hash=sha256:[0-9a-f]{64})+"
 )
 _HASH = re.compile(r"--hash=sha256:[0-9a-f]{64}")
@@ -113,7 +114,10 @@ def _python() -> str:
 
 def _run(argv: list[str], timeout: int) -> None:
     env = {k: v for k, v in os.environ.items() if k in _PIP_ENV}
-    env.update({"PIP_CONFIG_FILE": os.devnull, "PIP_NO_INPUT": "1", "PYTHONNOUSERSITE": "1"})
+    # Wheels only in pip's environment as well as on its command line, and no configuration of
+    # the user's or the machine's: a second hold behind the lock check.
+    env.update({"PIP_CONFIG_FILE": os.devnull, "PIP_ONLY_BINARY": ":all:", "PIP_NO_INPUT": "1",
+                "PYTHONNOUSERSITE": "1"})  # fmt: skip
     try:
         done = subprocess.run(
             argv, env=env, stdin=subprocess.DEVNULL, capture_output=True, timeout=timeout,
