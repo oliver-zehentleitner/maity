@@ -1280,7 +1280,7 @@ def patch_task(
             and not line_assign
             and not arbiter_move
             and not release_edit
-            and not (review_move and cards.has_done_authority(mine, card))
+            and not (review_move and cards.has_done_authority(conn, mine, card))
         ):
             raise forbidden("tasks:admin", "only the holder, the creator or an admin edits a card")
         if "approve" in given and not (
@@ -1368,7 +1368,7 @@ def patch_task(
                 raise invalid({"status": "unknown"})
             if card.status == "cancelled":  # a card moderation cancelled stays so (§16.8)
                 moderation.refuse_held(conn, "card", card.id, "remove")
-            cards.check_transition(mine, card, body.status)
+            cards.check_transition(conn, mine, card, body.status)
             if body.status == "done":
                 cards.refuse_open_dependencies(conn, card.id)
                 _refuse_unready(conn, card, fg, values.get("release_data"))
@@ -2206,6 +2206,7 @@ def report(
         _check_why(body, mine.project)
         card = _project_card(conn, mine, card_id)
         already_done = card.status == "done"
+        reopening = False
         if already_done:
             previous = card.report or {}
             pr = previous.get("pr") or {}
@@ -2219,6 +2220,12 @@ def report(
                 raise cards.invalid_transition(card.status, "review")
             if body.pr is None or body.pr.number != pr.get("number"):
                 raise invalid({"pr": "different_pull_request"})
+            # §2.3, §6.6: a new head on outsiders' work has none of its own approvals, so the
+            # card leaves `done` (below); judged as the card and its members stand now (the
+            # reporter is the one whose report it replaces).
+            reopening = body.head != previous.get("head") and own_approvals.outsiders_work(
+                conn, card, mine.project
+            )
         elif card.status == "cancelled":
             raise cards.invalid_transition(card.status, "review")
         else:
@@ -2232,7 +2239,7 @@ def report(
         revision = (previous_report.get("revision") or 1) + 1 if card.report else 1
         if closing:
             # Refused as a whole, nothing stored: the agent reports again without done.
-            if not cards.has_done_authority(mine, card):
+            if not cards.has_done_authority(conn, mine, card):
                 raise forbidden(
                     cards.authority_scope(mine), "done needs done authority; report without done"
                 )
@@ -2298,7 +2305,12 @@ def report(
         }
         if isinstance(body.why, dict) and "ref" in body.why and not card.ktw_ref:
             values["ktw_ref"] = body.why["ref"]  # §6.23: the card learns where its why lives
-        if not already_done:  # §6.6: a done card keeps its closure and claim.
+        if reopening:
+            # §6.6: the closure gone; back to review with its claim untouched, or, with no
+            # holder (released after the close), to open, where the normal claim applies.
+            back = "review" if card.claim_holder is not None else "open"
+            values.update({"status": back, "closed_at": None})
+        elif not already_done:  # §6.6: a done card keeps its closure and claim.
             if closing:
                 values.update({**_closing(card), "status": "done", "closed_at": now})
             elif card.status == "blocked":
