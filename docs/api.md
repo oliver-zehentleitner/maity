@@ -21547,27 +21547,46 @@ At that start the runner sets the old clone aside and makes a new one:
   anything. The hub revokes the credential the placement names
   (`revoked_reason: workspace_set_aside`, `revoked_by` null, §10), sets
   `rejoin` on the placement and on every other active placement that
-  names that credential, and raises `workspace_epoch`. `set_aside`
-  follows the same owner rule as revoke. Two cases differ:
+  names that credential, and raises `workspace_epoch`. `set_aside` is
+  the runner's own report, as `removed` is: no member right is checked,
+  and the revocation is the hub's own, which the restart row (§15.6)
+  lets anyone with that route's right follow with a rejoin. The report
+  comes only from a start under `desired: running`, which already
+  passed the restart row's owner rule, so it stops nothing. Three cases
+  differ:
   - The placement names no credential (`credential_id` null, nothing
     carried over): nothing is revoked and no `rejoin` is set; the epoch
     is raised, and the start picks up the placement's ordinary join
     (§15.9).
+  - The credential was revoked before, for any reason: nothing is
+    revoked again and that revocation stays as it is, its
+    `revoked_reason` and `revoked_by` included, so after one only the
+    agent profile's owner may undo, the stored `rejoin` still waits for
+    that owner (§15.6); the `rejoin` is set and the epoch raised.
   - Another running placement names the credential (which "One
     placement per instance" above rules out; the check guards a stored
     row that breaks it): the hub refuses
     the report (`conflict`, `details.reason: "credential_in_use"`) and
     changes nothing; the runner moves nothing, and the start is
-    `failed`, `workspace_in_use` (`workspace_set_aside`).
+    `failed`, `workspace_in_use` (`workspace_set_aside_failed`).
 - **Moved, never deleted.** Once the hub took the report, the runner
   renames the whole path in one step on the same file system to
   `<workspaces>/<project_id>/.replaced-<time>-<clone>` (`<time>`
-  `YYYYMMDDTHHMMSSZ`, UTC). It runs no git there and reads nothing in
+  `YYYYMMDDTHHMMSSZ`, UTC). When that name exists, the runner adds
+  `-2`, `-3`, … to `<time>` until it finds a free one, and never renames
+  over an existing path. It runs no git there and reads nothing in
   it: uncommitted files, commits on no remote branch, stashes and
   entries beside `repo` stay as they are. A name with a leading `.` is
   never a clone's, so nothing starts there. Its record moves with it. A
   rename that fails leaves the clone where it was, and the start is
-  `failed`, `workspace_in_use` (`workspace_set_aside`).
+  `failed`, `workspace_in_use` (`workspace_set_aside_failed`). The
+  hub's state stays as the report left it (the credential revoked,
+  `rejoin` set, the epoch raised): the next start finds the clone again
+  and reports `set_aside` at the new epoch, which revokes nothing more
+  (the credential was revoked before, above), then tries the rename
+  again. A `harness` switched back to the clone's layout meanwhile sets
+  it aside too: its credential is revoked and its epoch is an earlier
+  one, so it is never started in again.
 - **Then a new clone.** The runner makes the new clone in the new
   layout under the epoch of the hub's answer; with `rejoin` set the
   start picks up a join that `replaces` the instance of the revoked
@@ -21575,17 +21594,22 @@ At that start the runner sets the old clone aside and makes a new one:
   and reaches nothing.
 - **Named.** That start's report carries `detail: workspace_set_aside`
   (§15.7), the runner's log names the old and the new path, and
-  `maity runner status` lists the set-aside clone.
-- **Kept as a stopped clone is.** No rule of its own: the set-aside
-  clone follows "The workspace after a stop" (above), its clock
-  starting at the set-aside with the `workspace_retention` of the
-  placement it was set aside for. After it the runner removes it under
-  the same checks; unsaved work keeps it until a person removes it. The
-  hub's `workspace_outcome` and the dashboard's removal by hand stay
-  about the placement's current clone (`null` after a set-aside while
-  the placement runs), so a set-aside clone's outcome is in the
-  runner's log and `maity runner status`, and a kept one is removed on
-  the runner (`maity runner gc --revoked`).
+  `maity runner status` lists the set-aside clone with its path, the
+  time it was set aside and its unsaved count (git runs there only when
+  its `.git` is laid out like a plain clone's, else `not inspected`).
+- **Removed by hand.** The set-aside clone is meant to be kept as a
+  stopped clone is ("The workspace after a stop", above: the
+  `workspace_retention` of the placement it was set aside for, from the
+  set-aside, and unsaved work keeping it), but neither that removal nor
+  `maity runner gc --revoked` takes a `.replaced-*` path: gc goes by a
+  revoked credential, which a set-aside clone may not have, and skips
+  every clone of an agent with an active placement. Until a follow-up
+  of tsk-9f69y1hr1m6z teaches them that path, a person removes a
+  set-aside clone by hand, after `maity runner status` has named it and
+  its unsaved count. The hub's `workspace_outcome` and the dashboard's
+  removal by hand stay about the placement's current clone (`null`
+  after a set-aside while the placement runs), so a set-aside clone's
+  state is only in the runner's log and `maity runner status`.
 
 **A placement's scratch.** Besides
 its clone, each placement gets a directory for what is thrown away
@@ -21924,7 +21948,8 @@ placement as `reported`; the history is the `placement_reported` events.
 | `workspace_in_repository` | `workspace_in_use`: an `antigravity` workspace folder lies inside a git work tree, an entry `.git` in its parent or a directory above, or its path is not its real path (§15.3); the runner starts nothing, and its log names that directory |
 | `workspace_not_bare` | `workspace_in_use`: an `antigravity` workspace folder holds an entry besides the clone `repo` (§15.5), such as agy configuration a run left there; the runner starts nothing and deletes nothing, and its log names the entries, without their contents |
 | `stale_index_lock` | `starting`: a stale `.git/index.lock` in the clone |
-| `workspace_set_aside` | `starting`: the runner set this agent's clone of the other layout aside and made a new one for this start (§15.5); `workspace_in_use`: the set-aside was refused by the hub or its rename failed, and the clone stays where it was (§15.5). Not built yet (tsk-9f69y1hr1m6z): today the hub refuses the code (`invalid`) and the runner reports `workspace_in_use` (`workspace_unrecorded`) |
+| `workspace_set_aside` | `starting`: the runner set this agent's clone of the other layout aside and made a new one for this start (§15.5). Not built yet (tsk-9f69y1hr1m6z): today the hub refuses the code (`invalid`) |
+| `workspace_set_aside_failed` | `workspace_in_use`: the set-aside was refused by the hub or its rename failed, and the clone stays where it was (§15.5). Not built yet (tsk-9f69y1hr1m6z): today the hub refuses the code (`invalid`) and the runner reports `workspace_in_use` (`workspace_unrecorded`) |
 | `sandbox_unavailable` | `running`: the harness's own OS sandbox could not be enabled and the runner's configuration allows running without it |
 | `keep_the_why_unavailable` | `running`: the placement names a Keep the Why skill (`keep_the_why`, §15.5) and the runner could not fetch or check that commit, or cannot deliver it where this session runs yet (docs/runners.md), so the session started without the delivered skill; the resume packet's install text (§6.23) is its only way to it. The runner's log says why; the next report after a start with the skill clears it. Never for a placement whose `keep_the_why` is `null`, and `sandbox_unavailable` goes first when both hold. A runner sends it only to a hub whose placements carry `keep_the_why` (req-b3q6ttwgrp1v) |
 | `hot_loop` | `crash_loop` in `supervised` mode |
@@ -22278,7 +22303,7 @@ Runner credential, signed (§15.1).
 | GET | `/runner/placements` | `closed` | `{items}`: every active, approved placement of this runner, the full desired spec as below, with `workspace_epoch`; one under `desired: stopped` also carries its `workspace_outcome` (with `remove_requested` and `remove_requested_at`, §15.5). `closed=true` lists instead the placements of this runner, closed at any time, whose clone it has not reported removed (`workspace_outcome` `null`, `retained` or `kept`), but none closed with the runner's own end (`runner_revoked`, `runner_removed`: those clones are the operator's, §15.5), each with `active: false`, its `closed_reason`, `workspace_retention`, `workspace_epoch` and `workspace_outcome` (§15.5) |
 | POST | `/runner/placements/{id}/status` | `{seq, observed_generation, state, reason?, detail?, exit_code?, restarts, retry_at?, crash_count?, crash_window_seconds?, deadline_at?, target, since, session_hint?, sessions?, last_activity_at?, run?, nudge?, handover?, finding?}` (`handover` not built yet, as the replacement is not, §15.14; `finding` as in §15.7, which the runner sends, tsk-bzmd0avm4yhb) | `200`, the placement as the runner reads it with `reported`. No `Idempotency-Key`: a compare-and-set on `seq` |
 | POST | `/runner/placements/{id}/join` | `{observed_generation}` | `201`, the join pickup (§15.9). No `Idempotency-Key`: one-time by its own guard |
-| POST | `/runner/placements/{id}/workspace` | `{epoch, state, reason?, unsaved?, size_bytes?, removes_at?, remove_requested_at?}` | `200`, the placement as the runner reads it with `workspace_outcome` (§15.5). `retained` and `kept` only for a placement of this runner that is closed or under `desired: stopped` (a running one is `conflict`); `removed` in any state. Each report replaces the outcome; `retained` needs `removes_at`. `remove_requested` is cleared only by a report whose `remove_requested_at` equals the stored one, or by `removed`, whatever it names: nothing is left to remove. `epoch` names the clone (`workspace_epoch` as the runner read it when the placement started in that clone, or from the answer that took the previous clone's `removed`, §15.5): a report about an earlier epoch answers `200` as it is and changes nothing; a later one than the hub's is `invalid`. `removed` is final for its epoch: it revokes the credential the placement named, unless another running placement names it (`credential_revoked`, `reason: workspace_removed`, §15.10), sets `rejoin` on an active placement, and on every other active placement that names the revoked credential, and raises `workspace_epoch`, so a repeat or a late retry answers `200` as it is and changes nothing, while the next clone reports under the new epoch. When the placement's credential was revoked before, by a revocation only the agent profile's owner may undo (§15.6, the restart row), `removed` also sets `desired: stopped` on the placement if it runs, without a new `generation`: its rejoin waits for the owner's start (§15.5). `set_aside` (§15.5) is the runner's own report, as `removed` is: the placement's runner sends it with its runner credential, and no member right is checked. It is taken only for an active placement of this runner under `desired: running` (otherwise `conflict`), without `reason`, `unsaved` or `removes_at`, and sent before the runner moves the clone. Like `removed` it is final for its epoch: it revokes the credential the placement named as the hub's own revocation (`credential_revoked`, `reason: workspace_set_aside`, `revoked_by` null, §15.10), sets `rejoin` on the placement and on every other active placement that names the revoked credential, and raises `workspace_epoch`; it leaves `workspace_outcome` `null`, and a repeat or a late report answers `200` as it is and changes nothing. With no `credential_id` it revokes nothing and sets no `rejoin`, and only raises the epoch. When the credential was revoked before, for any reason, it revokes nothing again and keeps that revocation's `revoked_reason` and `revoked_by`, so a rejoin after a revocation only the agent profile's owner may undo still follows the restart row's owner rule (§15.6); it sets the `rejoin`, raises the epoch and stops nothing, since the start that sends it already passed that rule. When another running placement names the credential it is `conflict` (`details.reason: "credential_in_use"`) and changes nothing. Not built yet (tsk-9f69y1hr1m6z): today `set_aside` is `invalid`. Emits `placement_updated`. No `Idempotency-Key`: a report states the clone as it is |
+| POST | `/runner/placements/{id}/workspace` | `{epoch, state, reason?, unsaved?, size_bytes?, removes_at?, remove_requested_at?}` | `200`, the placement as the runner reads it with `workspace_outcome` (§15.5). `retained` and `kept` only for a placement of this runner that is closed or under `desired: stopped` (a running one is `conflict`); `removed` in any state. Each report replaces the outcome; `retained` needs `removes_at`. `remove_requested` is cleared only by a report whose `remove_requested_at` equals the stored one, or by `removed`, whatever it names: nothing is left to remove. `epoch` names the clone (`workspace_epoch` as the runner read it when the placement started in that clone, or from the answer that took the previous clone's `removed`, §15.5): a report about an earlier epoch answers `200` as it is and changes nothing; a later one than the hub's is `invalid`. `removed` is final for its epoch: it revokes the credential the placement named, unless another running placement names it (`credential_revoked`, `reason: workspace_removed`, §15.10), sets `rejoin` on an active placement, and on every other active placement that names the revoked credential, and raises `workspace_epoch`, so a repeat or a late retry answers `200` as it is and changes nothing, while the next clone reports under the new epoch. When the placement's credential was revoked before, by a revocation only the agent profile's owner may undo (§15.6, the restart row), `removed` also sets `desired: stopped` on the placement if it runs, without a new `generation`: its rejoin waits for the owner's start (§15.5). `set_aside` (§15.5) is the runner's own report, as `removed` is: the placement's runner sends it with its runner credential, and no member right is checked. It is taken only for an active placement of this runner under `desired: running` (otherwise `conflict`), and sent before the runner moves the clone; `reason`, `unsaved`, `size_bytes`, `removes_at` and `remove_requested_at` are about a stopped clone's outcome, so any of them on `set_aside` is `invalid`. Like `removed` it is final for its epoch: it revokes the credential the placement named as the hub's own revocation (`credential_revoked`, `reason: workspace_set_aside`, `revoked_by` null, §15.10), sets `rejoin` on the placement and on every other active placement that names the revoked credential, and raises `workspace_epoch`; it leaves `workspace_outcome` `null`, and a repeat or a late report answers `200` as it is and changes nothing. With no `credential_id` it revokes nothing and sets no `rejoin`, and only raises the epoch. When the credential was revoked before, for any reason, it revokes nothing again and keeps that revocation's `revoked_reason` and `revoked_by`, so a rejoin after a revocation only the agent profile's owner may undo still follows the restart row's owner rule (§15.6); it sets the `rejoin`, raises the epoch and stops nothing, since the start that sends it already passed that rule. When another running placement names the credential it is `conflict` (`details.reason: "credential_in_use"`) and changes nothing. Not built yet (tsk-9f69y1hr1m6z): today `set_aside` is `invalid`. Emits `placement_updated`. No `Idempotency-Key`: a report states the clone as it is |
 | PUT | `/runner/placements/{id}/handover` (not built yet, §15.14) | the sealed transcript, `application/octet-stream`, at most 64 MiB | `204`; `{id}` is the old placement; only its runner, during an open `full` replacement between two runners, once (`conflict` after); emits `placement_updated` to the new placement's runner; §15.14 |
 | GET | `/runner/placements/{id}/handover` (not built yet, §15.14) | — | `200`, the sealed transcript; `{id}` is the new placement; only its runner, `not_found` until uploaded or after deletion |
 | DELETE | `/runner/placements/{id}/handover` (not built yet, §15.14) | — | `204`; `{id}` is the new placement; its runner confirms it has opened the transcript, and the hub deletes it |

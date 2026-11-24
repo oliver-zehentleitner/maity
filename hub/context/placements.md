@@ -1119,8 +1119,8 @@ named only as what the hub does not have, not as options weighed.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** card tsk-9f69y1hr1m6z (an agent placed again with antigravity on a clone name a Claude Code placement had used was stuck twice on a runner host, 2026-11-17: `workspace_in_use` until the old clone was moved by hand, then `join_failed`/`credential_missing` until the profile's owner revoked and rejoined); the lead's decision on the card's plan, seq 152381; the review of PR #1930 (A1056) and the review lead's fix order; docs/api.md §10, §15.5, §15.6, §15.8
-**See:** placements.md#who-revoked-decides-with-the-reason-whether-anyone-but-the-owner-may-rejoin — 44fe553d-74c0-495d-80c4-e1af00a65f57 — as of 2026-11-17
+**Source:** card tsk-9f69y1hr1m6z (an agent placed again with antigravity on a clone name a Claude Code placement had used was stuck twice on a runner host, 2026-11-17: `workspace_in_use` until the old clone was moved by hand, then `join_failed`/`credential_missing` until the profile's owner revoked and rejoined); the lead's decision on the card's plan, seq 152381; the review of PR #1930 (A1056) and the review lead's fix order; the pre-review A2497 and the lead's go on its fixes, seq 212827 (the runner's own report, an earlier revocation kept, no stop); docs/api.md §10, §15.5, §15.6, §15.8
+**See:** placements.md#who-revoked-decides-with-the-reason-whether-anyone-but-the-owner-may-rejoin — 44fe553d-74c0-495d-80c4-e1af00a65f57 — as of 2026-11-24
 **Revisit when:** a placement can keep its credential outside the clone, or clone paths stop being shared by the two layouts (tsk-rfa7fwa2sz5g kept them shared: a new placement still continues the membership's held clone)
 
 Contracted, not built yet. Before a runner sets an agent's clone of the
@@ -1132,9 +1132,20 @@ sets `rejoin` on the placement and every other active placement that names
 it; raises `workspace_epoch`; does not stop the placement and bumps no
 generation; and leaves `workspace_outcome` `null`, which stays about the
 current clone. A repeat or a late report changes nothing. `set_aside` is
-taken only for an active placement under `desired: running`, and follows
-the same owner rule as revoke. With no `credential_id` it revokes nothing
-and sets no `rejoin`; the start picks up the placement's ordinary join.
+the runner's own report, as `removed` is: the placement's runner sends it
+and no member right is checked. It is taken only for an active placement
+under `desired: running`, so it comes from a start that already passed
+the owner rule of 44fe553d, which is why it stops nothing where a
+`removed` after an owner-only revocation stops the placement. With no
+`credential_id` it revokes nothing and sets no `rejoin`; the start picks
+up the placement's ordinary join. When the credential was revoked
+before, for any reason, it revokes nothing again and that revocation
+stays as it is, `revoked_reason` and `revoked_by` included, so after one
+only the profile's owner may undo, the `rejoin` it stores still waits for
+that owner. On `set_aside`, `reason`, `unsaved`, `size_bytes`,
+`removes_at` and `remove_requested_at` are `invalid`. A start that failed
+to rename after the report sends `set_aside` again at the new epoch, which
+revokes nothing more; its report names `workspace_set_aside_failed`.
 When another running placement names the credential the report is
 `conflict` (`credential_in_use`) and changes nothing, so the runner moves
 nothing; since one placement per instance (tsk-rfa7fwa2sz5g) no two
@@ -1162,3 +1173,10 @@ and reaches nothing.
   which is the intent; every other `workspace_in_use` stays refused.
 - A retention rule of its own for the set-aside clone: it is kept as a
   stopped clone is (161d5507 in cli), no third rule.
+- Stopping the placement after an owner-only revocation, as `removed`
+  does since #1934: a `set_aside` comes only from a start the owner rule
+  already let through, so the stop would only force a second start with
+  the rename half done (lead, seq 212827).
+- "`set_aside` follows the same owner rule as revoke" (the first text):
+  undefined, since the report comes with a runner credential, not a
+  member's; replaced by the rule above (A2497).
