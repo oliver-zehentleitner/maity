@@ -1321,6 +1321,7 @@
   "error.unauthenticated": "你尚未登录。",
   "error.upload_expired": "上传耗时过长。请重新发送该文件。",
   "error.version_exists": "已存在使用此版本号的发布。",
+  "error.watch_limit": "拉取请求的关注数量已达此 hub 允许的上限。",
   "error.webhook_signature": "代码托管平台的推送没有有效签名。",
   "event.here": "此事件没有其他你可以打开的位置，因此显示在这里。",
   "event.not_reached": "未到达 seq {seq}：它位于比此处已读取的页面更早的位置，或者不在此列表中。",

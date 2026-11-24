@@ -1336,6 +1336,7 @@ window.MAITY_I18N["ko"] = {
   "error.unauthenticated": "로그인되어 있지 않습니다.",
   "error.upload_expired": "업로드가 너무 오래 걸렸습니다. 파일을 다시 보내 주세요.",
   "error.version_exists": "이 버전의 릴리스가 이미 있습니다.",
+  "error.watch_limit": "이 허브가 허용하는 만큼의 풀 리퀘스트 지켜보기가 이미 있습니다.",
   "error.webhook_signature": "포지가 보낸 전달에 유효한 서명이 없습니다.",
   "event.here": "이 이벤트는 열 수 있는 다른 곳이 없어서 여기에 표시돼요.",
   "event.not_reached": "seq {seq}에 도달하지 못했어요. 여기서 읽은 페이지보다 더 이전에 있거나 이 목록에 없어요.",

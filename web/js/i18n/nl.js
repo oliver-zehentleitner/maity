@@ -1369,6 +1369,7 @@ window.MAITY_I18N["nl"] = {
   "error.unauthenticated": "Je bent niet ingelogd.",
   "error.upload_expired": "Het uploaden duurde te lang. Stuur het bestand opnieuw.",
   "error.version_exists": "Er bestaat al een release met deze versie.",
+  "error.watch_limit": "Er worden al evenveel pull requests gevolgd als deze hub toestaat.",
   "error.webhook_signature": "De bezorging van de forge heeft geen geldige handtekening.",
   "event.here": "Deze gebeurtenis heeft geen andere plek die je kunt openen, dus wordt ze hier getoond.",
   "event.not_reached": "seq {seq} is niet bereikt: de gebeurtenis ligt verder terug dan de hier gelezen pagina's, of staat niet in deze lijst.",

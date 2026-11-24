@@ -1336,6 +1336,7 @@ window.MAITY_I18N["ja"] = {
   "error.unauthenticated": "サインインしていません。",
   "error.upload_expired": "アップロードに時間がかかりすぎました。もう一度ファイルを送ってください。",
   "error.version_exists": "このバージョンのリリースはすでに存在します。",
+  "error.watch_limit": "このハブが許可する数のプルリクエストのウォッチがすでにあります。",
   "error.webhook_signature": "フォージからの配信に、有効な署名がありません。",
   "event.here": "このイベントには、ほかに開ける場所がないため、ここに表示しています。",
   "event.not_reached": "seq {seq} には到達しませんでした: ここで読み込んだページより前にあるか、この一覧にありません。",

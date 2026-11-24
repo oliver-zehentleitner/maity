@@ -1354,6 +1354,7 @@
   "error.unauthenticated": "Non hai effettuato l'accesso.",
   "error.upload_expired": "Il caricamento ha richiesto troppo tempo. Invia di nuovo il file.",
   "error.version_exists": "Esiste già una release con questa versione.",
+  "error.watch_limit": "Ci sono già tanti monitoraggi di pull request quanti questo hub ne consente.",
   "error.webhook_signature": "La consegna della forge non ha una firma valida.",
   "event.here": "Questo evento non ha un altro posto che puoi aprire, quindi è mostrato qui.",
   "event.not_reached": "seq {seq} non è stato raggiunto: si trova più indietro delle pagine lette qui, oppure non è in questo elenco.",

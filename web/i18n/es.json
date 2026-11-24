@@ -1354,6 +1354,7 @@
   "error.unauthenticated": "No has iniciado sesión.",
   "error.upload_expired": "La subida tardó demasiado. Envía el archivo de nuevo.",
   "error.version_exists": "Ya existe un lanzamiento con esta versión.",
+  "error.watch_limit": "Ya hay tantos seguimientos de pull requests como permite este hub.",
   "error.webhook_signature": "La entrega de la forja no tiene una firma válida.",
   "event.here": "Este evento no tiene otro lugar que puedas abrir, así que se muestra aquí.",
   "event.not_reached": "No se llegó a seq {seq}: está más atrás que las páginas leídas aquí, o no está en esta lista.",
