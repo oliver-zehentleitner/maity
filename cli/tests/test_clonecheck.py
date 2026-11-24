@@ -1179,3 +1179,22 @@ def test_the_guards_with_content_say_what_they_are(placed: Path, entry: str, exp
     path.write_text("x\n")
     with pytest.raises(gitfacts.FactsError, match=expected):
         gitfacts.collect(placed)
+
+
+def test_placed_git_keeps_the_proxy_variables_and_no_trust_root() -> None:
+    """A placement behind a proxy reaches the remote through it (tsk-mfac5zscnkxs); a trust
+    root set in front of `maity` would let a man in the middle read the remote's credential."""
+    proxies = {
+        "https_proxy": "http://user:secret@proxy:3128", "HTTPS_PROXY": "http://proxy:3128",
+        "http_proxy": "http://proxy:3128", "HTTP_PROXY": "http://proxy:3128",
+        "all_proxy": "socks5://proxy:1080", "ALL_PROXY": "socks5://proxy:1080",
+        "no_proxy": "localhost,.internal", "NO_PROXY": "localhost,.internal",
+    }  # fmt: skip
+    planted = {
+        "SSL_CERT_FILE": "/srv/planted.pem", "GIT_SSL_CAINFO": "/srv/planted.pem",
+        "GIT_PROXY_COMMAND": "/srv/planted", "PATH": "/srv/planted-bin",
+    }  # fmt: skip
+    kept = clonecheck.kept_env({**proxies, **planted, "HOME": "/home/agent"})
+    assert {name: kept.get(name) for name in proxies} == proxies  # userinfo as set
+    assert not set(planted) & set(kept)
+    assert kept["HOME"] == "/home/agent"

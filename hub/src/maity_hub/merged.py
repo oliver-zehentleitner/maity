@@ -25,11 +25,11 @@ from typing import Any
 
 from sqlalchemy import Connection, select, update
 
-from maity_hub import agent_owners, cards, clock, forge, takeovers
+from maity_hub import cards, clock, forge, own_approvals, takeovers
 from maity_hub import tables as t
 from maity_hub.events import emit
 from maity_hub.instances import token
-from maity_hub.scopes import OUTSIDE, role_tokens
+from maity_hub.scopes import role_tokens
 from maity_hub.views import principal_id
 
 # Who moves a card to done (§6.4) as audience terms; `holder` is the holding instance.
@@ -217,58 +217,16 @@ def _blocked_by(conn: Connection, card: Any, project: Any) -> list[str]:
         # A release closes through its readiness gate (§6.7), which the releaser
         # passes after the checklist; a merge of its pull request is not that step.
         reasons.append("release")
-    if outsiders_work(conn, card, project):
-        # §2.3 "Own approvals", §6.6: `auto` acts as `notify` on outsiders' work without
-        # its own approvals on the reported head. The hub counts none yet, so a merge never
-        # closes such a card on its own; its done authority closes it.
+    if own_approvals.missing(conn, card, project)[0]:
+        # §2.3 "Own approvals", §6.6: `auto` acts as `notify` on outsiders' work without its
+        # own approvals on the reported head; its done authority closes it.
         reasons.append("own_approvals")
     return reasons + _not_its_own(conn, card, project)
 
 
 def outsiders_work(conn: Connection, card: Any, project: Any) -> bool:
-    """§2.3 "Own approvals": an outside agent holds the card, or filed its current report,
-    judged as the card and its members stand now (`_outside_agent`)."""
-    agents: list[str] = []
-    if card.claim_holder is not None:
-        held = conn.execute(
-            select(t.membership.c.agent_id).where(t.membership.c.id == card.claim_holder)
-        ).scalar()
-        if held is not None:
-            agents.append(str(held))
-    reporter = (card.report or {}).get("reported_by")
-    if isinstance(reporter, str) and reporter.startswith("agt-"):
-        agents.append(reporter)
-    return any(_outside_agent(conn, project, agent_id) for agent_id in agents)
-
-
-def _outside_agent(conn: Connection, project: Any, agent_id: str) -> bool:
-    """An outside agent (§2.3 "Own approvals"), judged on its current membership in the project
-    (the active one, else the most recent, for a reporter who has left; never any older row,
-    since a rejoin as a member's agent is §2.3's one way out): its trust is `outside`, or its
-    `joined_outside` mark is set (it joined while its owner held no membership), both of which
-    stay when its owner later becomes a member; or its owner holds no membership now. One
-    whose profile the hub cannot find counts as outside, since nothing then shows it is the
-    project's own."""
-    current = conn.execute(
-        select(t.membership.c.trust, t.membership.c.joined_outside)
-        .where(t.membership.c.project_id == project.id, t.membership.c.agent_id == agent_id)
-        .order_by(
-            t.membership.c.active.is_(True).desc(),
-            t.membership.c.joined_at.desc(),
-            t.membership.c.id.desc(),  # two rows joined in the same instant: the later row
-        )
-        .limit(1)
-    ).first()
-    if current is not None and current.trust == OUTSIDE:
-        return True
-    if current is not None and current.joined_outside:
-        return True
-    owner = conn.execute(
-        select(t.agent_profile.c.owner_id).where(t.agent_profile.c.id == agent_id)
-    ).scalar()
-    if owner is None:
-        return True
-    return not agent_owners.owner_is_member(conn, project.id, str(owner))
+    """§2.3 "Own approvals": the one rule, in `own_approvals`."""
+    return own_approvals.outsiders_work(conn, card, project)
 
 
 def _tell(conn: Connection, card_id: str, merge_sha: str | None) -> None:

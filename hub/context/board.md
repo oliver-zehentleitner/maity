@@ -391,7 +391,8 @@ the set that a text exists and who changes it.
 When a change writes `restricted_changed`, the hub writes one account
 record `restricted_changed` `{project_id, task_id, seq}` (`task_id`
 null for the set) for each human on the event's list but the writer, or
-but the members a set event names, unless that human already has one for
+but the members a set event names and the human who made it (the event's
+actor or, for a human, `by`), unless that human already has one for
 the same card (or project, for the set) from the last 10 minutes. The
 bell lists such a record as an `inbox` notice, read by a read mark like
 `moderation_applied` and counted in no `inbox` count, only while the

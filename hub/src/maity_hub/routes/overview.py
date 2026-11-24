@@ -50,9 +50,10 @@ def request_counts(conn: Connection, mine: Membership) -> dict[str, Any]:
     owner's round opens to no scope) and no `proposal` (for a proxy: it never lists a bridge
     consent). Its `where` is `request_sql.listed_to_all`, the SQL twin of
     `routes/requests.py` `listed_to_all`, and `request_sql.addressed` that of
-    `inbox.addressed_to`. The others, a few, are read with only the columns the Python rule
-    needs and decided by it, unchanged: a JSON list or another table decides them, and
-    each database reads JSON in its own syntax."""
+    `inbox.addressed_to`; a request `held` for the caller is one of the others, so
+    `listed_to_all` leaves it out of both counts (§9.6). The others, a few, are read with
+    only the columns the Python rule needs and decided by it, unchanged: a JSON list or
+    another table decides them, and each database reads JSON in its own syntax."""
     r = t.request.c
     open_here = [r.project_id == mine.project.id, r.personal.is_(False), r.status == "open"]
     plain = request_sql.plain(mine)

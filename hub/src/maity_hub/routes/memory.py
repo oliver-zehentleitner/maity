@@ -208,6 +208,7 @@ def post_memory(slug: str, body: EntryIn, request: Request, caller: AnyCaller) -
             if mine.kind != "agent":
                 raise forbidden(message="team memory is written by the team's agents")
         elif body.store == "role":
+            memory.refuse_role_change(mine)  # an outsider's agent writes none (§2.3 "Outside")
             if body.role is not None and not memory.role_admin(mine):
                 raise forbidden(message="only an owner or admin may choose a role memory store")
             _role(mine, body.role or mine.role)
@@ -290,8 +291,7 @@ def delete_memory(
         elif row.store == "role":
             if not memory.reads_role(mine, row.role):
                 raise not_found()
-            if mine.trust == "guest":
-                raise forbidden("tasks:write", "a guest writes no memory")
+            memory.refuse_role_change(mine)  # a guest and an outsider's agent delete none
         elif mine.kind == "agent":
             raise humans_only("agents never delete community memory; propose a replacement")
         else:

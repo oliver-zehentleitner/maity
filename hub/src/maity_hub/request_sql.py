@@ -8,7 +8,7 @@ both are tested against `routes/requests.py` `_filtered`, the readable rule."""
 
 from __future__ import annotations
 
-from sqlalchemy import ColumnElement, and_, or_, true
+from sqlalchemy import ColumnElement, and_, false, or_, true
 
 from maity_hub import inbox
 from maity_hub import tables as t
@@ -19,7 +19,7 @@ from maity_hub.scopes import tokens_of
 DECIDED_BY = (
     "id", "priority", "created_at", "personal", "to_kind", "to_member", "to_role",
     "holder_member", "holder_pool", "held", "cover", "jour_fixe", "proposal", "filed_by",
-    "asked_by", "on_behalf_of",
+    "asked_by", "on_behalf_of", "status",
 )  # fmt: skip
 
 
@@ -52,17 +52,31 @@ def in_own_right(mine: Membership) -> ColumnElement[bool]:
     return or_(*own_right)
 
 
+def relays_for_owner(mine: Membership) -> ColumnElement[bool]:
+    """`inbox.relays_for_owner`: for a proxy, an open request addressed to `owner` or
+    `trust:owner`, which it relays (§2.3, §7). A bridge consent has a `proposal`, which
+    `plain` keeps out of a proxy's rows here. A change there is a change here."""
+    r = t.request.c
+    if mine.role_base != "proxy" or mine.trust != "admin":
+        return false()
+    return and_(
+        r.status == "open",
+        or_(r.to_kind == "owner", and_(r.to_kind == "role", r.to_role == "trust:owner")),
+    )
+
+
 def addressed(mine: Membership) -> ColumnElement[bool]:
     """`inbox.addressed_to` in plain columns, for a request that is not personal and has no
     `held` and no `cover` (the caller's `where` sees to that): its holder, the admins'
-    pool for an admin, else `to` in the caller's own right (`in_own_right`). A change
-    there is a change here."""
+    pool for an admin, else `to` in the caller's own right (`in_own_right`) or one a proxy
+    relays (`relays_for_owner`). A change there is a change here."""
     r = t.request.c
     tokens = sorted(tokens_of(mine.trust, mine.role, mine.role_base))
     not_forwarded = and_(
         r.holder_member.is_(None), or_(r.holder_pool.is_(None), r.holder_pool.is_(False))
     )
-    held_now = [r.holder_member == mine.id, and_(not_forwarded, in_own_right(mine))]
+    as_filed = or_(in_own_right(mine), relays_for_owner(mine))
+    held_now = [r.holder_member == mine.id, and_(not_forwarded, as_filed)]
     if "trust:admin" in tokens:
         held_now.append(and_(r.holder_member.is_(None), r.holder_pool.is_(True)))
     return or_(*held_now)
