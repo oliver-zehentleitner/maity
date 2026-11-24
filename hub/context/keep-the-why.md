@@ -117,6 +117,21 @@ What a dropped key held is read or computed again on its next use. For
   project in a list, and an unlinked link leaves no row to ask);
   shortening `until` (it only narrows the window); and taking the
   project's lock in `forget` (an unlink would wait for a family read).
+- **A forget runs twice: in the writing transaction and after its
+  commit.** `wakeups.forget_repository_everywhere` forgets at once and
+  again through `events.on_commit`, on every engine (on PostgreSQL the
+  pod's own notice forgets after the commit as well); so does
+  `forget_token_everywhere` for a token. A read that starts between the
+  first forget and the commit would otherwise keep its entry (review
+  A2591 P2-3, A2592). The writers that forget open their transaction with
+  `events.transaction`: the unlink, the link and its replacement
+  (`routes/forge_links`), the owner check's result
+  (`forge_links.refresh`), and a status a mint or a listing found
+  (`forge_access`, `routes/forge_links`). Rejected: asking the stored
+  link before each cached answer (one query per listed project, and an
+  unlinked link leaves no row to ask); a generation kept in the
+  database (one more query per §11.3 call); and SQLAlchemy's `commit`
+  event, which fires before the database has committed.
 - **Lock order.** In `ktw`, a project's lock first, then `guard`, never
   the other way round: under `guard` no project lock is taken, only
   looked up. In `images`, the gate first, then `_guard`; the gate is

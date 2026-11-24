@@ -37,6 +37,7 @@ from maity_hub import (
     bounded,
     clock,
     errors,
+    events,
     forge,
     forge_links,
     github_app,
@@ -274,7 +275,7 @@ class ForgeAccess:
             self._gone(link, gone.state)
             return None, f"installation_{gone.state}", None, None
         if link.status != "active":
-            with self.engine.begin() as conn:
+            with events.transaction(self.engine) as conn:
                 forge_links.set_status(conn, link.id, "active")
         return token, None, None, None
 
@@ -320,7 +321,7 @@ class ForgeAccess:
         from the calling request's write guard, as `forge_links.refresh` is (review A2545 #2):
         the write is the link human's, whose `account_lock` `set_status` takes first."""
         assert self.app is not None
-        with self.engine.begin() as conn:
+        with events.transaction(self.engine) as conn:  # its forgets run again after the commit
             write_guard.exempt(conn)
             forge_links.set_status(conn, link.id, state)
             wakeups.forget_token_everywhere(conn, self.app, link.installation_id)

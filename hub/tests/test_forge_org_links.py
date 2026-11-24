@@ -1354,6 +1354,81 @@ def test_a_link_unlinked_before_the_cache_reads_keeps_nothing_and_the_next_call_
     assert reads[-1] == OWNER_TOKEN, reads
 
 
+@pytest.mark.parametrize(
+    ("how", "write"), [("unlinked", "unlink"), ("replaced", "link"), ("not_admin", "apply_check")]
+)
+def test_a_read_kept_while_the_link_change_commits_is_forgotten_after_the_commit(
+    owner: flow.Human,
+    anna: flow.Human,
+    app: FakeApp,
+    repo: FakeForge,
+    migrated: Engine,
+    make_client: ClientFactory,
+    monkeypatch: pytest.MonkeyPatch,
+    how: str,
+    write: str,
+) -> None:
+    """Review A2592 addendum: a read made after an unlink, a replacement or a definite "no"
+    forgot the project's reads and before that change committed, by a reader that still finds
+    the link serving (as one on another connection does under READ COMMITTED), is forgotten
+    again once the change has committed: §11.3, the project view and the list answer none of
+    it, the owner's or a guest's. On SQLite no other connection reads while the change's
+    transaction is open (`BEGIN IMMEDIATE`), so the reader here is the one chosen before it,
+    its question whether the link serves answered as such a connection would."""
+    link_id = _org_link(migrated, owner.id, checked=timedelta(minutes=1), ok=timedelta(minutes=1))
+    _confirm(owner)
+    project_id = _project_id(migrated)
+    guest = flow.human(make_client, migrated, "bob")
+    factory.membership(migrated, project_id, role="guest", human_id=guest.id)
+    reads: list[str | None] = []
+    real_walk = ktw.walk
+
+    def walk(reader: forge.Forge, repository: str, deadline: float | None = None) -> Any:
+        reads.append(reader.token)
+        if reader.token == LINK_TOKEN:
+            return _family("secret-plan")
+        return real_walk(reader, repository, deadline)
+
+    monkeypatch.setattr(ktw, "walk", walk)
+    chosen = forge.Forge(OPERATOR, access=_access(migrated)).for_project(project_id)
+    assert chosen.via == "app"
+    reader = replace(chosen, still_serves=lambda: True)  # the row as committed so far
+    real_write = getattr(forge_links, write)
+    kept: list[bool] = []
+
+    def write_then_read(conn: Any, *args: Any, **kwargs: Any) -> Any:
+        """The change's forget has run, its transaction not yet committed: a read now."""
+        done = real_write(conn, *args, **kwargs)  # a replacement's first call raises: no read
+        entry, _fresh = ktw.CACHE.get(reader, project_id, URL)
+        assert entry.snapshot is not None and entry.snapshot.members  # it read the family
+        kept.append(ktw.CACHE.cached(project_id) is not None)
+        return done
+
+    monkeypatch.setattr(forge_links, write, write_then_read)
+    # On PostgreSQL the pod's own notice forgets after the commit as well: without it, the
+    # test asks the forget after the commit alone, as on an engine with no notice.
+    monkeypatch.setattr(wakeups, "forgotten", lambda payload: None)
+    if how == "unlinked":
+        assert owner.delete(f"/me/forge/github/links/{link_id}").status_code == 204
+    elif how == "replaced":
+        app.memberships[("acme", "maintainer-gh")] = None  # the check: no owner
+        assert _anna_links(anna) == DONE
+    else:
+        app.memberships[("acme", "maintainer-gh")] = None
+        with migrated.begin() as conn:  # the owner check due
+            conn.execute(update(t.forge_link).values(checked_at=clock.now() - TEN))
+        assert _check(migrated, app) == "not_admin"
+    assert kept == [True]  # kept before the commit
+    assert ktw.CACHE.cached(project_id) is None
+    answered = []
+    for name, who in (("owner", owner), ("guest", guest)):
+        for path in (WHY, WHY + "?max_age=0", VIEW, "/projects"):
+            if "secret-plan" in who.get(path).text:
+                answered.append(f"{name}: {path}")
+    assert answered == []
+    assert reads.count(LINK_TOKEN) == 1, reads  # only the read before the commit used the link
+
+
 def _observed_then_not_admin(owner: flow.Human, migrated: Engine) -> None:
     """A probe observation read while the link served, then the link `not_admin`."""
     _org_link(migrated, owner.id, checked=timedelta(minutes=1), ok=timedelta(minutes=1))

@@ -28,7 +28,7 @@ from typing import Any, NamedTuple
 from sqlalchemy import Connection, Engine, delete, insert, or_, select, update
 from sqlalchemy.exc import IntegrityError
 
-from maity_hub import clock, forge, github_app, wakeups, write_guard
+from maity_hub import clock, events, forge, github_app, wakeups, write_guard
 from maity_hub import tables as t
 from maity_hub.github_app import GitHubApp
 from maity_hub.ids import new_id
@@ -536,7 +536,7 @@ def refresh(engine: Engine, app: GitHubApp, link: Any) -> Any | None:
         if not claimed:
             return current(conn, link)
     check = owner_check(app, Link.of(link))
-    with engine.begin() as conn:
+    with events.transaction(engine) as conn:  # its forgets run again after the commit
         write_guard.exempt(conn)
         status = apply_check(conn, link.id, check, at)
         if check.outcome is not None and status not in ("active", STALE):

@@ -16,7 +16,7 @@ from fastapi.responses import JSONResponse, RedirectResponse, Response
 from pydantic import Field
 from sqlalchemy import Engine
 
-from maity_hub import forge, forge_links, forge_tokens, wakeups
+from maity_hub import events, forge, forge_links, forge_tokens, wakeups
 from maity_hub.auth import second_factor
 from maity_hub.auth.caller import Caller
 from maity_hub.deps import AnyCaller, ForgeSetupCaller, engine_of, settings_of
@@ -105,12 +105,12 @@ def _link(engine: Engine, app: GitHubApp, human_id: str, found: dict[str, Any]) 
     link with `installation_linked`; no definite answer, or a link that changed meanwhile, is
     `forge_unavailable` with nothing written."""
     try:
-        with engine.begin() as conn:
+        with events.transaction(engine) as conn:  # its forgets run again after the commit
             return forge_links.link(conn, human_id, found, app=app)
     except forge_links.ReplaceCheck as asked:
         existing = asked.existing
     check = forge_links.owner_check(app, existing, replacing=True)
-    with engine.begin() as conn:
+    with events.transaction(engine) as conn:
         try:
             return forge_links.link(conn, human_id, found, (existing, check), app)
         except forge_links.Kept:
@@ -152,7 +152,7 @@ def list_links(request: Request, caller: AnyCaller) -> JSONResponse:
                 continue  # unlinked meanwhile
         repositories, found = forge_links.shown(app, row)
         if app is not None and found is not None and found != row.status:
-            with engine.begin() as conn:
+            with events.transaction(engine) as conn:
                 forge_links.set_status(conn, row.id, found)
                 if found != "active":
                     wakeups.forget_token_everywhere(conn, app, row.installation_id)
@@ -169,7 +169,7 @@ def list_links(request: Request, caller: AnyCaller) -> JSONResponse:
 @router.delete("/me/forge/github/links/{link_id}")
 def delete_link(link_id: str, request: Request, caller: AnyCaller) -> Response:
     human_id, _ = _human(caller)
-    with engine_of(request).begin() as conn:
+    with events.transaction(engine_of(request)) as conn:  # forgets again after the commit
         if not forge_links.unlink(conn, settings_of(request).github_app, human_id, link_id):
             raise not_found()
     return Response(status_code=204)

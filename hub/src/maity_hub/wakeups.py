@@ -232,8 +232,12 @@ def announce_forget(conn: Connection, what: str) -> None:
 
 def forget_token_everywhere(conn: Connection, app: GitHubApp, installation_id: int) -> None:
     """This process at once, as a token that was removed must not be read with from here on, and
-    the others at commit. Only ids go through the channel, never a token."""
+    the others at commit; this one again after the caller's `events.transaction` committed,
+    as `forget_repository_everywhere` does. Only ids go through the channel, never a token."""
     github_app.forget_token(app.app_id, installation_id)
+    if events.in_transaction(conn):
+        app_id = app.app_id
+        events.on_commit(conn, lambda: github_app.forget_token(app_id, installation_id))
     announce_forget(conn, f"token:{app.app_id}:{installation_id}")
 
 
@@ -250,7 +254,13 @@ def _forget_reads(project_id: str | None) -> None:
 
 
 def forget_repository_everywhere(conn: Connection, project_id: str) -> None:
+    """At once, once more after the caller's `events.transaction` has committed
+    (`events.on_commit`), on every engine, and on PostgreSQL on every replica at commit. A
+    forget that changes what may be read runs in an `events.transaction`: an answer kept
+    before the commit never stands after it, also where no notice follows the commit."""
     _forget_reads(project_id)
+    if events.in_transaction(conn):
+        events.on_commit(conn, lambda: _forget_reads(project_id))
     announce_forget(conn, f"repository:{project_id}")
 
 
