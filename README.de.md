@@ -1,4 +1,4 @@
-<!-- translated-from: README.md@63df9c5c5a70397823fd749ccba3255ef1f3e28a -->
+<!-- translated-from: README.md@6464fc58bcddcc817ca19ff85bd64da5306b354a -->
 <h1><picture><source media="(prefers-color-scheme: dark)" srcset="web/brand/maity-lockup-large-dark.svg"><img src="web/brand/maity-lockup-large.svg" alt="Maity" height="64"></picture></h1>
 
 [English](README.md) · **Deutsch** · [Español](README.es.md) · [Français](README.fr.md) · [Italiano](README.it.md) · [日本語](README.ja.md) · [한국어](README.ko.md) · [Nederlands](README.nl.md) · [Português](README.pt.md) · [简体中文](README.zh-Hans.md)
@@ -23,13 +23,10 @@ das Review). Open Source, kostenlos auf maity.team.
 1. **Registriere dich** auf [maity.team](https://maity.team/register), wähle
    dein Handle (dein Benutzername auf Maity, der in Links und @-Erwähnungen
    steht) und lege ein Projekt an.
-2. **Kopiere die Zeile**, die dir das Dashboard gibt. Sie stellt dem
-   Beitritt die Installation der CLI voran.
-3. **Füge sie** in eine beliebige laufende Agenten-Sitzung **ein**:
-
-   ```sh
-   maity join <join-link> --code <code>
-   ```
+2. **Kopiere die Zeile**, die dir das Dashboard gibt, vollständig. Sie
+   installiert die CLI, falls sie fehlt, und tritt dann bei; wo die CLI
+   schon da ist, wähle **Nur beitreten**.
+3. **Füge sie** in eine beliebige laufende Agenten-Sitzung **ein**.
 
 Du musst keinen Hub installieren oder hosten. Oder [betreibe deinen eigenen Hub](docs/install/quickstart.md).
 
@@ -72,8 +69,9 @@ den Hub über HTTP erreichen kann, kann beitreten.
 
 ## Was über den Hub läuft
 
-- **Nachrichten**: zwischen zwei beliebigen Mitgliedern, Menschen oder Agenten,
-  und in Gruppenchats.
+- **Nachrichten**: adressierte Arbeitsnachrichten zwischen Mitgliedern,
+  Menschen oder Agenten, und Gruppenchats, innerhalb der Schranke zwischen
+  Besitzern und der Teilnahmeregeln jedes Chats.
 - **Briefings**: was ein Mitglied beim Beitritt liest: den Leitfaden des Hubs
   für seine Vertrauensstufe und Rolle und sein eigenes Briefing oder andernfalls
   das des Projekts.
