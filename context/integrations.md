@@ -97,8 +97,8 @@ instance grows.
 **Id:** 40057878-5f35-44fa-8b67-2e1820b59d38
 **Type:** decision
 **Status:** active
-**Evidence:** confirmed
-**Source:** the lead's rulings of 2026-11-23 on the plan for card tsk-2m5jbwemb21x (its questions 1 to 8, each as the plan recommended); the owner adopted the contract change on 2026-11-23 (request req-519akvezjj8z); the review round of 2026-11-23 on the contract pull request (staleness bound, `not_admin` links serving nothing, the replacement of a `not_admin` link, the re-check's order and cadence); the security delta round A2230 and the contract delta round A2231 of 2026-11-23 on that pull request and the lead's ruling of 2026-11-23 on them (one cadence counted from every check, a link of either status checked before a replacement; only a definite membership answer changes a link's status, one reason for every link that serves nothing, a link checked again right before another owner's link replaces it); the lead's rulings of 2026-11-23 on the contract amendment (a membership in another organisation is a definite answer on a re-check as at linking; a replacement checks the existing link at once, the one exception to the cadence); contract `docs/api.md` §11.4, §6.26
+**Evidence:** inferred
+**Source:** the lead's rulings of 2026-11-23 on the plan for card tsk-2m5jbwemb21x (its questions 1 to 8, each as the plan recommended); the owner adopted the contract change on 2026-11-23 (request req-519akvezjj8z); the review round of 2026-11-23 on the contract pull request (staleness bound, `not_admin` links serving nothing, the replacement of a `not_admin` link, the re-check's order and cadence); the security delta round A2230 and the contract delta round A2231 of 2026-11-23 on that pull request and the lead's ruling of 2026-11-23 on them (one cadence counted from every check, a link of either status checked before a replacement; only a definite membership answer changes a link's status, one reason for every link that serves nothing, a link checked again right before another owner's link replaces it); the lead's rulings of 2026-11-23 on the contract amendment (a membership in another organisation is a definite answer on a re-check as at linking; a replacement checks the existing link at once, the one exception to the cadence); the pre-review A2500 of 2026-11-24 on that pull request and the contract fix round on it (suspended and removed links, the confirmation, the fallback while a check has no answer, the replacement's records and `checked_at`); contract `docs/api.md` §11.4, §11.5, §6.26
 **Verification:** uncorroborated — contract only, not built yet: the hub still refuses an organisation installation (`hub/src/maity_hub/forge_links.py`, `organisation_installation`)
 **See:** integrations.md#the-hub-reads-a-repository-with-its-owners-grant-a-github-app-installation-first-the-owners-token-second-the-instance-token-only-for-an-operators-project-with-a-public-repository — 4e15dcbb-9bb4-4c14-9193-9aa2b2d3f0f3 — as of 2026-11-23
 **See:** projects.md#organisations-are-a-second-kind-of-namespace-owner-beside-humans-in-the-same-ownerslug-namespace-their-owners-own-every-project-admins-and-members-only-what-they-are-added-to — 33f520b9-5aaa-4aed-96f4-e90bf3749c56 — as of 2026-11-23
@@ -123,13 +123,14 @@ organisation login and id), the forge user by the kept id (current
 login), then that user's membership, whose user id must be the kept
 one. A link is checked at most once every 10 minutes, counted from its
 last check whatever came of it, for every caller but one: the source
-choice, a repository's confirmation and the forge settings listing
-(`GET /me/forge`) take it as it stands, and only another owner's attempt
-to replace it checks it at once. A success less than
+choice and the forge settings listing (`GET /me/forge`) take it as it
+stands, and only another owner's attempt to replace it checks it at
+once. A repository's confirmation makes no check and no forge call. A success less than
 10 minutes old serves without a check; a last check 10 minutes old or
 older is made again first; a check less than 10 minutes old that did
 not succeed is waited out without a call, and the link serves nothing
-meanwhile. A link's `checked_at` is its last check, whatever came of it.
+meanwhile. A link's `checked_at` is its last check, whatever came of it
+(a replacement's check without a definite answer excepted, below).
 Only a definite membership answer changes a link's status: a
 membership that is not an active owner's, one of another user id, one
 in another organisation than the installation's (its login now belongs
@@ -152,8 +153,8 @@ specific reason (`installation_not_admin`, `installation_suspended`,
 answer). Up to 10 minutes after an owner loses the role, their link may
 still serve; that window is accepted. One human holds an installation's
 link at a time, but another owner's link may replace it: a link is
-checked again right before another owner's link replaces it, `active`
-or `not_admin`, at once however recent its last check. The replacement goes ahead only on a
+checked again right before another owner's link replaces it, `active`,
+`not_admin` or `suspended`, at once however recent its last check. The replacement goes ahead only on a
 definite answer that its human is no active owner; a success keeps the
 link (`installation_linked`), and no definite answer refuses with
 `forge_unavailable`. The replacement stands if the former owner
@@ -161,6 +162,28 @@ becomes an owner again. The App asks for the
 organisation permission Members, read-only; nothing else turns on by
 itself, so there is no instance switch. Tokens stay per installation,
 not per repository.
+
+Evidence: everything up to the lead's rulings on the contract amendment
+is confirmed (Source); what follows from the pre-review A2500 (this
+paragraph, its reason below and the four rejected alternatives that
+name A2500) is the author's resolution in the contract fix round, not
+yet ruled on, so the entry is inferred until it is.
+
+From the contract fix round on the pre-review A2500: a `suspended`
+link leaves that status only through the owner check, never on a mint
+that succeeds again (a success under 10 minutes old counts as for an
+`active` link), and meets a replacement like the others; a `removed`
+link is replaced without a check. A repository's confirmation is no
+caller of the check. A link that serves nothing is not the project's
+source: the choice goes on to the confirming owner's token and the
+instance token also while the check has no answer, and only a forge
+that does not answer the choice's own installation lookup stops it
+before them. When nothing covers, the confirming human gets
+`probe_unavailable` with the last observation on the probe, and
+`ktw_unavailable` without the last export from the Keep the Why views.
+A replacement's definite failure writes the `not_admin` record (unless
+the link had it already) before `unlinked`; a replacement's check
+without a definite answer changes nothing, `checked_at` included.
 
 **Reason:** teams keep their repositories on GitHub organisations, and
 the only way to read them so far was a fine-grained token per person.
@@ -194,6 +217,24 @@ it as linking does. One reason for
 every link that serves nothing gives other project admins what they
 need to act (the link serves nothing) without telling one cause from
 another.
+The fix round's resolutions follow from the same rules (the author's,
+not yet ruled on). A suspension says nothing about the human, so its
+end cannot stand in for the owner check; taking the suspended link as
+it stands keeps the one cadence and the one exception, since a success
+under 10 minutes old is what an `active` link serves on anyway. A
+confirmation reads nothing from the forge as built, and the source
+choice it restarts already runs the check, so naming it a caller only
+promised calls nobody makes. The other sources are the confirming
+owner's own grants and the operator's, so a link that serves nothing
+taking them down with it would stop reads a working grant covers, while
+a forge that is down fails those reads by itself. The views' exports
+are never stored, so none read through the link may be shown after the
+link stops serving, while the probe's observations are records the
+reader already sees. The replaced human's `not_admin` record is the
+only `security` item of a replacement, since `unlinked` notifies
+nothing. A replacement's check is outside the cadence; counting its
+non-answer would let an owner who passes the owner check stop another
+owner's working link for 10 minutes.
 
 Open, without a ruling yet: narrowing the read tokens' permissions (a
 token without Members, for example, for the reads that do not need it)
@@ -254,6 +295,21 @@ narrowing of question 8 below.
 - Linking the installation to a Maity organisation instead of a person:
   it would make an organisation a grant holder, which the organisation
   entry linked above rules out.
+- Setting a `suspended` organisation link `active` on the first mint
+  that succeeds, as a user account's link is (A2500): an owner who lost
+  the role during the suspension would get the link back unchecked.
+  Checking it at once on that mint instead: a second exception to the
+  cadence, for no gain within the accepted 10-minute window.
+- Specifying forge calls and refusals for a repository's confirmation
+  (the other way A2500 offered): the confirmation reads nothing from
+  the forge today, and the next source choice runs the check anyway.
+- Answering `probe_unavailable` at once, without trying the owner's
+  token and the instance token, while an organisation link's check has
+  no answer (A2500): reads a working grant covers would stop with the
+  membership read.
+- Counting a replacement's check without a definite answer as the
+  link's last check (A2500): it would start the existing link's
+  10-minute wait and stop it serving on a recent success.
 
 ## The instance token serves only the operator's own namespaces; every other project connects its repository itself
 
