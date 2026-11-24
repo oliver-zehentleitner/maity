@@ -141,7 +141,10 @@ def is_owner(membership: dict[str, Any] | None, account_id: Any, user_id: Any = 
     """Whether a membership the forge answered makes its user an active owner of the
     organisation with this id: `state: active`, `role: admin` (the forge's name for an owner),
     `organization.id` the account's id, and, where given, `user.id` the linking user's id. No
-    membership (a `404`) is a definite "no" too."""
+    membership (a `404`) is a definite "no" too. An id to compare with that is no number is no
+    answer (`ForgeUnavailableError`): two missing ids must never match, nor make a "no"."""
+    if not github_app.is_id(account_id) or not (user_id is None or github_app.is_id(user_id)):
+        raise forge.ForgeUnavailableError("an owner check with no id to compare with")
     if membership is None:
         return False
     return (
@@ -174,7 +177,7 @@ def verify(app: GitHubApp, installation_id: int, code: str) -> dict[str, Any]:
         # `ForgeUnavailableError` from here: no answer, never a "no".
         started = clock.now()
         user = app.user_of_code(code, account["login"])
-        if not is_owner(user["membership"], account["id"]):
+        if not is_owner(user["membership"], account["id"], user["id"]):
             raise LinkError("not_organisation_admin")
         return {**found, "forge_user_id": user["id"], "owner_checked_at": started}
     raise LinkError("organisation_installation")
@@ -392,17 +395,21 @@ def _steps(app: GitHubApp, link: Link) -> Check:
         return Check("suspended", login)
     if login is None or link.forge_user_id is None:
         return Check(None, login)
+    if account.get("id") != link.account_id:
+        # The installation's account is not the one linked: no answer about the human, so no
+        # status changes on it (and no membership read for an account the link is not on).
+        return Check(None, login)
     try:
         token = app.token(link.installation_id, keep=serves(link))
         username = app.user_login(token, link.forge_user_id)
         if username is None:
             return Check(NOT_ADMIN, login)  # the user by id is gone: a `404`, as at linking
         membership = app.org_membership(token, login, username)
+        owner = is_owner(membership, link.account_id, link.forge_user_id)
     except github_app.InstallationGoneError as gone:
         return Check(gone.state, login)
     except forge.ForgeUnavailableError:
         return Check(None, login)
-    owner = is_owner(membership, account.get("id"), link.forge_user_id)
     return Check(OK if owner else NOT_ADMIN, login)
 
 
