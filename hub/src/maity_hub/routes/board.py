@@ -14,7 +14,19 @@ from fastapi.responses import JSONResponse
 from pydantic import Field
 from sqlalchemy import Connection, and_, insert, or_, select, update
 
-from maity_hub import access, cards, clock, events, forge, idempotency, mentions, namespace, paging
+from maity_hub import (
+    access,
+    cards,
+    clock,
+    errors,
+    events,
+    forge,
+    forge_access,
+    idempotency,
+    mentions,
+    namespace,
+    paging,
+)
 from maity_hub import tables as t
 from maity_hub.access import Membership, membership
 from maity_hub.auth import credentials, leaks
@@ -791,16 +803,16 @@ def import_issue(slug: str, body: ImportIn, request: Request, caller: AnyCaller)
         raise invalid({"issue_url": error.code}) from None
     if not links.is_own_repository(ref, project.repository_url):
         raise invalid({"issue_url": "foreign_repository"})  # the hub reads only its own
+    confirmer = forge_access.is_confirmer(caller, project)
     if not fg.configured_for(project.repository_url):
-        raise probe_not_configured(
-            forge.unread_reason(fg, project.repository_url) if admin else None
-        )
+        reason = forge.unread_reason(fg, project.repository_url)
+        raise errors.forge_refusal(reason, admin=admin, confirmer=confirmer)
     at = clock.rfc3339(clock.now())
     try:
         assert ref.number is not None  # an issue's URL names its number
         issue = fg.issue(ref.repository, ref.number)
     except forge.NotCoveredError as error:
-        raise probe_not_configured(error.reason if admin else None) from None
+        raise errors.forge_refusal(error.reason, admin=admin, confirmer=confirmer) from None
     except forge.ForgeUnavailableError as error:
         # A spent budget says when the forge is read again (§11.4).
         details = {"retry_at": clock.rfc3339(error.retry_at)} if error.retry_at else None

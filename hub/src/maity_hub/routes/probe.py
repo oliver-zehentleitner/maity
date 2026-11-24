@@ -7,12 +7,13 @@ from typing import Any
 
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse
+from sqlalchemy import Engine
 
-from maity_hub import clock, forge, probe
+from maity_hub import clock, errors, forge, forge_access, probe
 from maity_hub.access import membership
 from maity_hub.db import read_transaction
 from maity_hub.deps import AnyCaller, engine_of, reader_of
-from maity_hub.errors import ApiError, invalid, probe_not_configured
+from maity_hub.errors import ApiError, invalid
 from maity_hub.namespace import ProjectRoute
 
 router = APIRouter(route_class=ProjectRoute)
@@ -43,12 +44,22 @@ def read_probe(
         if not SHA.fullmatch(commit):
             raise invalid({"commit": "not_a_sha"}, "a commit is named by its full 40 hex sha")
         commit = commit.lower()
+    wanted = [("pr", str(pr) if pr else None), ("branch", branch), ("tag", tag)]
+    wanted.append(("commit", commit))
+    admin = mine.may("project:admin")
+    confirmer = forge_access.is_confirmer(caller, project)
+
+    def refusal(reason: str, kind: str, ref: str) -> ApiError:
+        """§11.4 by reader; `probe_unavailable` carries `details.last` as every one here does."""
+        unanswered = confirmer and reason == errors.ORG_UNANSWERED
+        details = _last(engine, project, kind, ref) if unanswered else None
+        return errors.forge_refusal(reason, admin=admin, confirmer=confirmer, details=details)
+
     fg = reader_of(request).for_project(project.id)
     if not fg.configured_for(project.repository_url):
         reason = forge.unread_reason(fg, project.repository_url)
-        raise probe_not_configured(reason if mine.may("project:admin") else None)
-    wanted = [("pr", str(pr) if pr else None), ("branch", branch), ("tag", tag)]
-    wanted.append(("commit", commit))
+        first_kind, first_ref = next((k, r) for k, r in wanted if r is not None)
+        raise refusal(reason, first_kind, first_ref or "")
     shown: dict[str, Any] = {"pr": None, "branch": None, "tag": None, "commit": None}
     observations: list[probe.Observation | probe.CommitObservation] = []
     for kind, ref in wanted:
@@ -65,22 +76,9 @@ def read_probe(
                     engine, fg, project, kind, ref, max_age, floor=probe.FORCED_FLOOR
                 )
         except forge.NotCoveredError as error:
-            raise probe_not_configured(
-                error.reason if mine.may("project:admin") else None
-            ) from None
+            raise refusal(error.reason, kind, ref) from None
         except forge.ForgeUnavailableError as error:
-            details: dict[str, Any] = {}
-            # The last complete observation in the shape the answer has (§11).
-            if kind == "commit":
-                last_commit = probe.last_commit(engine, project, ref)
-                if last_commit is not None:
-                    at = clock.rfc3339(last_commit.observed_at)
-                    details["last"] = {**last_commit.shown(), "observed_at": at}
-            else:
-                stored = probe.last(engine, project.id, kind, ref)
-                if stored is not None:
-                    at = clock.rfc3339(stored.observed_at)
-                    details["last"] = {**probe.shown(project, kind, stored), "observed_at": at}
+            details = _last(engine, project, kind, ref)
             # A spent budget says when the forge is read again (§11.4).
             if error.retry_at is not None:
                 details["retry_at"] = clock.rfc3339(error.retry_at)
@@ -101,3 +99,20 @@ def read_probe(
             **shown,
         }
     )
+
+
+def _last(engine: Engine, project: Any, kind: str, ref: str) -> dict[str, Any]:
+    """`details.last` of a `probe_unavailable`: the last complete observation in the shape the
+    answer has (§11), when there is one."""
+    details: dict[str, Any] = {}
+    if kind == "commit":
+        last_commit = probe.last_commit(engine, project, ref)
+        if last_commit is not None:
+            at = clock.rfc3339(last_commit.observed_at)
+            details["last"] = {**last_commit.shown(), "observed_at": at}
+    else:
+        stored = probe.last(engine, project.id, kind, ref)
+        if stored is not None:
+            at = clock.rfc3339(stored.observed_at)
+            details["last"] = {**probe.shown(project, kind, stored), "observed_at": at}
+    return details
