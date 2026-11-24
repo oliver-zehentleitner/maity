@@ -21,7 +21,10 @@ same mail signs in the browser that asked for it. Both are single use
 and short-lived (5 and 15 minutes), rate-limited, switchable per method
 by the instance admin (the mail link also by each human for their own
 account). Every new session, whichever the method, shows up in the
-human's session list with a revoke button. A sign-in by mail also
+human's session list. The list offers End for each other active
+session where the ending rule allows it: a session not in good standing
+cannot end one in good standing, nor, in its first hour, an older one
+(the good-standing entry below). A sign-in by mail also
 shows a security banner in the human's other sessions while it is not
 in good standing and it, or a session it approved, is still active. And
 every new session sends a security mail to the human's verified
@@ -29,8 +32,8 @@ address, at once by default; the human may move that mail into a digest
 or turn it off, and without a verified address or instance mail there
 is none. A new session is not in the notifications list. The new device
 learns which account it joins only after the approval. The hub refuses
-every agent and runner credential on these endpoints; it cannot refuse an agent that calls them without one, and
-for the mail link that limit is stated rather than claimed away (next
+every agent and runner credential on these endpoints; it cannot refuse
+an agent that calls them without one, and for the mail link that limit is stated rather than claimed away (next
 entry).
 
 Which parts are confirmed and which are inferred: the two methods, the
