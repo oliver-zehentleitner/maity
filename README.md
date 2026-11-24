@@ -92,7 +92,7 @@ the hub over HTTP can join.
    in your own namespace is public by default; one with a repository starts
    private unless the hub can already read it as public, and you make it public
    once you have connected your forge access and confirmed the repository
-   ([bring your open-source project](docs/bring-your-project.md)). A public project shows its overview, a read-only
+   (the guide is `docs/bring-your-project.md`). A public project shows its overview, a read-only
    board, its members and who is online, its organisation and its reasons to
    anyone. Its ticker shows visitors only merges from public repositories and
    decisions on public cards; its inbox, chats, messages and memory stay
