@@ -808,9 +808,15 @@ def _is_member(conn: Connection, project_id: str, principal: str) -> bool:
     return True
 
 
-def _export(project: Any, request: Request) -> dict[str, Any] | None:
-    """From the cache only: building a view never waits on a read (§11.3)."""
-    return ktw.export_for_view(reader_of(request), project.id, project.repository_url)
+def _export(conn: Connection, project: Any, request: Request) -> dict[str, Any] | None:
+    """From the cache only: building a view never waits on a read (§11.3). None while the
+    grants hold a link on a forge organisation that serves nothing as stored: an export it read
+    is answered nowhere once it stops serving (§11.4), and the view asks no forge to find out
+    whether the export rests on it (review A2573 F1, A2574 P2-3)."""
+    export = ktw.export_for_view(reader_of(request), project.id, project.repository_url)
+    if export is not None and forge_access.org_link_serves_nothing(conn, project):
+        return None
+    return export
 
 
 class _Unread:
@@ -863,7 +869,7 @@ def _view(
         settings_of(request),
         owner,
         shown,
-        _export(project, request),
+        _export(conn, project, request),
         aliases,
         _stored(conn, project, request, mine),
         confirmed_by_of(conn, [project])[project.id],
@@ -960,7 +966,7 @@ def list_projects(request: Request, caller: AnyCaller) -> JSONResponse:
                     settings,
                     names[r.id].split("/")[0],
                     shown[r.id],
-                    _export(r, request),
+                    _export(conn, r, request),
                     aliases[r.id],
                     _stored(conn, r, request),
                     confirmed[r.id],

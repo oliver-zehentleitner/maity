@@ -1186,6 +1186,125 @@ def test_a_link_that_leaves_active_drops_the_cached_export(
     assert ktw.CACHE.cached(project_id) is None
 
 
+VIEW = "/projects/maintainer/maity"
+
+
+def _cached_member(engine: Engine) -> str:
+    """An export in the cache naming one member, as a read through the link left it, with no
+    grant's end on it: what the view and §11.3 do must not rest on that mark alone."""
+    project_id = _project_id(engine)
+    member = ktw.Member(path=".", name="secret-plan", id="secret-id")
+    snapshot = ktw.Snapshot(clock.rfc3339(clock.now()), [member], False)
+    with ktw.CACHE.guard:
+        ktw.CACHE.entries[project_id] = ktw._Entry(snapshot, ktw.now(), URL)
+    return project_id
+
+
+@pytest.mark.parametrize("state", ["not_admin", "stale", "suspended"])
+def test_the_project_view_shows_no_export_while_such_a_link_serves_nothing(
+    owner: flow.Human,
+    app: FakeApp,
+    repo: FakeForge,
+    migrated: Engine,
+    make_client: ClientFactory,
+    state: str,
+) -> None:
+    """A2573 F1: the project view and the list read the same cache as §11.3, and ask the
+    stored link, never the forge, whether it serves."""
+    ok = timedelta(minutes=12) if state == "stale" else timedelta(minutes=1)
+    _org_link(migrated, owner.id, checked=timedelta(minutes=1), ok=ok)
+    _confirm(owner)
+    _cached_member(migrated)
+    if state != "stale":
+        with migrated.begin() as conn:
+            conn.execute(update(t.forge_link).values(status=state))
+    _admin, guest = _readers(owner, make_client, migrated)
+    for who in (owner, guest):
+        assert who.get(VIEW).json()["keep_the_why_export"] is None
+    listed = guest.get("/projects").json()["items"]
+    assert not any(item.get("keep_the_why_export") for item in listed)
+
+
+def test_the_project_view_shows_the_export_while_such_a_link_serves(
+    owner: flow.Human, app: FakeApp, repo: FakeForge, migrated: Engine
+) -> None:
+    _org_link(migrated, owner.id, checked=timedelta(minutes=1), ok=timedelta(minutes=1))
+    _confirm(owner)
+    _cached_member(migrated)
+    export = owner.get(VIEW).json()["keep_the_why_export"]
+    assert export["members"][0]["name"] == "secret-plan"
+
+
+def test_the_views_refresh_keeps_no_member_of_such_a_link_after_not_admin(
+    owner: flow.Human,
+    app: FakeApp,
+    repo: FakeForge,
+    migrated: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A2573 F1: the refresh a stale entry schedules reads with a refused reader, and keeps
+    none of the members the link read."""
+    _org_link(migrated, owner.id, checked=timedelta(minutes=1), ok=timedelta(minutes=1))
+    _confirm(owner)
+    project_id = _cached_member(migrated)
+    with migrated.begin() as conn:
+        conn.execute(update(t.forge_link).values(status="not_admin"))
+    later: list[Any] = []
+    monkeypatch.setattr(
+        ktw,
+        "_refresh_later",
+        lambda reader, pid, url, _s: ktw._refresh_in_background(reader, pid, url, later.append),
+    )
+    with ktw.CACHE.guard:
+        ktw.CACHE.entries[project_id].at -= 660
+    owner.get(VIEW)
+    assert len(later) == 1
+    later[0]()  # as the pool would, after the request
+    entry = ktw.CACHE.cached(project_id)
+    assert entry is not None and entry.snapshot is not None
+    assert entry.snapshot.members == []
+
+
+def test_the_why_cache_is_not_answered_when_the_forge_no_longer_names_the_installation(
+    owner: flow.Human,
+    app: FakeApp,
+    repo: FakeForge,
+    migrated: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A2573 F2: the forge names no installation for the repository (the App uninstalled, the
+    repository out of its selection): the choice never reaches the link and refuses
+    `no_grant`, answered by reader, never the export the link read, nor its members as
+    `details.last` once the entry is old."""
+    _org_link(migrated, owner.id, checked=timedelta(minutes=1), ok=timedelta(minutes=12))
+    _confirm(owner)
+    project_id = _cached_member(migrated)
+    monkeypatch.setattr(github_app.GitHubApp, "installation_of", lambda _a, _r: None)
+    no_grant = (409, "probe_not_configured", {"reason": "no_grant"})
+    assert _error(owner.get(WHY)) == no_grant
+    with ktw.CACHE.guard:
+        ktw.CACHE.entries[project_id].at -= 660
+    assert _error(owner.get(WHY)) == no_grant
+
+
+def test_the_probe_cache_is_answered_to_no_reader_after_the_link_is_unlinked(
+    owner: flow.Human,
+    app: FakeApp,
+    repo: FakeForge,
+    migrated: Engine,
+    make_client: ClientFactory,
+) -> None:
+    """A2573 F3, for a guest too: the mapping, never the observation."""
+    link_id = _org_link(migrated, owner.id, checked=timedelta(minutes=1), ok=timedelta(minutes=1))
+    _confirm(owner)
+    _operators(owner)
+    assert owner.get(PROBE).status_code == 200
+    assert owner.delete(f"/me/forge/github/links/{link_id}").status_code == 204
+    _admin, guest = _readers(owner, make_client, migrated)
+    _operators(guest)
+    assert _error(guest.get(PROBE)) == (409, "probe_not_configured", {})
+
+
 def test_step_one_on_another_account_changes_neither_status_nor_login(
     owner: flow.Human, app: FakeApp, repo: FakeForge, migrated: Engine
 ) -> None:

@@ -92,7 +92,12 @@ def _org_link_serves(
     a visibility the operator's token cannot read after such a link (`ktw_unavailable`,
     `forge_unavailable`, as §11.5 answers a forge that does not answer). Every other state is
     served as before, from the cache. The reader chosen here is the one the cache reads with,
-    so the call chooses once."""
+    so the call chooses once.
+
+    Where the grants hold such a link (`org_grants`) but the choice did not reach it — the
+    forge no longer names its installation for the repository, or it was unlinked or replaced
+    meanwhile on another replica — a refusal is answered by reader too, and the operator's
+    token is asked first as above, never the cache (review A2573 F2, A2574 P2-2)."""
     if forge.kind_of(project.repository_url) != "github":
         return base
     fg = base.for_project(project.id)
@@ -101,7 +106,12 @@ def _org_link_serves(
         # the repository is unknown, and an export it read must not be answered meanwhile.
         raise ktw_unavailable("forge_unavailable")
     reason = fg.refused
-    if reason is None and fg.granted is None and fg.owner_reason in errors.ORG_REASONS:
+    org = fg.owner_reason in errors.ORG_REASONS or fg.org_grants
+    if reason is not None and fg.org_grants:
+        confirmer = forge_access.is_confirmer(caller, project)
+        admin = mine.may("project:admin")
+        raise errors.forge_refusal(reason, admin=admin, confirmer=confirmer, views=True)
+    if reason is None and fg.granted is None and org:
         try:  # the operator's token after such a link: only while the repository is public
             fg.require_covered(forge.repository_of(project.repository_url))
         except forge.NotCoveredError as error:

@@ -124,6 +124,8 @@ class ForgeAccess:
             organisation = any(link.organisation for link in facts.links)
             unanswered = errors.ORG_UNANSWERED if organisation else None
             return forge.Forge(None, project_id=project_id, owner_reason=unanswered)
+        if any(link.organisation for link in facts.links):
+            chosen = dataclasses.replace(chosen, org_grants=True)
         with self._lock:
             entry = (time.monotonic(), key, chosen, until)
             bounded.put(self._chosen, project_id, entry, CHOSEN_KEPT)
@@ -412,6 +414,27 @@ def is_confirmer(caller: Any, project: Any) -> bool:
         and project.repository_confirmed_by is not None
         and getattr(caller, "principal_id", None) == project.repository_confirmed_by
     )
+
+
+def org_link_serves_nothing(conn: Connection, project: Any) -> bool:
+    """Whether the grants that count for the project (§11.4: the confirming owner's, the
+    namespace owner's for a project of a human) hold a link on a forge organisation that serves
+    nothing as stored: `not_admin`, `suspended`, `removed`, or its success 10 minutes old. Read
+    from the database alone, never the forge, for a view that must not wait on a read; it
+    cannot tell which installation the repository rests on, so any such link counts."""
+    grants = project.repository_confirmed_by or (
+        project.owner_id if project.owner_org_id is None else ""
+    )
+    if not grants:
+        return False
+    links = conn.execute(
+        select(t.forge_link).where(
+            t.forge_link.c.human_id == grants,
+            t.forge_link.c.account_type == forge_links.ORGANISATION,
+        )
+    )
+    now = clock.now()
+    return any(not forge_links.serves(link, now) for link in links)
 
 
 def instance_serves(conn: Connection, fg: forge.Forge, owner_id: str) -> bool:

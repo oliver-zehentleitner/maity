@@ -114,7 +114,7 @@ def test_forge_access_keeps_the_newest_choices_and_sources(
     monkeypatch.setattr(forge_access, "VIA_KEPT", 3)
     monkeypatch.setattr(forge_access, "_last_via", OrderedDict())
     access = forge_access.ForgeAccess(None, None, None)  # type: ignore[arg-type]
-    facts = SimpleNamespace(key=lambda _base: ("same",))
+    facts = SimpleNamespace(key=lambda _base: ("same",), links=())
     monkeypatch.setattr(access, "_facts", lambda _p: facts)
     # `_choose` answers the reader and until when it may be kept (None: KEEP_SECONDS only)
     monkeypatch.setattr(access, "_choose", lambda p, _f, _b: (forge.Forge("t", project_id=p), None))
