@@ -5557,7 +5557,8 @@ def outsider_add_agent_case(run: Run, page: Page, answer) -> None:
     and the head's slot stays empty and silent: no button, no reason in words, no join panel, no
     console error (watch_page). The button itself, the reasons
     `limit` and `blocked` and Claim for are the smoke test's, against the fixture hub. The empty
-    head at 1280 and 390 px in both schemes."""
+    head at 1280 and 390 px in both schemes; then a reason put in the slot by hand, wrapping inside
+    its block at 620, 390 and 1590 px."""
     run.step("outsider: Add your agent stays out while the hub's outsiders' joins are off (members_only)")
     assert answer.status == 200, f"GET …/contribution answered {answer.status}: {answer.text()}"
     body = answer.json()
@@ -5579,6 +5580,35 @@ def outsider_add_agent_case(run: Run, page: Page, answer) -> None:
             wide = page.evaluate("document.documentElement.scrollWidth - document.documentElement.clientWidth")
             assert wide <= 0, f"the outsider's empty head slot at {width}x{height} {scheme}: {wide} px wider than the window"
             run.shot(page, f"outsider-add-agent-off-{width}-{scheme}")
+    # A reason in words wraps inside the block beside the tabs (tsk-dradpje67ak1): the hub sends
+    # none here, so the slot is given the longest one the module draws, and at a narrow desktop
+    # width, a phone and the screenshot's width the page is no wider than the window and the slot
+    # stays inside its block. Taken out again after.
+    page.evaluate("""() => {
+      const slot = document.getElementById("outsider-actions");
+      const note = document.createElement("span");
+      note.className = "outsider-reason";
+      note.setAttribute("role", "note");
+      note.textContent = window.Maity.t("outsider.reason.limit", { max: 3 });
+      slot.appendChild(note);
+    }""")
+    for width, height in ((620, 900), (390, 844), (1590, 900)):
+        page.set_viewport_size({"width": width, "height": height})
+        settle(page, NOT_WIDER, None)
+        where = f"a reason in the outsider's slot at {width}x{height}"
+        expect(page.locator("header .project-state #outsider-actions .outsider-reason")).to_be_visible()
+        wide = page.evaluate("document.documentElement.scrollWidth - document.documentElement.clientWidth")
+        assert wide <= 0, f"{where}: {wide} px wider than the window"
+        inside = page.evaluate("""() => {
+          const block = document.querySelector("header .project-state").getBoundingClientRect();
+          const slot = document.getElementById("outsider-actions").getBoundingClientRect();
+          return slot.left >= block.left - 1 && slot.right <= block.right + 1;
+        }""")
+        assert inside, f"{where}: the slot reaches out of its block"
+        tabs = page.locator("header .views-row nav.views").bounding_box()
+        assert tabs and tabs["width"] >= 150, f"{where}: the tabs are left {tabs}"
+        run.shot(page, f"outsider-reason-{width}")
+    page.evaluate("() => document.querySelector('#outsider-actions .outsider-reason')?.remove()")
     page.set_viewport_size({"width": 1280, "height": 900})
     page.emulate_media(color_scheme="light")
     # Silent so far: no console or page error, and nothing said of the read; the round's own

@@ -450,7 +450,7 @@ nav.views a:focus-visible { outline-offset: -2px; }
 .project-links { min-width: min(9rem, 100%); overflow-x: auto; scrollbar-width: none; }
 .project-links::-webkit-scrollbar { display: none; }
 .project-links .header-link { flex: none; white-space: nowrap; }
-.project-state > :not(.project-links) { flex: none; white-space: nowrap; }
+.project-state > :not(.project-links):not(.outsider-actions) { flex: none; white-space: nowrap; }
 /* The project's repository and Keep the Why dashboard beside its state (js/app.js projectLinks). */
 .header-link { display: inline-flex; align-items: center; gap: 4px; min-height: 28px; padding: 2px 8px; border: 1px solid var(--border);
   border-radius: 999px; color: var(--text); text-decoration: none; font-size: 0.85rem; }
@@ -501,12 +501,13 @@ nav.views a:focus-visible { outline-offset: -2px; }
 .tabs-menu-box .outsider-mark { margin-inline-start: 6px; padding: 0 6px; border: 1px dashed var(--border); border-radius: 999px;
   color: var(--muted); font-size: 0.8rem; }
 /* The outsider's actions in the project's head (js/app.js, `#outsider-actions`): a slot that takes no
-   room while nothing is drawn into it. */
-.project-state .outsider-actions { display: inline-flex; align-items: center; gap: 6px; }
+   room while nothing is drawn into it. It shrinks and wraps, so a reason in words wraps inside the block
+   instead of widening the row past the window (tsk-dradpje67ak1); the button keeps its words whole. */
+.project-state .outsider-actions { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; flex: 0 1 auto; min-width: 0; max-width: 100%; }
 .project-state .outsider-actions:empty { display: none; }
 /* What is drawn into it (js/outsider-actions.js): Add your agent, or why it is missing; the join
    panel under the head's row. */
-.outsider-actions .outsider-add-agent { min-height: 28px; padding: 2px 10px; font-size: 0.85rem; }
+.outsider-actions .outsider-add-agent { flex: none; white-space: nowrap; min-height: 28px; padding: 2px 10px; font-size: 0.85rem; }
 .outsider-actions .outsider-reason { color: var(--muted); font-size: 0.85rem; }
 .outsider-join { margin-top: 8px; }
 .outsider-join:empty { display: none; }
