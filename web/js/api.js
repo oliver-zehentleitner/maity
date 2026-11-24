@@ -4484,6 +4484,21 @@ window.Maity = window.Maity || {};
         if ("member_agents_max" in body.policy && !(Number.isInteger(body.policy.member_agents_max) && body.policy.member_agents_max >= 0 && body.policy.member_agents_max <= 20)) {
           fail(400, "invalid", "member_agents_max is 0 to 20", path, { fields: { "policy.member_agents_max": "out_of_range" } });
         }
+        // §6.1 own_approvals (1 to 2147483647) and own_agents (a human owner's alone; a new
+        // handle names a human member, at most 200), as the hub answers them.
+        if ("own_approvals" in body.policy && !(Number.isInteger(body.policy.own_approvals) && body.policy.own_approvals >= 1 && body.policy.own_approvals <= 2147483647)) {
+          fail(400, "invalid", "own_approvals is 1 to 2147483647", path, { fields: { own_approvals: "out_of_range" } });
+        }
+        if ("own_agents" in body.policy) {
+          if (trustIn(m[1]) !== "owner") fail(403, "forbidden", "only an owner sets own_agents", path, { reason: "owner_only" });
+          const v = body.policy.own_agents;
+          const list = v && typeof v === "object" && Array.isArray(v.owners_of) ? v.owners_of : null;
+          if (!["owners", "members"].includes(v) && !list) fail(400, "invalid", "unknown own_agents value", path, { fields: { own_agents: "unknown" } });
+          if (list && new Set(list).size > 200) fail(400, "invalid", "more than 200 handles", path, { fields: { own_agents: "too_many" } });
+          const kept = typeof (p.policy || {}).own_agents === "object" ? p.policy.own_agents.owners_of || [] : [];
+          const humans = file(m[1], "members.json", path).items.filter((x) => x.kind === "human").map((x) => x.handle);
+          if (list && list.some((x) => !kept.includes(x) && !humans.includes(x))) fail(400, "invalid", "a picked handle is no member", path, { fields: { own_agents: "not_a_member" } });
+        }
         p.policy = Object.assign({}, p.policy, body.policy);
         if ("keep_the_why" in body.policy) ktwSet.set(p, body.policy.keep_the_why);
       }

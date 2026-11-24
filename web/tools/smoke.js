@@ -5478,6 +5478,54 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(aoLatePatches.length === 1 && JSON.stringify(aoLatePatches[0].policy.outside_roles) === JSON.stringify(["coder", "writer", "triage"]),
     "agent owners: a role that arrived later is sent too " + JSON.stringify(aoLatePatches[0]));
   win.Maity.api.patch = aoPatch; win.Maity.api.get = aoRolesGet;
+  // Approvals for outsiders' work (§6.1 own_approvals and own_agents, §2.3 "Own approvals").
+  // The fixture's own reviewers and testers: the maintainer, the admin agent-a and the reviewer.
+  await projectSettings("work");
+  const oaForm = () => main.querySelector("form.own-approvals-form");
+  const oaWarn = () => byId("own-approvals-warning");
+  expect(oaForm() && byId("own-approvals-number").value === "1" && byId("own-agents-select").value === "members"
+    && !("disabled" in byId("own-agents-select").attrs) && main.querySelector(".own-agents-picked").hidden && oaWarn().hidden,
+    "own approvals: 1 and every member's agents by default, the owner may change whose; no warning");
+  byId("own-approvals-number").value = "4"; byId("own-approvals-number").dispatch("input");
+  expect(!oaWarn().hidden && text(oaWarn()) === "4 is more than the 3 own reviewers and testers this project has: no work by outside agents could move to done.",
+    "own approvals: more than the project's own reviewers and testers is said in plain words " + text(oaWarn()));
+  byId("own-approvals-number").value = "3"; byId("own-approvals-number").dispatch("input");
+  expect(oaWarn().hidden, "own approvals: as many as there are is no warning");
+  byId("own-agents-select").value = "owners_of"; byId("own-agents-select").dispatch("change");
+  expect(!main.querySelector(".own-agents-picked").hidden && byId("own-agents-maintainer") && !byId("own-agents-maintainer").checked
+    && text(oaWarn()) === "3 is more than the 1 own reviewer or tester this project has: no work by outside agents could move to done.",
+    "own approvals: picked members, none picked: only the project's humans count " + text(oaWarn()));
+  const oaPatches = [];
+  const oaPatch = win.Maity.api.patch;
+  win.Maity.api.patch = (p, b) => { oaPatches.push(b); return Promise.reject(new win.Maity.api.ApiError("x", 400, p, "invalid", { fields: { own_agents: "not_a_member" } })); };
+  byId("own-agents-maintainer").checked = true; byId("own-agents-maintainer").dispatch("change");
+  byId("own-approvals-reason").value = "outsiders";
+  oaForm().dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+  expect(oaPatches.length === 1 && JSON.stringify(oaPatches[0]) === JSON.stringify({ policy: { own_approvals: 3, own_agents: { owners_of: ["maintainer"] } }, reason: "outsiders" }),
+    "own approvals: what changed is sent with its reason " + JSON.stringify(oaPatches[0]));
+  expect(text(byId("own-approvals-error")) === "Someone you picked is not a member of the project.", "own approvals: the hub's refusal of a pick is said at the field");
+  await projectSettings("work");
+  oaForm().dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  byId("own-approvals-number").value = "0"; byId("own-approvals-reason").value = "none";
+  oaForm().dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  expect(oaPatches.length === 1 && text(byId("own-approvals-error")) === "Enter a whole number of at least 1.",
+    "own approvals: nothing changed sends nothing, and 0 is refused before it is sent");
+  // Whose agents count is a human owner's alone (owner_only): an admin reads it and changes the number only.
+  const oaOwner = win.Maity.trust.owner;
+  win.Maity.trust.owner = () => false;
+  await projectSettings("work");
+  expect("disabled" in byId("own-agents-select").attrs && text(oaForm()).includes("Only an owner of the project changes whose agents count."),
+    "own approvals: for an admin who is no owner, whose agents count is shown, not offered");
+  byId("own-approvals-number").value = "2"; byId("own-approvals-reason").value = "two";
+  oaForm().dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+  expect(oaPatches.length === 2 && JSON.stringify(oaPatches[1]) === JSON.stringify({ policy: { own_approvals: 2 }, reason: "two" }),
+    "own approvals: an admin's change sends the number alone " + JSON.stringify(oaPatches[1]));
+  win.Maity.trust.owner = oaOwner; win.Maity.api.patch = oaPatch;
+  // The fixture hub answers as the hub: the bounds, and own_agents for an owner only.
+  const oaHub = async (policy) => { try { await win.Maity.api.patch("/projects/maintainer/maity", { policy, reason: "x" }); return "ok"; } catch (e) { return e.code + ":" + JSON.stringify(e.details); } };
+  const oaAnswers = [await oaHub({ own_approvals: 0 }), await oaHub({ own_agents: { owners_of: ["nobody"] } }), await oaHub({ own_agents: "everyone" })];
+  expect(JSON.stringify(oaAnswers) === JSON.stringify(['invalid:{"fields":{"own_approvals":"out_of_range"}}', 'invalid:{"fields":{"own_agents":"not_a_member"}}', 'invalid:{"fields":{"own_agents":"unknown"}}']),
+    "fixture hub: own_approvals 0, a pick who is no member and an unknown own_agents are refused as the hub refuses them " + JSON.stringify(oaAnswers));
   await projectSettings();
   const ownersGet = win.Maity.api.get;
   win.Maity.api.get = (p) => ownersGet(p).then((x) => (p.startsWith("/projects/maintainer/maity/members") && x && x.items
@@ -7275,7 +7323,14 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       "errors: a refusal whose reason has no words keeps the reason in brackets; without a reason the bare sentence");
     expect(said("paused", {}, "hub") === "hub" && said("no_such_code", {}, "hub") === "hub" && said(null, {}, "hub") === "hub" && said("constructor", {}, "hub") === "hub",
       "errors: without a translation, or for a code unknown here, the hub's English");
+    // §2.3 "Own approvals": the refusal says how many the work needs and has, the form chosen by what it has.
+    win.MAITY_I18N.de["error.reason.own_approvals"] = { one: "Braucht {needed}, hat {count} Freigabe.", other: "Braucht {needed}, hat {count} Freigaben." };
+    const ownSaid = [said("forbidden", { reason: "own_approvals", needed: 2, counted: 1 }, "hub"), said("forbidden", { reason: "own_approvals", needed: 2, counted: 0 }, "hub")];
+    expect(JSON.stringify(ownSaid) === JSON.stringify(["Braucht 2, hat 1 Freigabe.", "Braucht 2, hat 0 Freigaben."]),
+      "errors: the own-approvals refusal says what the work needs and has " + JSON.stringify(ownSaid));
     i18n.language = was;
+    expect(said("forbidden", { reason: "own_approvals", needed: 2, counted: 1 }, "outsiders' work needs the project's own approvals before it is done")
+      === "outsiders' work needs the project's own approvals before it is done", "errors: in English the own-approvals refusal is the hub's own message");
     delete win.MAITY_I18N.de;
   }
   // A failure is one sentence per language (tsk-0zbms0wwqhmm): the reason stands where the catalog's

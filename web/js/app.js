@@ -832,6 +832,7 @@ window.Maity = window.Maity || {};
     // Way of working: how a card is closed and what the agents keep. Humans only, as every
     // policy field (§2.3 ʰ); the commitment follows the memory provider.
     { tab: "work", when: humanAdminOf, build: (ctx, save) => doneAuthorityForm(ctx, save) },
+    { tab: "work", when: humanAdminOf, build: (ctx, save) => ownApprovalsForm(ctx, save) },
     { tab: "work", when: (ctx) => ctx.canAdmin && !!M.projectSetup, build: (ctx, save) => memoryPanel(ctx, save, humanAdminOf(ctx)) },
     { tab: "work", when: humanAdminOf, build: (ctx, save) => keepTheWhyForm(ctx, save) },
     { tab: "work", when: humanAdminOf, build: (ctx, save) => keepTheWhyDefaultsForm(ctx, save) },
@@ -1283,6 +1284,111 @@ window.Maity = window.Maity || {};
     h("p", { class: "hint" }, M.t("settings.done_authority.hint")),
     h("label", { for: "done-authority-select" }, M.t("settings.done_authority.label")), select,
     h("label", { for: "done-authority-reason" }, M.t("settings.done_authority.reason")), reason,
+    h("button", { type: "submit" }, M.t("board.save")));
+  }
+
+  // §6.1 own_approvals and own_agents, §2.3 "Own approvals": how many of the project's own
+  // approvals work by outside agents needs before its card moves to done, and whose agents count
+  // as the project's own. A human with project:admin sets the number; whose agents count is a human
+  // owner's alone, so anyone else reads it. Both with a reason, as every policy field. A number above
+  // the project's own reviewers and testers blocks every such card: the hub takes it, the form says
+  // so. The count is an upper bound (the hub also leaves out agents marked as having joined from
+  // outside, and on each card the agents of whoever holds or reported it), so the warning shows only
+  // where even that is too few.
+  const OWN_AGENTS = () => [["owners", M.t("settings.own_agents.owners")], ["members", M.t("settings.own_agents.members")],
+    ["owners_of", M.t("settings.own_agents.owners_of")]];
+  const OWN_APPROVALS_ERRORS = {
+    out_of_range: () => M.t("settings.own_approvals.error.out_of_range"),
+    unknown_handle: () => M.t("settings.own_agents.error.unknown_handle"),
+    not_a_member: () => M.t("settings.own_agents.error.not_a_member"),
+    too_many: () => M.t("settings.own_agents.error.too_many"),
+  };
+  function ownApprovalsForm(ctx, save) {
+    const pol = ctx.project.policy;
+    const needed = Number.isInteger(pol.own_approvals) ? pol.own_approvals : 1;
+    const stored = pol.own_agents || "members";
+    const storedMode = typeof stored === "object" ? "owners_of" : stored;
+    const storedPicked = typeof stored === "object" ? (stored.owners_of || []) : [];
+    const humans = (ctx.members || []).filter((x) => x.kind === "human");
+    // A picked handle that is no member now stays listed, so that saving never drops it unseen (§6.1).
+    const handles = [...new Set([...humans.map((x) => x.handle), ...storedPicked])];
+    const owner = ctx.isOwner;
+    const number = h("input", { id: "own-approvals-number", type: "number", min: "1", step: "1", required: true });
+    number.value = String(needed);
+    const mode = h("select", { id: "own-agents-select", disabled: owner ? null : true },
+      OWN_AGENTS().map(([v, l]) => h("option", { value: v }, l)));
+    mode.value = storedMode;
+    const boxes = handles.map((handle) => {
+      const box = h("input", { type: "checkbox", id: "own-agents-" + handle, value: handle, disabled: owner ? null : true });
+      box.checked = storedPicked.includes(handle);
+      return box;
+    });
+    const nameOf = (handle) => {
+      const human = humans.find((x) => x.handle === handle);
+      return human ? human.display_name : M.t("settings.own_agents.not_member", { handle });
+    };
+    const picker = h("fieldset", { class: "own-agents-picked" },
+      h("legend", null, M.t("settings.own_agents.picked")),
+      handles.map((handle, i) => h("label", { class: "check", for: "own-agents-" + handle }, boxes[i], " ", nameOf(handle))));
+    const warning = h("p", { class: "flag", id: "own-approvals-warning", role: "status" });
+    const error = h("p", { class: "field-error", id: "own-approvals-error", role: "alert" });
+    const picked = () => handles.filter((handle, i) => boxes[i].checked);
+    // The project's own reviewers and testers as `own_agents` reads them: its humans who review or
+    // test, and the agents that do whose owner it names; an agent with trust `outside` never counts.
+    const ownReviewers = () => {
+      const owners = mode.value === "owners" ? humans.filter((x) => M.trust.owner(x))
+        : mode.value === "owners_of" ? humans.filter((x) => picked().includes(x.handle)) : humans;
+      const ownerIds = owners.map((x) => x.id);
+      return (ctx.members || []).filter((x) => (M.trust.reviews(x) || M.trust.tests(x))
+        && (x.kind === "human" || (x.trust !== "outside" && ownerIds.includes(x.owner_id)))).length;
+    };
+    const update = () => {
+      picker.hidden = mode.value !== "owners_of";
+      const n = Number(number.value);
+      const count = ownReviewers();
+      warning.textContent = Number.isInteger(n) && n > count ? M.t("settings.own_approvals.too_many", { needed: n, count }) : "";
+      warning.hidden = !warning.textContent;
+    };
+    number.addEventListener("input", update);
+    mode.addEventListener("change", update);
+    boxes.forEach((box) => box.addEventListener("change", update));
+    update();
+    const reason = h("input", { id: "own-approvals-reason", required: true, placeholder: M.t("settings.reason_placeholder") });
+    const fieldError = (code) => (Object.hasOwn(OWN_APPROVALS_ERRORS, code || "") ? OWN_APPROVALS_ERRORS[code]() : null);
+    return h("form", {
+      class: "inline-form own-approvals-form",
+      onsubmit: (e) => {
+        e.preventDefault();
+        error.textContent = "";
+        const policy = {};
+        const n = Number(number.value);
+        if (!Number.isInteger(n) || n < 1) { error.textContent = fieldError("out_of_range"); number.focus(); return; }
+        if (n !== needed) policy.own_approvals = n;
+        if (owner) {
+          const same = mode.value === storedMode && (mode.value !== "owners_of"
+            || JSON.stringify(picked().slice().sort()) === JSON.stringify(storedPicked.slice().sort()));
+          if (!same) policy.own_agents = mode.value === "owners_of" ? { owners_of: picked() } : mode.value;
+        }
+        if (!Object.keys(policy).length) return;
+        if (!reason.value.trim()) { reason.focus(); return; }
+        save({ policy, reason: reason.value.trim() }, { saved: M.t("settings.own_approvals.saved"), notSaved: M.t("settings.own_approvals.not_saved") }, (err) => {
+          const fields = (err.details || {}).fields || {};
+          const said = fieldError(fields.own_approvals) || fieldError(fields.own_agents);
+          if (!said) return false;
+          error.textContent = said;
+          return true;
+        });
+      },
+    },
+    h("h2", { class: "panel-title" }, M.t("settings.own_approvals.title")),
+    h("p", { class: "hint" }, M.t("settings.own_approvals.hint")),
+    h("label", { for: "own-approvals-number" }, M.t("settings.own_approvals.label")), number,
+    warning,
+    h("label", { for: "own-agents-select" }, M.t("settings.own_agents.label")), mode,
+    owner ? null : h("p", { class: "hint" }, M.t("settings.own_agents.owner_only")),
+    picker,
+    error,
+    h("label", { for: "own-approvals-reason" }, M.t("settings.reason")), reason,
     h("button", { type: "submit" }, M.t("board.save")));
   }
 
