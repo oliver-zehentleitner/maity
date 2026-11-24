@@ -312,11 +312,11 @@ def _dead(conn: Connection, request: Request) -> HTMLResponse:
 def link_page(token: str, request: Request) -> HTMLResponse:
     anonymous.no_credential(request)
     hub = settings_of(request)
-    payload = _token(hub, token)
     with engine_of(request).begin() as conn:
+        _enabled(conn, hub)  # first: the same answer for every token while links are off
+        payload = _token(hub, token)
         if payload is None:
             return _dead(conn, request)
-        _enabled(conn, hub)
         row = links.live(conn, nonce_hash=links.digest(payload["n"]))
         if (
             row is None
@@ -371,11 +371,11 @@ def _complete_link(token: str, request: Request, fields: dict[str, list[str]]) -
     if not cookie or len(given) != 1 or not hmac.compare_digest(given[0].encode(), cookie.encode()):
         raise forbidden(message="the form does not match")
     hub = settings_of(request)
-    payload = _token(hub, token)
     with engine_of(request).begin() as conn:
+        _enabled(conn, hub)  # first: the same answer for every token while links are off
+        payload = _token(hub, token)
         if payload is None:
             return _dead(conn, request)
-        _enabled(conn, hub)
         row = links.live(conn, nonce_hash=links.digest(payload["n"]))
         if row is None or row.human_id != payload["h"]:
             return _dead(conn, request)

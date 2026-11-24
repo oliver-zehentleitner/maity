@@ -217,7 +217,7 @@ dropping it.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** card tsk-w62n5p0v9d47 (the maintainer found the four pages bare, 2026-11-04) and lotse#wtwy's go on the plan (2026-11-05); contract `docs/api.md` §1.1, §16.7.5, §16.13, §18.6
+**Source:** card tsk-w62n5p0v9d47 (the maintainer found the four pages bare, 2026-11-04) and the lead's go on the plan (2026-11-05); contract `docs/api.md` §1.1, §16.7.5, §16.13, §18.6
 **See:** security.md#the-pages-without-inline-style-allow-the-product-lines-one-block-by-its-hash — 32f18f7d-91c7-40c3-898f-6137cac6969a — as of 2026-11-05
 
 The pages of §18.6 (verify the address, unsubscribe, second-factor
@@ -243,7 +243,7 @@ alike. A test pins the string.
   needs `landing.css` and the fonts as well; it adds nothing over `'self'`.
 - The whole look as more inline style allowed by its hash: every change
   to the look changes the header, and the fonts still need `font-src`.
-- The product line under the frame's footer: lotse#wtwy chose the same
+- The product line under the frame's footer: the lead chose the same
   ending for every link page, as on `/mail/sign-in` and the framed
   `/login` (req-5k1gvfsmcg9k).
 

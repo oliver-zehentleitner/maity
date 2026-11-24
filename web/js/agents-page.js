@@ -580,23 +580,20 @@ window.Maity = window.Maity || {};
       .then((placed) => { if (placed) { listed = placed; append(slot, placed); } }, () => {});
   };
 
-  // One's own agents here as a tree under oneself, drawn again when a member changes.
+  // One's own agents here under oneself: the Team page's tree (js/org.js) with only these members
+  // fed in (tsk-zsbe48ty4ces), drawn again when a member changes.
   function fleetView(ctx, root) {
     const status = M.statusLine();
-    const box = h("div", { class: "org-box fleet-box" });
+    const box = h("div", { class: "org-box" });
     const draw = () => {
-      const fresh = M.org.drawFleet(ctx);
+      const fresh = M.org.drawTree(ctx, "own");
       M.dom.keepImages(box, fresh);
       append(clear(box), fresh);
     };
     append(root, tabHead(ctx, "organisation", M.t("agents.project.title")), h("h3", null, M.t("agents.fleet.title")),
       h("p", { class: "muted" }, M.t("agents.fleet.intro")), status.el, box);
     draw();
-    ctx.onEvents((events) => {
-      if (!events.some((e) => /^member_/.test(e.kind))) return;
-      M.api.getAll(ctx.base + "/members").then((r) => { M.withMembers(ctx, r.items); draw(); status.done(); },
-        (err) => status.fail(M.t("org.reread_failed"), err));
-    });
+    M.org.follow(ctx, status, draw);
   }
 
   M.views.projectAgents = async function (ctx, root, args) {

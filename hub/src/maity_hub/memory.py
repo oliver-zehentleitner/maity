@@ -22,10 +22,10 @@ from maity_hub import clock, events, idempotency, namespace, project_roles, prop
 from maity_hub import tables as t
 from maity_hub.access import Membership, membership, owns_agent
 from maity_hub.auth.caller import Caller
-from maity_hub.errors import ApiError, invalid, not_found
+from maity_hub.errors import ApiError, forbidden, invalid, not_found
 from maity_hub.events import Actor
 from maity_hub.ids import new_id
-from maity_hub.scopes import in_admin_team
+from maity_hub.scopes import OUTSIDE, in_admin_team
 from maity_hub.views import handles_of, ts
 
 # §1.7: in bytes of UTF-8, so that a cap means the same in every script.
@@ -364,6 +364,23 @@ def role_admin(mine: Membership) -> bool:
 
 def reads_role(mine: Membership, role: str) -> bool:
     return mine.role == role or role_admin(mine)
+
+
+def refuse_role_change(mine: Membership) -> None:
+    """The one check of a write or a delete in a role's memory (§19.2): a guest changes none
+    (§2.3), and neither does an outsider's agent (trust `outside`, §2.3 "Outside"), which
+    reads its role's memory but neither writes nor deletes it: role memory goes into every
+    same-role agent's resume packet (hub/context/memory.md, "An outsider's agent writes no
+    role memory"). `forbidden` either way; every other trust passes as before."""
+    if mine.trust == "guest":
+        raise forbidden("tasks:write", "a guest writes no memory")
+    if mine.trust == OUTSIDE:
+        raise ApiError(
+            403,
+            "forbidden",
+            "an outsider's agent reads its role's memory but neither writes nor deletes it",
+            {"reason": "outside_trust"},
+        )
 
 
 def readable_roles(mine: Membership) -> Any:

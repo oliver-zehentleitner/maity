@@ -358,6 +358,33 @@ def test_a_substitute_who_left_gets_no_new_covered_card(
     assert [row.payload["substitute_id"] for row in ended] == [nxt.id]
 
 
+def test_the_coordinator_gate_holds_once_its_covering_substitute_left(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, now: list[datetime]
+) -> None:
+    """§6.12: a substitute whose membership has ended is not `available` for the coordinator
+    gate from that moment, as area routing already skips it (tsk-w0rx9vmg0y0d)."""
+    lead = flow.agent(make_client, owner)
+    admin = flow.agent(make_client, owner, role="admin")
+    worker = flow.agent(make_client, owner)
+    for agent in (lead, admin, worker):
+        agent.resume()
+    sub = _person(make_client, migrated, "stand-in", "member")
+    _seen(migrated, sub.id)
+    named = owner.patch(PROJECT, {"policy": {"coordinator": lead.id}, "reason": "t"})
+    assert named.status_code == 200, named.text
+    policy(owner, lead.id, on_unavailable="substitute", substitutes=[sub.id], grace_minutes=0)
+    limit(lead, now[0] + timedelta(hours=3))
+    assert owner.get(f"{PROJECT}/members/{lead.id}").json()["covered_by"]["member_id"] == sub.id
+    first = task(owner)
+    lifted = admin.post(f"{PROJECT}/tasks/{first['id']}/assign", {"assignee": worker.id})
+    assert lifted.status_code == 200, lifted.text  # the covering substitute is available
+    assert _delete(sub, sub.id).status_code == 200
+    second = task(owner)
+    held = admin.post(f"{PROJECT}/tasks/{second['id']}/assign", {"assignee": worker.id})
+    assert held.status_code == 409, held.text
+    assert held.json()["error"]["code"] == "coordinator_unavailable"
+
+
 def test_with_no_pickable_entry_the_card_goes_to_the_covered_member(
     owner: flow.Human, make_client: ClientFactory, migrated: Engine, now: list[datetime]
 ) -> None:

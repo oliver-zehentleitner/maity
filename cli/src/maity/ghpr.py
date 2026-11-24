@@ -669,7 +669,7 @@ def gh_env(environ: Mapping[str, str], gh: str) -> dict[str, str]:
     and the system's, so a program gh starts by name is not one placed on the session's
     PATH; on Windows also what a program needs to start there."""
     env = {name: environ[name] for name in ENV_PASSED if name in environ}
-    env.update(clonecheck.kept_env(environ))
+    env.update(clonecheck.kept_env(environ, proxy=False))  # gh's proxy names are ENV_PASSED's
     env.update(clonecheck.git_path_env(gh))
     env.update(ENV_SET)
     return env

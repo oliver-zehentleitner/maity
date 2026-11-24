@@ -76,16 +76,21 @@ def open_items(conn: Connection, org: Any) -> list[dict[str, Any]]:
 
 def _invitee(conn: Connection, handle: str) -> str | None:
     """The approved, active human whose current handle or alias this is (§6.24), or None:
-    nobody, an organisation, a pending or a deleted account."""
+    nobody, an organisation, a pending, a suspended or a deleted account."""
     human_id = handles.human_id_of(conn, handle)
     if human_id is None:
         return None
     found = conn.execute(
-        select(t.human.c.id, t.human.c.account_status, t.human.c.deleted_at).where(
-            t.human.c.id == human_id
-        )
+        select(
+            t.human.c.id, t.human.c.account_status, t.human.c.deleted_at, t.human.c.suspended_at
+        ).where(t.human.c.id == human_id)
     ).first()
-    if found is None or found.deleted_at is not None or found.account_status != "active":
+    if (
+        found is None
+        or found.deleted_at is not None
+        or found.suspended_at is not None
+        or found.account_status != "active"
+    ):
         return None
     return str(found.id)
 
@@ -140,6 +145,14 @@ def create(
     now = clock.now()
     invitation_id = new_id("org_invitation")
     invitee = _invitee(conn, handle)
+    if invitee is not None:
+        from maity_hub import invitations
+
+        # One count with the projects' invitations by handle (§3.4). Over it the inviter
+        # gets the same answer and no request is filed: a 429 here would tell an active
+        # person from every other name, which the answer never does (§6.26).
+        if invitations.invitee_wait(conn, invitee) is not None:
+            invitee = None
     request_id = None
     if invitee is not None:
         request_id = _file_request(conn, org, invitation_id, actor_id, invitee, role)
@@ -348,6 +361,12 @@ def settle(conn: Connection, s: proposals.Settlement) -> None:
     if not inviter_holds(conn, invitation):
         raise _stale(s.request.id, "the invitation's sender may no longer invite to this role")
     human_id = proposal["to"]
+    from maity_hub import moderation
+
+    if moderation.suspended(conn, human_id):
+        # Refused, and the request stays open: the answer's transaction rolls back, and a
+        # lifted suspension lets the same `go` through while the invitation lasts (§6.26).
+        raise moderation.account_suspended()
     closed = conn.execute(
         update(t.org_invitation)
         .where(t.org_invitation.c.id == invitation.id, t.org_invitation.c.live.is_(True))
