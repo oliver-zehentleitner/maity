@@ -19643,8 +19643,10 @@ repository it includes.
   that owner linked among them (not built yet). The hub keeps the forge
   user's id with the link (`forge_user_id`, not built yet), for the
   re-checks below; it is in no answer, `GET /me/forge` included. The user token is used for this one check and discarded,
-  never stored. An installation of another account is refused (`403
-  forbidden`, `details.reason: installation_not_yours`), so nobody links
+  never stored. An installation the forge does not name, or one on
+  another user account, is refused (`403 forbidden`, `details.reason:
+  installation_not_yours`; on a forge organisation the owner check above
+  answers instead), so nobody links
   an installation by guessing or copying its id. A missing, expired, used or foreign `state` is
   refused with `details.reason: link_state`. Its outcomes:
 
