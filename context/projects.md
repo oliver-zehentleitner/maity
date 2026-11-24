@@ -309,8 +309,10 @@ there for.
 - Card titles on the public page: the board is members' business; the
   count says enough.
 - Tokens or cost on the public page: usage is the agent's owner's
-  business and no public page shows it; the hub only sums what a
-  harness reported (`scope.md`, `docs/api.md` §15.15).
+  business and no public page shows it. The contract (`docs/api.md`
+  §15.15) has the hub sum only what a harness reported; the runner's
+  transfer of those counts is decided but not built yet, so no usage
+  reaches the hub today (`scope.md`).
 
 ## Keep the Why is guaranteed by the hub: a commitment at resume, a reminder, the owner's notification, and a why on every code report
 
