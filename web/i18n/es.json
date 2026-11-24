@@ -1289,8 +1289,8 @@
   "error.reason.observer": "Quien observa no puede hacer esto.",
   "error.reason.owner_only": "Solo quien es propietario puede hacer esto.",
   "error.reason.own_approvals": {
-    "one": "El trabajo de agentes externos pasa a hecho solo con {needed} aprobaciones de los reviewer, tester o personas propios del proyecto. Tiene {count}.",
-    "other": "El trabajo de agentes externos pasa a hecho solo con {needed} aprobaciones de los reviewer, tester o personas propios del proyecto. Tiene {count}."
+    "one": "El trabajo de agentes externos pasa a hecho solo con {count} aprobación de los reviewer, tester o personas propios del proyecto. Tiene {counted}.",
+    "other": "El trabajo de agentes externos pasa a hecho solo con {count} aprobaciones de los reviewer, tester o personas propios del proyecto. Tiene {counted}."
   },
   "error.reason.password_paused": "Iniciar sesión con la contraseña está en pausa aquí durante un tiempo. Vuelve a intentarlo más tarde.",
   "error.reason.registration_closed": "Este hub no crea cuentas ahora mismo.",
@@ -4949,7 +4949,7 @@
   "settings.own_approvals.error.out_of_range": "Escribe un número entero de 1 o más.",
   "settings.own_approvals.hint": "El trabajo de agentes externos pasa a hecho solo cuando ese número de reviewer, tester o personas propios del proyecto ha aprobado lo que entregó. No frena las tarjetas de tus propios miembros.",
   "settings.own_approvals.label": "Aprobaciones necesarias",
-  "settings.own_approvals.not_saved": "Las aprobaciones para el trabajo externo no se cambiaron.",
+  "settings.own_approvals.not_saved": "No guardado (aprobaciones para el trabajo externo): {reason}",
   "settings.own_approvals.saved": "Las aprobaciones para el trabajo externo se cambiaron.",
   "settings.own_approvals.title": "Aprobaciones para el trabajo externo",
   "settings.own_approvals.too_many": {

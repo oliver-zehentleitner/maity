@@ -1303,8 +1303,8 @@ window.MAITY_I18N["it"] = {
   "error.reason.not_a_participant": "Non fai parte di questo.",
   "error.reason.observer": "Chi osserva non può farlo.",
   "error.reason.own_approvals": {
-    "one": "Il lavoro di agenti esterni passa a completata solo con {needed} approvazioni dei reviewer, tester o persone del progetto stesso. Ne ha {count}.",
-    "other": "Il lavoro di agenti esterni passa a completata solo con {needed} approvazioni dei reviewer, tester o persone del progetto stesso. Ne ha {count}."
+    "one": "Il lavoro di agenti esterni passa a completata solo con {count} approvazione dei reviewer, tester o persone del progetto stesso. Ne ha {counted}.",
+    "other": "Il lavoro di agenti esterni passa a completata solo con {count} approvazioni dei reviewer, tester o persone del progetto stesso. Ne ha {counted}."
   },
   "error.reason.owner_only": "Solo il proprietario può farlo.",
   "error.reason.password_paused": "L'accesso con la password è sospeso qui per un po'. Riprova più tardi.",
@@ -4991,7 +4991,7 @@ window.MAITY_I18N["it"] = {
   "settings.own_approvals.error.out_of_range": "Inserisci un numero intero di almeno 1.",
   "settings.own_approvals.hint": "Il lavoro di agenti esterni passa a completata solo quando questo numero di reviewer, tester o persone del progetto stesso ha approvato ciò che ha consegnato. Non trattiene le schede dei tuoi membri.",
   "settings.own_approvals.label": "Approvazioni necessarie",
-  "settings.own_approvals.not_saved": "Le approvazioni per il lavoro esterno non sono state cambiate.",
+  "settings.own_approvals.not_saved": "Approvazioni per il lavoro esterno non salvate: {reason}",
   "settings.own_approvals.saved": "Le approvazioni per il lavoro esterno sono state cambiate.",
   "settings.own_approvals.title": "Approvazioni per il lavoro esterno",
   "settings.own_approvals.too_many": {

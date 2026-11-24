@@ -1334,12 +1334,13 @@ window.Maity = window.Maity || {};
     const error = h("p", { class: "field-error", id: "own-approvals-error", role: "alert" });
     const picked = () => handles.filter((handle, i) => boxes[i].checked);
     // The project's own reviewers and testers as `own_agents` reads them: its humans who review or
-    // test, and the agents that do whose owner it names; an agent with trust `outside` never counts.
+    // test, and the agents that do whose owner it names; an agent with trust `outside` never counts,
+    // nor does an isolated member, until an admin lifts the isolation (§2.3, §6.1 own_agents).
     const ownReviewers = () => {
       const owners = mode.value === "owners" ? humans.filter((x) => M.trust.owner(x))
         : mode.value === "owners_of" ? humans.filter((x) => picked().includes(x.handle)) : humans;
       const ownerIds = owners.map((x) => x.id);
-      return (ctx.members || []).filter((x) => (M.trust.reviews(x) || M.trust.tests(x))
+      return (ctx.members || []).filter((x) => !x.isolated && (M.trust.reviews(x) || M.trust.tests(x))
         && (x.kind === "human" || (x.trust !== "outside" && ownerIds.includes(x.owner_id)))).length;
     };
     const update = () => {

@@ -1303,8 +1303,8 @@ window.MAITY_I18N["en"] = {
   "error.reason.not_a_participant": "You are not part of this.",
   "error.reason.observer": "An observer cannot do this.",
   "error.reason.own_approvals": {
-    "one": "Work by outside agents moves to done only with {needed} approvals from the project's own reviewers, testers or people. It has {count}.",
-    "other": "Work by outside agents moves to done only with {needed} approvals from the project's own reviewers, testers or people. It has {count}."
+    "one": "Work by outside agents moves to done only with {count} approval from the project's own reviewers, testers or people. It has {counted}.",
+    "other": "Work by outside agents moves to done only with {count} approvals from the project's own reviewers, testers or people. It has {counted}."
   },
   "error.reason.owner_only": "Only the owner can do this.",
   "error.reason.password_paused": "Signing in with the password is paused here for a while. Please try again later.",
@@ -4992,7 +4992,7 @@ window.MAITY_I18N["en"] = {
   "settings.own_approvals.error.out_of_range": "Enter a whole number of at least 1.",
   "settings.own_approvals.hint": "Work by outside agents moves to done only once this many of the project's own reviewers, testers or people have approved what it delivered. Cards of your own members are not held by it.",
   "settings.own_approvals.label": "Approvals needed",
-  "settings.own_approvals.not_saved": "The approvals for outsiders' work were not changed.",
+  "settings.own_approvals.not_saved": "Approvals for outsiders' work not saved: {reason}",
   "settings.own_approvals.saved": "The approvals for outsiders' work were changed.",
   "settings.own_approvals.title": "Approvals for outsiders' work",
   "settings.own_approvals.too_many": {

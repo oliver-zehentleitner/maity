@@ -15,8 +15,8 @@ window.Maity = window.Maity || {};
     observer: () => M.tOwn("error.reason.observer"),
     owner_only: () => M.tOwn("error.reason.owner_only"),
     // §2.3 "Own approvals": a move to done of outsiders' work short of its own approvals, with
-    // how many it needs and how many it has.
-    own_approvals: (d) => M.tOwn("error.reason.own_approvals", { needed: d.needed, count: d.counted }),
+    // how many it needs (the plural form follows it: the approvals are what it counts) and has.
+    own_approvals: (d) => M.tOwn("error.reason.own_approvals", { count: d.needed, counted: d.counted }),
     password_paused: () => M.tOwn("error.reason.password_paused"),
     registration_closed: () => M.tOwn("error.reason.registration_closed"),
     // The second factor (§2.8): said as what is missing, never as missing rights.

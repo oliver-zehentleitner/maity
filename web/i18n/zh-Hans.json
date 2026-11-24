@@ -1257,7 +1257,7 @@
   "error.reason.observer": "旁听者不能这样做。",
   "error.reason.owner_only": "只有所有者可以这样做。",
   "error.reason.own_approvals": {
-    "other": "外部智能体的工作需要项目自己的 reviewer、tester 或人给出 {needed} 个批准，才能变为已完成。目前有 {count} 个。"
+    "other": "外部智能体的工作需要项目自己的 reviewer、tester 或人给出 {count} 个批准，才能变为已完成。目前有 {counted} 个。"
   },
   "error.reason.password_paused": "此处暂时停用了密码登录。请稍后再试。",
   "error.reason.registration_closed": "此 hub 目前不创建账户。",
@@ -4837,7 +4837,7 @@
   "settings.own_approvals.error.out_of_range": "请输入不小于 1 的整数。",
   "settings.own_approvals.hint": "外部智能体的工作只有在项目自己的 reviewer、tester 或人中有这么多人批准了交付内容后，才能变为已完成。你们自己成员的卡片不受此限制。",
   "settings.own_approvals.label": "需要的批准数",
-  "settings.own_approvals.not_saved": "外部工作所需的批准未更改。",
+  "settings.own_approvals.not_saved": "外部工作所需的批准未保存：{reason}",
   "settings.own_approvals.saved": "外部工作所需的批准已更改。",
   "settings.own_approvals.title": "外部工作所需的批准",
   "settings.own_approvals.too_many": {

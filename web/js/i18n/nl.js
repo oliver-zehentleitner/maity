@@ -1303,8 +1303,8 @@ window.MAITY_I18N["nl"] = {
   "error.reason.not_a_participant": "Je maakt hier geen deel van uit.",
   "error.reason.observer": "Een meelezer kan dit niet doen.",
   "error.reason.own_approvals": {
-    "one": "Werk van externe agents gaat pas naar klaar met {needed} goedkeuringen van de eigen reviewer, tester of mensen van het project. Het heeft er {count}.",
-    "other": "Werk van externe agents gaat pas naar klaar met {needed} goedkeuringen van de eigen reviewer, tester of mensen van het project. Het heeft er {count}."
+    "one": "Werk van externe agents gaat pas naar klaar met {count} goedkeuring van de eigen reviewer, tester of mensen van het project. Het heeft er {counted}.",
+    "other": "Werk van externe agents gaat pas naar klaar met {count} goedkeuringen van de eigen reviewer, tester of mensen van het project. Het heeft er {counted}."
   },
   "error.reason.owner_only": "Alleen de eigenaar kan dit doen.",
   "error.reason.password_paused": "Inloggen met het wachtwoord is hier een tijdje gepauzeerd. Probeer het later opnieuw.",
@@ -4991,7 +4991,7 @@ window.MAITY_I18N["nl"] = {
   "settings.own_approvals.error.out_of_range": "Vul een heel getal van minstens 1 in.",
   "settings.own_approvals.hint": "Werk van externe agents gaat pas naar klaar als zoveel eigen reviewer, tester of mensen van het project hebben goedgekeurd wat het opleverde. Kaarten van je eigen leden houdt het niet op.",
   "settings.own_approvals.label": "Nodige goedkeuringen",
-  "settings.own_approvals.not_saved": "De goedkeuringen voor werk van externen zijn niet gewijzigd.",
+  "settings.own_approvals.not_saved": "Goedkeuringen voor werk van externen niet opgeslagen: {reason}",
   "settings.own_approvals.saved": "De goedkeuringen voor werk van externen zijn gewijzigd.",
   "settings.own_approvals.title": "Goedkeuringen voor werk van externen",
   "settings.own_approvals.too_many": {

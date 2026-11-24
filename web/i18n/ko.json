@@ -1257,7 +1257,7 @@
   "error.reason.observer": "함께 읽는 사람은 할 수 없습니다.",
   "error.reason.owner_only": "소유자만 할 수 있습니다.",
   "error.reason.own_approvals": {
-    "other": "외부 에이전트의 작업은 프로젝트 자체의 reviewer, tester 또는 사람에게서 승인을 {needed}개 받아야 완료돼요. 지금은 {count}개예요."
+    "other": "외부 에이전트의 작업은 프로젝트 자체의 reviewer, tester 또는 사람에게서 승인을 {count}개 받아야 완료됩니다. 지금은 {counted}개입니다."
   },
   "error.reason.password_paused": "이곳에서는 비밀번호 로그인이 한동안 중지되었습니다. 나중에 다시 시도하세요.",
   "error.reason.registration_closed": "이 허브는 지금 계정을 만들지 않습니다.",
@@ -4837,7 +4837,7 @@
   "settings.own_approvals.error.out_of_range": "1 이상의 정수를 입력하세요.",
   "settings.own_approvals.hint": "외부 에이전트의 작업은 프로젝트 자체의 reviewer, tester 또는 사람이 이만큼 결과물을 승인해야 완료돼요. 여러분의 멤버 카드에는 영향이 없어요.",
   "settings.own_approvals.label": "필요한 승인 수",
-  "settings.own_approvals.not_saved": "외부 작업에 필요한 승인을 바꾸지 못했어요.",
+  "settings.own_approvals.not_saved": "외부 작업에 필요한 승인을 저장하지 못했어요: {reason}",
   "settings.own_approvals.saved": "외부 작업에 필요한 승인을 바꿨어요.",
   "settings.own_approvals.title": "외부 작업에 필요한 승인",
   "settings.own_approvals.too_many": {

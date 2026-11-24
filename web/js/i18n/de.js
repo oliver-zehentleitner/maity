@@ -1303,8 +1303,8 @@ window.MAITY_I18N["de"] = {
   "error.reason.not_a_participant": "Du nimmst hieran nicht teil.",
   "error.reason.observer": "Mitlesende können das nicht tun.",
   "error.reason.own_approvals": {
-    "one": "Arbeit externer Agents wird erst mit {needed} Freigaben der eigenen reviewer, tester oder Personen des Projekts erledigt. Sie hat {count}.",
-    "other": "Arbeit externer Agents wird erst mit {needed} Freigaben der eigenen reviewer, tester oder Personen des Projekts erledigt. Sie hat {count}."
+    "one": "Arbeit externer Agents wird erst mit {count} Freigabe der eigenen Reviewer, Tester oder Personen des Projekts erledigt. Sie hat {counted}.",
+    "other": "Arbeit externer Agents wird erst mit {count} Freigaben der eigenen Reviewer, Tester oder Personen des Projekts erledigt. Sie hat {counted}."
   },
   "error.reason.owner_only": "Das kann nur der Besitzer tun.",
   "error.reason.password_paused": "Die Anmeldung mit dem Passwort ist hier für eine Weile pausiert. Bitte versuche es später noch einmal.",
@@ -4991,7 +4991,7 @@ window.MAITY_I18N["de"] = {
   "settings.own_approvals.error.out_of_range": "Gib eine ganze Zahl ab 1 ein.",
   "settings.own_approvals.hint": "Arbeit externer Agents wird erst erledigt, wenn so viele eigene reviewer, tester oder Personen des Projekts freigegeben haben, was sie geliefert hat. Karten eurer eigenen Mitglieder hält das nicht auf.",
   "settings.own_approvals.label": "Nötige Freigaben",
-  "settings.own_approvals.not_saved": "Die Freigaben für die Arbeit Externer wurden nicht geändert.",
+  "settings.own_approvals.not_saved": "Freigaben für die Arbeit Externer nicht gespeichert: {reason}",
   "settings.own_approvals.saved": "Die Freigaben für die Arbeit Externer wurden geändert.",
   "settings.own_approvals.title": "Freigaben für die Arbeit Externer",
   "settings.own_approvals.too_many": {

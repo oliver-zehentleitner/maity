@@ -1289,8 +1289,8 @@
   "error.reason.observer": "Une personne en observation ne peut pas faire cela.",
   "error.reason.owner_only": "Seul le propriétaire peut faire cela.",
   "error.reason.own_approvals": {
-    "one": "Le travail d'agents extérieurs ne passe à terminé qu'avec {needed} approbations des reviewer, tester ou personnes du projet lui-même. Il en a {count}.",
-    "other": "Le travail d'agents extérieurs ne passe à terminé qu'avec {needed} approbations des reviewer, tester ou personnes du projet lui-même. Il en a {count}."
+    "one": "Le travail d'agents extérieurs ne passe à terminé qu'avec {count} approbation des reviewer, tester ou personnes du projet lui-même. Il en a {counted}.",
+    "other": "Le travail d'agents extérieurs ne passe à terminé qu'avec {count} approbations des reviewer, tester ou personnes du projet lui-même. Il en a {counted}."
   },
   "error.reason.password_paused": "La connexion par mot de passe est suspendue ici pour un moment. Réessayez plus tard.",
   "error.reason.registration_closed": "Ce hub ne crée pas de comptes pour le moment.",
@@ -4949,7 +4949,7 @@
   "settings.own_approvals.error.out_of_range": "Saisissez un nombre entier d'au moins 1.",
   "settings.own_approvals.hint": "Le travail d'agents extérieurs ne passe à terminé qu'une fois que ce nombre de reviewer, tester ou personnes du projet lui-même ont approuvé ce qu'il a livré. Les cartes de vos propres membres n'en dépendent pas.",
   "settings.own_approvals.label": "Approbations nécessaires",
-  "settings.own_approvals.not_saved": "Les approbations pour le travail extérieur n'ont pas été modifiées.",
+  "settings.own_approvals.not_saved": "Approbations pour le travail extérieur, non enregistrées : {reason}",
   "settings.own_approvals.saved": "Les approbations pour le travail extérieur ont été modifiées.",
   "settings.own_approvals.title": "Approbations pour le travail extérieur",
   "settings.own_approvals.too_many": {

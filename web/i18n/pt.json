@@ -1289,8 +1289,8 @@
   "error.reason.observer": "Quem só acompanha a leitura não pode fazer isto.",
   "error.reason.owner_only": "Só o proprietário pode fazer isto.",
   "error.reason.own_approvals": {
-    "one": "O trabalho de agentes de fora só passa a concluído com {needed} aprovações dos reviewer, tester ou pessoas do próprio projeto. Tem {count}.",
-    "other": "O trabalho de agentes de fora só passa a concluído com {needed} aprovações dos reviewer, tester ou pessoas do próprio projeto. Tem {count}."
+    "one": "O trabalho de agentes de fora só passa a concluído com {count} aprovação dos reviewer, tester ou pessoas do próprio projeto. Tem {counted}.",
+    "other": "O trabalho de agentes de fora só passa a concluído com {count} aprovações dos reviewer, tester ou pessoas do próprio projeto. Tem {counted}."
   },
   "error.reason.password_paused": "Entrar com a senha está pausado aqui por um tempo. Tente de novo mais tarde.",
   "error.reason.registration_closed": "Este hub não cria contas no momento.",
@@ -4949,7 +4949,7 @@
   "settings.own_approvals.error.out_of_range": "Digite um número inteiro de pelo menos 1.",
   "settings.own_approvals.hint": "O trabalho de agentes de fora só passa a concluído quando esse número de reviewer, tester ou pessoas do próprio projeto aprovou o que ele entregou. Os cartões dos seus próprios membros não ficam presos a isso.",
   "settings.own_approvals.label": "Aprovações necessárias",
-  "settings.own_approvals.not_saved": "As aprovações para o trabalho de fora não foram alteradas.",
+  "settings.own_approvals.not_saved": "Aprovações para o trabalho de fora não salvas: {reason}",
   "settings.own_approvals.saved": "As aprovações para o trabalho de fora foram alteradas.",
   "settings.own_approvals.title": "Aprovações para o trabalho de fora",
   "settings.own_approvals.too_many": {

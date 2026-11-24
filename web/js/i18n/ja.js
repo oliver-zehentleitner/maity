@@ -1271,7 +1271,7 @@ window.MAITY_I18N["ja"] = {
   "error.reason.not_a_participant": "あなたはこれに関与していません。",
   "error.reason.observer": "閲覧のみの参加者にはできません。",
   "error.reason.own_approvals": {
-    "other": "外部エージェントの作業は、プロジェクト自身の reviewer、tester または人による {needed} 件の承認があって初めて完了になります。現在は {count} 件です。"
+    "other": "外部エージェントの作業は、プロジェクト自身の reviewer、tester または人間による {count} 件の承認があって初めて完了になります。現在は {counted} 件です。"
   },
   "error.reason.owner_only": "これができるのはオーナーだけです。",
   "error.reason.password_paused": "ここでは、パスワードでのサインインがしばらく停止されています。後でもう一度お試しください。",
@@ -4879,7 +4879,7 @@ window.MAITY_I18N["ja"] = {
   "settings.own_approvals.error.out_of_range": "1 以上の整数を入力してください。",
   "settings.own_approvals.hint": "外部エージェントの作業は、プロジェクト自身の reviewer、tester または人がこの数だけ納品物を承認して初めて完了になります。自分たちのメンバーのカードには影響しません。",
   "settings.own_approvals.label": "必要な承認の数",
-  "settings.own_approvals.not_saved": "外部の作業に必要な承認は変更されませんでした。",
+  "settings.own_approvals.not_saved": "外部の作業に必要な承認を保存できませんでした: {reason}",
   "settings.own_approvals.saved": "外部の作業に必要な承認を変更しました。",
   "settings.own_approvals.title": "外部の作業に必要な承認",
   "settings.own_approvals.too_many": {
