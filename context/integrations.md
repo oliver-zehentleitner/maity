@@ -98,8 +98,8 @@ instance grows.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** the lead's rulings of 2026-11-23 on the plan for card tsk-2m5jbwemb21x (its questions 1 to 8, each as the plan recommended); the owner adopted the contract change on 2026-11-23 (request req-519akvezjj8z); the review round of 2026-11-23 on the contract pull request (staleness bound, `not_admin` links serving nothing, the replacement of a `not_admin` link, the re-check's order and cadence); the security delta round A2230 and the contract delta round A2231 of 2026-11-23 on that pull request and the lead's ruling of 2026-11-23 on them (one cadence counted from every check, a link of either status checked before a replacement; only a definite membership answer changes a link's status, one reason for every link that serves nothing, a link checked again right before another owner's link replaces it); the lead's rulings of 2026-11-23 on the contract amendment (a membership in another organisation is a definite answer on a re-check as at linking; a replacement checks the existing link at once, the one exception to the cadence); the pre-review A2500 of 2026-11-24 on that pull request and the contract fix round on it (suspended and removed links, the confirmation, the fallback while a check has no answer, the replacement's records and `checked_at`); contract `docs/api.md` §11.4, §11.5, §6.26
-**Verification:** uncorroborated — contract only, not built yet: the hub still refuses an organisation installation (`hub/src/maity_hub/forge_links.py`, `organisation_installation`)
+**Source:** the lead's rulings of 2026-11-23 on the plan for card tsk-2m5jbwemb21x (its questions 1 to 8, each as the plan recommended); the owner adopted the contract change on 2026-11-23 (request req-519akvezjj8z); the review round of 2026-11-23 on the contract pull request (staleness bound, `not_admin` links serving nothing, the replacement of a `not_admin` link, the re-check's order and cadence); the security delta round A2230 and the contract delta round A2231 of 2026-11-23 on that pull request and the lead's ruling of 2026-11-23 on them (one cadence counted from every check, a link of either status checked before a replacement; only a definite membership answer changes a link's status, one reason for every link that serves nothing, a link checked again right before another owner's link replaces it); the lead's rulings of 2026-11-23 on the contract amendment (a membership in another organisation is a definite answer on a re-check as at linking; a replacement checks the existing link at once, the one exception to the cadence); the pre-review A2500 of 2026-11-24 on that pull request and the contract fix round on it (suspended and removed links, the confirmation, the fallback while a check has no answer, the replacement's records and `checked_at`); the review notes A2509 and A2510 on that pull request, taken up in hub PR 2; the lead's go of 2026-11-24 on hub PR 2 (seq 214797: a link that changes during a replacement's check, Q2); contract `docs/api.md` §11.4, §11.5, §6.26
+**Verification:** corroborated — built in hub PR 2 of the card: `hub/src/maity_hub/forge_links.py` (`verify`, `owner_check`, `claim`, `link`), `hub/src/maity_hub/forge_access.py`, `hub/src/maity_hub/errors.py` (`forge_refusal`), tested in `hub/tests/test_forge_org_links.py`; how it is built: the hub's `context/probe.md`, aa664ec0
 **See:** integrations.md#the-hub-reads-a-repository-with-its-owners-grant-a-github-app-installation-first-the-owners-token-second-the-instance-token-only-for-an-operators-project-with-a-public-repository — 4e15dcbb-9bb4-4c14-9193-9aa2b2d3f0f3 — as of 2026-11-23
 **See:** projects.md#organisations-are-a-second-kind-of-namespace-owner-beside-humans-in-the-same-ownerslug-namespace-their-owners-own-every-project-admins-and-members-only-what-they-are-added-to — 33f520b9-5aaa-4aed-96f4-e90bf3749c56 — as of 2026-11-23
 **Revisit when:** the forge's events are to replace the re-check; narrowing the read tokens' permissions gets a ruling; the 10-minute window after an owner loses the role is no longer acceptable; owners need to share one organisation's installation; GitHub App managers are to link; or installation tokens are to be minted per repository
@@ -134,11 +134,17 @@ meanwhile. A link's `checked_at` is its last check, whatever came of it
 Only a definite membership answer changes a link's status: a
 membership that is not an active owner's, one of another user id, one
 in another organisation than the installation's (its login now belongs
-to another organisation), or no membership or user at all (`404`), the
-same answers that refuse a link at linking. A failed check sets the link
+to another organisation), or no membership or user at all (`404`). At
+linking the same answers refuse the link, except the user id, which
+linking compares with nothing: it reads the user's own membership with
+that user's token, so the membership is that user's by how it is read.
+A failed check sets the link
 `not_admin`: it mints nothing except for its own re-check, shows no
 repositories and serves no project, and the linking human gets a
-security item. A check that succeeds restores `active`. Every other
+security item when the status becomes `not_admin`, not again on a later
+failed check of a link that is `not_admin` already. A check that
+succeeds restores `active`. The owner check at linking is the link's
+first check and its first success. Every other
 refusal (a missing permission and a rate limit included) and no answer
 change no status, but the link then serves nothing once its last
 success is 10 minutes old; at linking they write no link and answer
@@ -157,11 +163,23 @@ checked again right before another owner's link replaces it, `active`,
 `not_admin` or `suspended`, at once however recent its last check. The replacement goes ahead only on a
 definite answer that its human is no active owner; a success keeps the
 link (`installation_linked`), and no definite answer refuses with
-`forge_unavailable`. The replacement stands if the former owner
+`forge_unavailable`, as does a link that changed while its check ran,
+with nothing written and no second check (the lead's ruling Q2 of
+2026-11-24, seq 214797). The replacement stands if the former owner
 becomes an owner again. The App asks for the
 organisation permission Members, read-only; nothing else turns on by
 itself, so there is no instance switch. Tokens stay per installation,
 not per repository.
+
+`organisation_installation` keeps its name with a narrower meaning:
+before, it refused every installation on a GitHub organisation; now it
+refuses only one on an account that is neither a user nor an
+organisation (`account.type` other than `User` and `Organization`),
+since an organisation's installation is decided by the owner check.
+Why the name stayed: a reason the dashboard and clients already read
+keeps working, and for the other kinds of account the hub still has no
+check of who may link them (inferred, from the contract pull request
+#2139; no other reading was recorded).
 
 Evidence: everything up to the lead's rulings on the contract amendment
 is confirmed (Source); what follows from the pre-review A2500 (this

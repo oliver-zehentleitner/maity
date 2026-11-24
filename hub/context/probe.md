@@ -402,6 +402,72 @@ prevent.
   last choice instead (`forge_access.probe_via`), and before any
   choice the operator's token if there is one.
 
+## A link on a forge organisation keeps its last success apart from its last check, and one process claims each check
+
+**Id:** aa664ec0-22da-4cca-bf1e-f44f41ebbfe9
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** implementation of hub PR 2 of card tsk-2m5jbwemb21x, 2026-11-24, on the plan note nte-cm5qr3y8bx04; the lead's go of 2026-11-24 (seq 214797: the claim by a conditional update of `checked_at`, its two-connection test, rulings Q2 and Q3); the review notes A2509 (213241) and A2510 (nte-e0amanaa564s) on the contract pull request #2139; contract `docs/api.md` §11.4
+**See:** https://github.com/oliver-zehentleitner/maity — 40057878-5f35-44fa-8b67-2e1820b59d38 — as of 2026-11-24
+**Revisit when:** the hub keeps the owner check's outcome anywhere but `forge_link`, the App's events replace the polling, or a second kind of check gets its own cadence
+
+How the owner check of §11.4 is built (`forge_links.py`, `forge_access.py`):
+
+- `forge_link.owner_ok_at` holds the last successful owner check, apart
+  from `checked_at`, the last check whatever came of it. A link on a
+  forge organisation serves only while `active` and `owner_ok_at` is
+  under 10 minutes old (`forge_links.serves`). A success counts from
+  when its check was claimed, never from when it ended.
+- A due check is claimed by one `UPDATE … SET checked_at = now WHERE
+  checked_at <= now - 10 minutes`, committed before any forge call; the
+  process whose update changed the row makes the check, every other one
+  takes the link as it stands. Its forge reads hold no connection.
+- A refused mint on such a link sets its status but not `checked_at`,
+  and a `suspended` one is minted for only inside its check: a mint is
+  no owner check, and the check's first step reads the suspension
+  itself.
+- The token a check mints for a link that does not serve already is
+  neither taken from nor put into the held tokens (`token(keep=False)`).
+- The reasons such a link gives (`errors.ORG_*`) are the hub's own and
+  never reach an answer as they are: every reader answers them through
+  `errors.forge_refusal`, which knows who is the human in
+  `confirmed_by` (that human themselves, never their agent).
+- The source choice is kept no longer than the link's check: until 10
+  minutes after its success while it serves, until its next check is
+  due while it does not, besides the usual 10 minutes and key.
+- §11.3's export asks the source on every call only where it rests on
+  such a link, and refuses by reader only while that link serves
+  nothing and no other source covers; every other state is answered
+  from its cache as before.
+- A replacement rereads the existing link under its row lock after the
+  check and compares it with the link the check was made for; any
+  difference is `forge_unavailable` with nothing written and no retry
+  (the lead's ruling Q2).
+
+**Reason:** with one timestamp, a refused mint or a check without an
+answer would move the time a read rests on, and a link could serve on a
+success older than 10 minutes (A2509 2a). The claim makes "at most every
+10 minutes" hold across replicas and connections without a lock held
+over forge calls, which can take seconds. A suspended link that minted
+on every choice would call the forge more often than its cadence
+(A2509 2b). Internal reasons keep a user account's reasons, which every
+`project:admin` sees, from being shown for a link whose reasons depend
+on the reader. Narrowing §11.3's check to such links keeps its answers
+for every other project as they were (§11.3 had no `probe_not_configured`
+before), which is the inferred part of this entry.
+
+**Rejected alternatives:**
+- A row lock held over the check's forge reads: two engines would not
+  both call the forge, but a slow forge would hold the link's row and
+  every writer of it waiting for the whole check.
+- A mint retry for a `suspended` link on its own throttle, as for a
+  user account: a mint alone never sets it `active`, and a throttle from
+  the suspension ends after the last success's 10 minutes anyway, so it
+  would only add calls.
+- Retrying a replacement whose link changed during its check: the change
+  says another check or write is under way; the human links again.
+
 ## A page without sign-in counts only merges a read found public
 
 **Id:** 6af0bb67-32dd-40df-91df-df1eb03288fc
