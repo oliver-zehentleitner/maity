@@ -282,6 +282,9 @@ class Context:
     # <key>`), on the runner's machine whatever the target: the bytes a Codex placement's own
     # skills directory gets (codex_skill). None with `skill`.
     skill_source: Path | None = None
+    # The dev venvs the runner built for this clone (`clone_venvs`, venvs.py), each under the
+    # runner's venvs directory: read and run by the session, never written (claude_settings).
+    venvs: tuple[Path, ...] = ()
 
 
 def skill_env(ctx: Context) -> dict[str, str]:
@@ -668,6 +671,8 @@ def claude_settings(ctx: Context) -> dict[str, Any]:
         # The delivered skill's references (skills.py), read only: the skill sends the agent to
         # them, and without this rule a read outside the clone and the scratch is refused.
         allow += [f"Read(/{ctx.skill}/**)"]
+    # The dev venvs the runner built (venvs.py): the clone's `<sub>/.venv` links to them.
+    allow += [f"Read(/{venv}/**)" for venv in ctx.venvs]
     # Agents commit through git and never edit what makes git run something (GIT_PROTECTED).
     # Not all of .git: the sandbox turns an Edit deny into a write deny for every command, and
     # git could no longer fetch or commit. The credential is not readable through Read.
@@ -678,6 +683,9 @@ def claude_settings(ctx: Context) -> dict[str, Any]:
     deny += [f"Edit(/{git}/maity/**)", f"Read(/{git}/maity/**)"]
     if ctx.skill is not None:  # never written from the session, whatever another rule allows
         deny += [f"Edit(/{ctx.skill}/**)"]
+    # A venv the runner built is never written from the session: the runner builds the next one
+    # beside it and runs nothing from a venv the session could have reached (venvs.py).
+    deny += [f"Edit(/{venv}/**)" for venv in ctx.venvs]
     deny += [f"Bash({rule})" for rule in
              (*GIT_DENIED, *GIT_WORKTREE_DENIED, *GH_DENIED, *MAITY_RUNNER_DENIED)]  # fmt: skip
     # The same git escapes through `git -C <clone>` (the allow forms above), mirrored so a deny
@@ -754,7 +762,9 @@ def claude_settings(ctx: Context) -> dict[str, Any]:
                                          *(str(p) for p in ctx.private),
                                          *(_shared_tmp(ctx) if own is None else []),
                                          # The delivered skill (skills.py): read, never written.
-                                         *([str(ctx.skill)] if ctx.skill is not None else [])],
+                                         *([str(ctx.skill)] if ctx.skill is not None else []),
+                                         # The dev venvs (venvs.py): read and run, never written.
+                                         *(str(venv) for venv in ctx.venvs)],
                            # Commands write the placement's scratch besides the clone (§15.5),
                            # and its own TMPDIR; both are read again under their hidden parents.
                            **({"allowWrite": writable} if writable else {}),

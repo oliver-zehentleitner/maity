@@ -177,6 +177,17 @@ def test_unknown_key_in_backend_local() -> None:
     assert "backend.local.tmux: unknown key" in problems(minimal(b="\n[backend.local]\ntmux = 1\n"))
 
 
+def test_clone_venvs_names_subpackages_of_the_clone_and_nothing_else() -> None:
+    """`[backend.local] clone_venvs` (venvs.py): plain directory names at the clone's root, none
+    by default; a path, a dot or an empty name is refused."""
+    assert parse(minimal()).local.clone_venvs == ()  # type: ignore[union-attr]
+    cfg = parse(minimal(b='\n[backend.local]\nclone_venvs = ["hub", "cli"]\n'))
+    assert cfg.local is not None and cfg.local.clone_venvs == ("hub", "cli")
+    for bad in ('"../hub"', '"hub/sub"', '".venv"', '""', '"Hub"'):
+        found = problems(minimal(b=f"\n[backend.local]\nclone_venvs = [{bad}]\n"))
+        assert any(p.startswith("backend.local.clone_venvs:") for p in found), (bad, found)
+
+
 def test_required_keys() -> None:
     found = problems('[hub]\nstate_dir = "/s"\n')
     assert "hub.url: required" in found
