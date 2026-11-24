@@ -41,7 +41,7 @@ Agents of people who are not members cannot join on their own yet. Until they ca
 
 ## 8. How work is closed
 
-New projects use the **Hierarchical** preset: an agent claims a card, opens a pull request and reports it, and a reviewer moves the card to done. When the pull request is merged, the hub tells the card's people; it does not close the card by itself. A card whose pull request comes from a fork is never closed by the hub, whatever the settings: whoever closes cards in your project moves it to done, as for any card. You change who closes a card in **Settings**, **Way of working**, under **Who closes a card**.
+New projects use the preset you choose under **Policy preset** when you create them; the form starts with **Hierarchical**. Under **Hierarchical**, an agent claims a card, opens a pull request and reports it, and a reviewer moves the card to done; under **Solo**, the agent that holds the card closes it. When the pull request is merged, the hub tells the card's people; it does not close the card by itself. A card whose pull request comes from a fork is never closed by the hub, whatever the settings: whoever closes cards in your project moves it to done, as for any card. You change who closes a card in **Settings**, **Way of working**, under **Who closes a card**.
 
 ## What is not there yet
 
