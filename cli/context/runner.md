@@ -7644,3 +7644,78 @@ session on it ended.
   a pane's `SHELL` is set from `default-shell` after the `-e` values, so it
   would not win (not checked against a live tmux).
 - Changing the account's shell: see the constraint above.
+
+## An agent's clone of the other layout is set aside whole, and the agent joins anew
+
+**Id:** 66b73260-77a7-421a-bba0-ef5b140f161d
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-9f69y1hr1m6z (an agent placed again with antigravity on a clone name a Claude Code placement had used was stuck twice on a runner host, 2026-11-17: `workspace_in_use`/`workspace_unrecorded` until the old clone was moved by hand, then `join_failed`/`credential_missing` until the profile's owner revoked and rejoined); the lead's decision on the card's plan, seq 152381, and on the set-aside clone's removal, seq 152442; the review of PR #1930 (A1056) and the review lead's fix order; the pre-review A2497 and the lead's go on its fixes, seq 212827 (removal by hand, no `gc` promise, the failure and collision rules); docs/api.md §15.5, §15.7, docs/runners.md
+**See:** https://github.com/oliver-zehentleitner/maity — 4edeef48-8684-4495-96dc-6063e25e31c7 — as of 2026-11-17
+**See:** https://github.com/oliver-zehentleitner/maity — 44fe553d-74c0-495d-80c4-e1af00a65f57 — as of 2026-11-24
+**See:** runner.md#local-mode-one-agent-in-the-foreground-no-pairing-also-on-windows — dd77eab8-46a3-45dd-9f08-bde11f926942 — as of 2026-11-17
+**See:** runner.md#a-stopped-agents-clone-stays-for-its-retention-time-then-the-runner-removes-it — 161d5507-5b44-45d6-8bec-cacd58de58a2 — as of 2026-11-17
+**Revisit when:** clone paths stop being shared by the two layouts (tsk-rfa7fwa2sz5g kept them shared: a new placement still continues the membership's held clone), or a harness gets a third layout; or the runner's retention removal and `gc --revoked` learn `.replaced-*` paths (the follow-up of tsk-9f69y1hr1m6z); or the dashboard should reach a set-aside clone (in this contract only the runner's log and `maity runner status` do, lead's decision seq 152442)
+
+Contracted, not built yet. Both layouts use `<workspaces>/<project_id>/<clone>`:
+a plain clone, or for `antigravity` a folder with the clone as `repo`.
+When a start finds there a path the runner recorded for this placement's
+agent in the other layout (a new placement of that agent on this runner
+and clone, or a changed harness), no symbolic link and nothing using it,
+the runner reports `set_aside` first; once the hub took it, it renames the
+path whole to `.replaced-<time>-<clone>` beside it, runs no git and reads
+nothing in it, then makes the new clone under the new epoch and joins (a
+`replaces` join when the hub set `rejoin`, the ordinary one when the
+placement named no credential). When `.replaced-<time>-<clone>` exists,
+`-2`, `-3`, … go after `<time>`; nothing is renamed over a path. A
+refused report or a failed rename moves nothing and fails the start
+(`workspace_in_use`, `workspace_set_aside_failed`); after a failed rename
+the hub's state stays, and the next start reports `set_aside` again at
+the new epoch (revoking nothing more) and retries the rename, also when
+the harness was switched back to the clone's layout, since its
+credential and epoch are spent. The report names `detail:
+workspace_set_aside`, the log the old and the new path, and `maity
+runner status` the set-aside clone with its unsaved count. That count's
+git runs as `gc`'s does (`not_inspectable` first, then `SAFE_GIT` and
+no system or global configuration): no `core.hooksPath`,
+`core.fsmonitor` or `include` from the clone, since a set-aside clone is
+untrusted (lead, seq 212863). A person removes it by hand: the runner's
+retention removal and `gc --revoked` do not take a `.replaced-*` path
+yet (gc goes by a revoked credential, which a set-aside clone may not
+have, and skips every clone of an agent with an active placement), and
+teaching them that is the follow-up card tsk-nnv2dg7j3bd4. Every other path in the other layout stays
+`workspace_in_use`. The rule "no clone moves between the two layouts"
+stands.
+
+**Reason:** the shared path made the old clone and its record block the
+new layout, and the credential, which lives in the clone, was then
+expected at the new layout's place. Renaming moves the whole tree in one
+step without touching its content, so uncommitted files, unpushed
+commits, stashes and agy's entries beside `repo` survive, as in local
+mode's `.replaced-*`. A name with a leading `.` is never a clone token, so
+nothing starts there. Revoking the old credential leaves the copy in the
+set-aside tree dead.
+
+**Rejected alternatives:**
+- Moving the old clone into the new layout (into `repo`, or out of it)
+  and keeping its credential: one layout's clone would carry what the
+  other harness's runs left (agy's entries beside `repo`, a clone an
+  earlier harness configured), and the records keyed on the clone's path
+  (folder trust, the recorded `.git`) would point at a moved tree. The
+  lead chose the set-aside.
+- Reporting the move as `removed`: the clone is still on the disk; the
+  hub has a state of its own for it (`set_aside`, the hub entry).
+- An operator setting that turns it on: the owner made the new placement,
+  so the intent is there; the narrow condition keeps every other
+  `workspace_in_use` refused.
+- A retention of its own for set-aside clones: the lead kept one rule,
+  that of a stopped clone.
+- Promising `gc --revoked` for set-aside clones in this contract: gc
+  skips them today (the `.replaced-*` name is no clone token, the agent
+  has an active placement, a clone without a credential is never
+  revoked), and widening it is removal logic for trees nobody inspected,
+  so it belongs with the runner's code and tests (A2497, lead seq
+  212827).
+- Deleting the old clone, or moving only its credential: deletes unsaved
+  work, or puts the runner's hands on a credential it never holds.
