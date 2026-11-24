@@ -39,18 +39,29 @@ call; a name the shell assembles from expansions is left to the sandbox and to t
 guard (cli/context/runner.md). Any other tool call is left to the
 permission rules: the hook prints nothing and exits 0.
 
+With a repository grant's `python_tools` (the runner passes `--clone`, `--python-tools` and
+`--writable`), a line that could match the runner's `python3 <dir>/*.py` rules passes only as
+`python3 <dir>/<name>.py` and plain arguments from the clone's root, the script reached
+through no link, and `python3` outside every path the session may write (`python_tool`).
+
 It reads Claude Code's PreToolUse input on stdin and refuses with exit 2 and the reason on
-stderr. Input it cannot read is refused too, and so is a call the hook fails on.
+stderr. Input it cannot read is refused too, and so is a call the hook fails on, arguments it
+cannot read included.
 """
 
 from __future__ import annotations
 
 import itertools
 import json
+import os
 import re
+import shutil
+import stat
 import sys
 import unicodedata
 from collections.abc import Sequence
+from dataclasses import dataclass
+from pathlib import Path
 from typing import TypeAlias
 
 # Characters a word may hold unquoted: none of them makes the shell do anything but take it
@@ -1337,11 +1348,115 @@ def _in_substitution(command: str) -> str | None:
     return None
 
 
-def refusal(payload: object) -> str | None:
+PYTHON_TOOL_REFUSED = (
+    "A repository tool runs here only as `python3 <dir>/<name>.py` followed by plain arguments, "
+    "from the clone's root, with <dir> one of this repository's tool directories ({dirs}): "
+    "python3 by that bare name, the script as the next word (no interpreter option), no `..`, "
+    "no subdirectory, no link, and nothing piped, chained, redirected, sent to the background "
+    "or substituted. Arguments are plain words or single-quoted text. ({why})"
+)
+
+
+@dataclass(frozen=True)
+class PythonTools:
+    """What the runner gave the hook for `python_tools` (config.RepositoryGrant): the clone,
+    the tool directories relative to it, and the paths the session may write besides the clone
+    (its scratch, its own TMPDIR), where no python3 the hook accepts may lie."""
+
+    clone: Path
+    dirs: tuple[str, ...]
+    writable: tuple[Path, ...] = ()
+
+
+# The python3 line `python_tool` lets through: the bare program, one space-separated script
+# under a tool directory, then plain or single-quoted arguments. One line, no tabs.
+_TOOL_SCRIPT = r"[A-Za-z0-9_][A-Za-z0-9_-]{0,127}\.py"
+_TOOL_ARGUMENT = r"(?:[A-Za-z0-9_./:=@%+,-]+|'[^'\n]*')"
+# A word that names a python 3 interpreter: python3 or python3.N, by its name or a path.
+_PYTHON3 = re.compile(r"python3(?:\.[0-9]+)?")
+# What `_python_candidate` splits a line at once quotes and backslashes are taken out: blanks
+# and every character that ends a word or starts an expansion for the shell.
+_CANDIDATE_SPLIT = re.compile(r"[\s;&|()<>`$]+")
+
+
+def _python_candidate(command: str, dirs: Sequence[str]) -> bool:
+    """Whether the line could be one Claude Code matches against a `python_tools` rule
+    (`python3 <dir>/…`): some word, with quotes and backslashes taken out and split at
+    blanks, operators and expansions, names python3 (python3.N, by any path, in any case)
+    and a later word starts with a tool directory and `/` (after a leading `./`), so an
+    interpreter option between them counts too. Wider on purpose: such a line passes only in
+    the exact form (`python_tool`); a line that names a tool directory after python3 for
+    another reason (`git grep python3 tools/`) is refused with it."""
+    text = re.sub(r"[\"'\\]", "", command)
+    words = [w for w in _CANDIDATE_SPLIT.split(text) if w]
+    prefixes = tuple(f"{d.lower()}/" for d in dirs)
+    seen_python = False
+    for word in words:
+        if seen_python and word.lower().removeprefix("./").startswith(prefixes):
+            return True
+        if _PYTHON3.fullmatch(word.rsplit("/", 1)[-1].lower()):
+            seen_python = True
+    return False
+
+
+def _inside(path: Path, roots: Sequence[Path]) -> bool:
+    return any(path == root or root in path.parents for root in roots)
+
+
+def python_tool(command: str, cwd: object, tools: PythonTools) -> str | None:
+    """The reason to refuse a line that could match a `python_tools` rule (`_python_candidate`),
+    or None. It passes only as `python3 <dir>/<name>.py [argument …]` on one line, from the
+    clone's root (`cwd`), where every part of the script's path is a real directory or, last, a
+    regular file (no link), and where `python3` on the hook's PATH resolves outside the clone
+    and every path the session may write. When the hook cannot decide (no readable cwd, a
+    lookup that fails), it refuses. Any other line is left to the permission rules."""
+    if not _python_candidate(command, tools.dirs):
+        return None
+    dirs = ", ".join(tools.dirs)
+
+    def refused(why: str) -> str:
+        return PYTHON_TOOL_REFUSED.format(dirs=dirs, why=why)
+
+    line = command.strip(" ")
+    form = re.compile(
+        r"python3 (?P<dir>" + "|".join(re.escape(d) for d in tools.dirs) + r")/"
+        rf"(?P<name>{_TOOL_SCRIPT})(?: +{_TOOL_ARGUMENT})*"
+    )
+    found = form.fullmatch(line)
+    if found is None:
+        return refused("the line is not in that form")
+    if not isinstance(cwd, str) or not cwd:
+        return refused("the hook got no working directory")
+    try:
+        clone = Path(os.path.realpath(tools.clone))
+        if Path(os.path.realpath(cwd)) != clone:
+            return refused("run it from the clone's root")
+        at = clone
+        parts = [*found["dir"].split("/"), found["name"]]
+        for index, part in enumerate(parts):
+            at = at / part
+            mode = os.lstat(at).st_mode
+            last = index == len(parts) - 1
+            if not (stat.S_ISREG(mode) if last else stat.S_ISDIR(mode)):
+                return refused(f"{at} is not a plain {'file' if last else 'directory'}")
+        program = shutil.which("python3")
+        if program is None:
+            return refused("python3 is not on the PATH")
+        resolved = Path(os.path.realpath(program))
+        roots = [clone, *(Path(os.path.realpath(p)) for p in tools.writable)]
+        if _inside(Path(os.path.abspath(program)), roots) or _inside(resolved, roots):
+            return refused("python3 on the PATH lies where this session can write")
+    except (OSError, ValueError) as exc:
+        return refused(f"cannot check it: {type(exc).__name__}")
+    return None
+
+
+def refusal(payload: object, tools: PythonTools | None = None) -> str | None:
     """The reason to refuse the tool call in Claude Code's PreToolUse input, or None. A line
     that names `maity` and holds a control character or a space the shell does not split at
     (`odd_spacing`) is refused when nothing else refuses it, so a line refused before keeps
-    its reason."""
+    its reason. With `tools`, a line that could match a `python_tools` rule is held to its
+    exact form as well (`python_tool`)."""
     if not isinstance(payload, dict):
         return "the hook's input is not a JSON object"
     tool_input = payload.get("tool_input")
@@ -1353,7 +1468,44 @@ def refusal(payload: object) -> str | None:
         reason = _in_substitution(command)
     if reason is None and odd_spacing(command):
         reason = SPACING_REFUSED
+    if reason is None and tools is not None and tools.dirs:
+        reason = python_tool(command, payload.get("cwd"), tools)
     return reason
+
+
+def _tools(args: Sequence[str]) -> PythonTools | None:
+    """The `python_tools` the runner passed: `--clone <path>`, then `--python-tools <dir>`
+    and `--writable <path>`, each repeatable. None without arguments. Anything else, or tool
+    directories without a clone, raises: the hook fails and the call is refused."""
+    if not args:
+        return None
+    clone: Path | None = None
+    dirs: list[str] = []
+    writable: list[Path] = []
+    words = list(args)
+    while words:
+        flag = words.pop(0)
+        if not words:
+            raise ValueError(f"{flag} without a value")
+        value = words.pop(0)
+        if flag == "--clone" and clone is None:
+            clone = Path(value)
+        elif flag == "--python-tools":
+            dirs.append(value)
+        elif flag == "--writable":
+            writable.append(Path(value))
+        else:
+            raise ValueError(f"unknown argument {flag}")
+    if clone is None or not clone.is_absolute() or not dirs:
+        raise ValueError("--python-tools needs --clone with an absolute path")
+    if not all(_TOOL_DIR.fullmatch(d) for d in dirs):
+        raise ValueError("a tool directory that is not a plain relative path")
+    return PythonTools(clone=clone, dirs=tuple(dirs), writable=tuple(writable))
+
+
+# config.PYTHON_TOOLS_DIR, again here: the hook imports nothing from the runner's
+# configuration, and a test holds the two equal.
+_TOOL_DIR = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_-]{0,63}(?:/[A-Za-z0-9_][A-Za-z0-9_-]{0,63}){0,3}")
 
 
 def _decide(command: str) -> str | None:
@@ -1372,13 +1524,13 @@ def main(args: Sequence[str] | None = None) -> int:
     """Exit 0 to leave the call to the permission rules, 2 to refuse it. Anything raised
     while it reads the input or decides refuses the call, whatever it is, and so does a
     reason it cannot print."""
-    del args  # takes none
     try:
+        tools = _tools(sys.argv[1:] if args is None else args)
         try:
             payload = json.loads(sys.stdin.buffer.read())
         except (ValueError, OSError, RecursionError):
             payload = None
-        reason = refusal(payload)
+        reason = refusal(payload, tools)
     except BaseException:  # noqa: BLE001 - a call the hook fails on is refused, not let through
         reason = FAILED
     if reason is None:
