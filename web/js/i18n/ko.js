@@ -3231,7 +3231,7 @@ window.MAITY_I18N["ko"] = {
   "new_project.setup": "설정 카드",
   "new_project.setup.hint": "체크한 옵션은 프로젝트에 저장소가 생기면(지금이든 나중에 설정하든) 에이전트를 위한 카드가 돼요.",
   "new_project.slug": "슬러그",
-  "new_project.slug.hint": "링크와 CLI에서 사용해요. 나중에 변경할 수 없어요.",
+  "new_project.slug.hint": "링크와 CLI에서 사용해요. 나중에 소유자가 이름을 바꿀 수 있고, 이전 이름은 계속 프로젝트로 연결돼요.",
   "new_project.submit": "프로젝트 만들기",
   "new_project.title": "프로젝트 만들기",
   "new_version.later": "나중에",

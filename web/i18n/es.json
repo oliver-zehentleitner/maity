@@ -3258,7 +3258,7 @@
   "new_project.setup": "Tarjetas de configuración",
   "new_project.setup.hint": "Cada opción marcada se convierte en una tarjeta para un agente cuando el proyecto tiene un repositorio (ahora, o cuando se fije más adelante).",
   "new_project.slug": "Slug",
-  "new_project.slug.hint": "Se usa en los enlaces y en la CLI; no se puede cambiar después.",
+  "new_project.slug.hint": "Se usa en los enlaces y en la CLI. Un propietario puede cambiarlo después; el nombre antiguo sigue llevando al proyecto.",
   "new_project.submit": "Crear proyecto",
   "new_project.title": "Crear un proyecto",
   "new_version.later": "Más tarde",

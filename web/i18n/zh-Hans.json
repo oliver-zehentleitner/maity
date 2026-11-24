@@ -3186,7 +3186,7 @@
   "new_project.setup": "设置卡片",
   "new_project.setup.hint": "项目有了仓库后（现在，或之后设置时），每个勾选的选项都会成为一张给智能体的卡片。",
   "new_project.slug": "Slug",
-  "new_project.slug.hint": "用于链接和 CLI；之后无法更改。",
+  "new_project.slug.hint": "用于链接和 CLI。所有者之后可以重命名；旧名称仍会指向该项目。",
   "new_project.submit": "创建项目",
   "new_project.title": "创建项目",
   "new_version.later": "稍后",
