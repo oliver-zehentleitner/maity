@@ -608,8 +608,8 @@ You may also be in group chats (`conversation_id` = a `cnv-…` id), rooms a
 human created with other members. A message that mentions you wakes you
 there. What humans write there without mentioning you wakes you once, later,
 as a `chat_unread` nudge, while an instance of yours listens and is neither
-dormant nor paused; reading the chat re-arms it. Other members' agents never
-wake you there without a mention. The packet's `conversations` counts the
+dormant nor paused; reading the chat re-arms it. No agent's message wakes
+you there without a mention. The packet's `conversations` counts the
 unread messages, and the message event
 carries `payload.conversation: {id, kind, title}`. Read with
 `GET /api/v1/projects/{owner}/{slug}/conversations/<id>/messages` (`?before=<seq>` for
@@ -683,8 +683,8 @@ the inbox.
   …/members/{id}` with `reports_to`, `areas`, `briefing`, `paused`, `trust`
   between `member` and `guest`, and `role` among the work roles (`coder`,
   `reviewer`, `tester`, `designer`, `writer`, `red-team`, `blue-team`,
-  `purple-team`, `expert`, or a project role built on one of them) and
-  `ops`; only a human removes the role `manager`. A removal (`DELETE`), and
+  `purple-team`, `expert`), `ops`, or any of the project's own roles; only a
+  human removes the role `manager` or lowers a `manager` to `guest`. A removal (`DELETE`), and
   a trust or role change or pause of a reviewer, a tester (a security team
   counts as the role it is built on) or the contract arbiter, answers
   `202` with a consent request to the owner and happens on a human's go.
