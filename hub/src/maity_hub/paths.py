@@ -62,7 +62,7 @@ PRODUCT_WORDS = frozenset(
         "examples", "expert", "faq", "faqs", "feature", "features", "feed", "feedback", "file",
         "files", "fork", "forks", "forum", "forums", "gdpr", "github", "gitlab", "guide",
         "guides", "help", "home", "hooks", "hosting", "info", "instance", "instances",
-        "integration", "integrations", "invitation", "invitations", "investors", "issue",
+        "integration", "integrations", "investors", "invitation", "invitations", "issue",
         "issues", "job", "jobs", "joins", "jour-fixe", "jourfixe", "keep-the-why",
         "knowledge-base", "knowledgebase", "ktw", "landing", "learn", "legal", "licence",
         "licences", "license", "licenses", "link", "links", "list", "lists", "log-in",

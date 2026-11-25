@@ -1544,7 +1544,7 @@
   "handles.explain.you": "Je handle is je naam op Maity, in de link van je pagina en in @-vermeldingen.",
   "handles.failed": "Niet hernoemd: {reason}",
   "handles.forbidden": "Alleen de eigenaar van dit account of profiel hernoemt de handle ervan.",
-  "handles.format": "Twee tot 31 tekens: kleine letters, cijfers en koppeltekens, niet beginnend met een koppelteken.",
+  "handles.format": "Zes tot 31 tekens: kleine letters, cijfers en koppeltekens, niet beginnend met een koppelteken.",
   "handles.label": "Nieuwe handle voor {what}",
   "handles.not_found": "Dit profiel bestaat niet meer, of deze hub kan handles nog niet hernoemen.",
   "handles.rate_limited": "Drie hernoemingen in 24 uur is het maximum; probeer het later opnieuw.",

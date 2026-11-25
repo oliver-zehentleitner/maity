@@ -1544,7 +1544,7 @@
   "handles.explain.you": "Your handle is your name on Maity, in your page's link and in @mentions.",
   "handles.failed": "Not renamed: {reason}",
   "handles.forbidden": "Only the owner of this account or profile renames its handle.",
-  "handles.format": "Two to 31 characters: lower-case letters, digits and hyphens, not starting with a hyphen.",
+  "handles.format": "Six to 31 characters: lower-case letters, digits and hyphens, not starting with a hyphen.",
   "handles.label": "New handle for {what}",
   "handles.not_found": "This profile is gone, or this hub cannot rename handles yet.",
   "handles.rate_limited": "Three renames in 24 hours is the most; try again later.",

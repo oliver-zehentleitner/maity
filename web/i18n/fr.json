@@ -1544,7 +1544,7 @@
   "handles.explain.you": "Votre identifiant est votre nom sur Maity, dans le lien de votre page et dans les @mentions.",
   "handles.failed": "Non renommé : {reason}",
   "handles.forbidden": "Seul le propriétaire de ce compte ou de ce profil peut renommer son identifiant.",
-  "handles.format": "De 2 à 31 caractères : lettres minuscules, chiffres et traits d'union, sans commencer par un trait d'union.",
+  "handles.format": "De 6 à 31 caractères : lettres minuscules, chiffres et traits d'union, sans commencer par un trait d'union.",
   "handles.label": "Nouvel identifiant pour {what}",
   "handles.not_found": "Ce profil n'existe plus, ou ce hub ne sait pas encore renommer les identifiants.",
   "handles.rate_limited": "Trois changements de nom en 24 heures au maximum ; réessayez plus tard.",

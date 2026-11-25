@@ -27522,8 +27522,8 @@ but not to the length. The list:
 `feed`, `feedback`, `file`, `files`, `fork`, `forks`, `forum`,
 `forums`, `gdpr`, `github`, `gitlab`, `guide`, `guides`, `help`,
 `home`, `hooks`, `hosting`, `info`, `instance`, `instances`,
-`integration`, `integrations`, `invitation`, `invitations`,
-`investors`, `issue`, `issues`, `job`, `jobs`, `joins`, `jour-fixe`,
+`integration`, `integrations`, `investors`, `invitation`,
+`invitations`, `issue`, `issues`, `job`, `jobs`, `joins`, `jour-fixe`,
 `jourfixe`, `keep-the-why`, `knowledge-base`, `knowledgebase`, `ktw`,
 `landing`, `learn`, `legal`, `licence`, `licences`, `license`,
 `licenses`, `link`, `links`, `list`, `lists`, `log-in`, `log-out`,
@@ -27560,8 +27560,11 @@ handles. Whoever already holds one keeps it, its page, and may take it
 back as an alias (§6.24); `maity-hub migrate` and the hub's start name
 the holders and go on. A word that gets a page of the product's own
 later becomes a reserved first segment in that change, which settles
-its holder. `owner` and `owners` stay free: `maity-hub owner create`
-and `maity-hub quickstart` fall back to `owner`.
+its holder. `owner` and `owners` stay off the list, so the operator's
+commands can use `owner`: `maity-hub owner create --handle owner`
+takes it (its `--handle` is required) and `maity-hub quickstart` falls
+back to it. `owner` has five characters, so a registration, a rename
+and a new organisation still refuse it; `owners` is free for anyone.
 
 One-letter segments (`r`) and names with a dot (`robots.txt`,
 `sitemap.xml`) cannot be handles anyway (§6.24's syntax). A release that adds a first segment adds it to

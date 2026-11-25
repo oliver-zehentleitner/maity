@@ -10203,7 +10203,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(text(hdCheck()).includes("6–31 characters"), "handles: a person's handle of five or fewer is said too short while typed");
   hdInput().value = "bosses"; hdInput().dispatch("input");
   await hdRename("Bad_Handle");
-  expect(!hdPatches.length && text(main.querySelector(".handle-form .field-error")).includes("lower-case letters"), "handles: a handle with the wrong syntax is refused locally");
+  expect(!hdPatches.length && text(main.querySelector(".handle-form .field-error")).includes("Six to 31 characters: lower-case letters"), "handles: a handle with the wrong syntax is refused locally, with a person's rule of six to 31");
   await hdRename("boss");
   expect(hdPatches.length === 1 && hdPatches[0][0] === "/me" && JSON.stringify(hdPatches[0][1]) === JSON.stringify({ handle: "boss" }), "handles: a rename is PATCH /me {handle}");
   expect(text(main).includes("@boss") && text(main).includes("Aliases: @maintainer") && text(main).includes("the old handle stays as an alias"), "handles: the new handle shows and the old one is an alias");

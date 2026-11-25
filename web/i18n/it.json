@@ -1544,7 +1544,7 @@
   "handles.explain.you": "Il tuo handle è il tuo nome su Maity, nel link della tua pagina e nelle @menzioni.",
   "handles.failed": "Nome non cambiato: {reason}",
   "handles.forbidden": "Solo il proprietario di questo account o profilo cambia il suo handle.",
-  "handles.format": "Da due a 31 caratteri: lettere minuscole, cifre e trattini, senza iniziare con un trattino.",
+  "handles.format": "Da sei a 31 caratteri: lettere minuscole, cifre e trattini, senza iniziare con un trattino.",
   "handles.label": "Nuovo handle per {what}",
   "handles.not_found": "Questo profilo non esiste più, oppure questo hub non può ancora cambiare gli handle.",
   "handles.rate_limited": "Tre cambi di nome in 24 ore sono il massimo; riprova più tardi.",

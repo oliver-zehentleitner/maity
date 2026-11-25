@@ -1508,7 +1508,7 @@
   "handles.explain.you": "你的用户名是你在 Maity 上的名称，用于你页面的链接和 @提及。",
   "handles.failed": "未重命名： {reason}",
   "handles.forbidden": "只有此账户或档案的所有者才能重命名其用户名。",
-  "handles.format": "2 到 31 个字符：小写字母、数字和连字符，不能以连字符开头。",
+  "handles.format": "6 到 31 个字符：小写字母、数字和连字符，不能以连字符开头。",
   "handles.label": "{what}的新用户名",
   "handles.not_found": "此档案已不存在，或此 hub 尚不能重命名用户名。",
   "handles.rate_limited": "24 小时内最多重命名三次；请稍后再试。",

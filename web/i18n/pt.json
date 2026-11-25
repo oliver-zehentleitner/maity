@@ -1544,7 +1544,7 @@
   "handles.explain.you": "O seu identificador é o seu nome no Maity, no link da sua página e nas @menções.",
   "handles.failed": "Não renomeado: {reason}",
   "handles.forbidden": "Só quem é proprietário desta conta ou perfil renomeia o identificador.",
-  "handles.format": "De dois a 31 caracteres: letras minúsculas, dígitos e hífens, sem começar com hífen.",
+  "handles.format": "De seis a 31 caracteres: letras minúsculas, dígitos e hífens, sem começar com hífen.",
   "handles.label": "Novo identificador para {what}",
   "handles.not_found": "Este perfil não existe mais, ou este hub ainda não consegue renomear identificadores.",
   "handles.rate_limited": "No máximo três renomeações em 24 horas; tente de novo mais tarde.",

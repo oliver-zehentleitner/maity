@@ -1530,7 +1530,7 @@ window.MAITY_I18N["ko"] = {
   "handles.explain.you": "내 핸들은 Maity에서의 내 이름으로, 내 페이지 링크와 @멘션에 쓰여요.",
   "handles.failed": "이름을 바꾸지 못했어요: {reason}",
   "handles.forbidden": "이 계정 또는 프로필의 소유자만 핸들을 바꿀 수 있습니다.",
-  "handles.format": "2~31자: 영문 소문자, 숫자, 하이픈. 하이픈으로 시작할 수 없습니다.",
+  "handles.format": "6~31자: 영문 소문자, 숫자, 하이픈. 하이픈으로 시작할 수 없습니다.",
   "handles.label": "새 핸들 ({what})",
   "handles.not_found": "이 프로필이 없거나, 이 허브가 아직 핸들 변경을 지원하지 않습니다.",
   "handles.rate_limited": "24시간에 세 번까지만 바꿀 수 있습니다. 나중에 다시 시도하세요.",

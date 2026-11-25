@@ -262,7 +262,8 @@ def rename(
     if row.handle == handle:
         return None
     # The subject's row is already locked, so its aliases cannot move under this read.
-    # The load-test reservation is the one check skipped for an own alias (§6.24, §16.11).
+    # The reservations kept from new claims (`lt-<digits>`, five characters or fewer, a product
+    # word) are the checks skipped for an own alias (§6.24, §16.11).
     scope = scope_of(owner_id)
     own = aliases(conn, [subject_id])[subject_id]
     back = handle in own

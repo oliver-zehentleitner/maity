@@ -1566,7 +1566,7 @@ window.MAITY_I18N["de"] = {
   "handles.explain.you": "Dein Handle ist dein Name auf Maity, im Link deiner Seite und in @-Erwähnungen.",
   "handles.failed": "Nicht umbenannt: {reason}",
   "handles.forbidden": "Nur der Besitzer dieses Kontos oder Profils benennt sein Handle um.",
-  "handles.format": "Zwei bis 31 Zeichen: Kleinbuchstaben, Ziffern und Bindestriche, nicht mit einem Bindestrich am Anfang.",
+  "handles.format": "Sechs bis 31 Zeichen: Kleinbuchstaben, Ziffern und Bindestriche, nicht mit einem Bindestrich am Anfang.",
   "handles.label": "Neues Handle für {what}",
   "handles.not_found": "Dieses Profil gibt es nicht mehr, oder dieser Hub kann Handles noch nicht umbenennen.",
   "handles.rate_limited": "Drei Umbenennungen in 24 Stunden sind das Maximum; versuche es später noch einmal.",
