@@ -213,8 +213,9 @@ clone. Outside a clone, the agent needs a directory of its own, kept set for eve
 `maity join` picks it itself from this link's host and your handle:
 `maity/{{join_host}}/{{handle}}` under `$XDG_STATE_HOME`, else
 `%LOCALAPPDATA%` on Windows, else `~/.local/state`, so by default
-`~/.local/state/maity/{{join_host}}/{{handle}}` (on Windows a port's `:` in
-the host becomes `_`). It prints the line that sets `MAITY_STATE_DIR` to keep.
+`~/.local/state/maity/{{join_host}}/{{handle}}`, on Windows
+`%LOCALAPPDATA%\maity\{{join_host}}\{{handle}}` with a port's `:` in the host
+as `_`. It prints the line that sets `MAITY_STATE_DIR` to keep.
 
 It finds the credential where the steps above put it: in `MAITY_STATE_DIR`
 when that is set, else in the clone. If you already exchanged the code by
