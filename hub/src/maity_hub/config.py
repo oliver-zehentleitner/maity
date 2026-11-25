@@ -32,6 +32,11 @@ _COMMIT = re.compile(r"[0-9a-fA-F]{40}")
 
 _WILDCARD_HOSTS = {"0.0.0.0", "::"}
 
+# Settings whose empty value is a value, not unset: MAITY_WEB_DIR set and empty serves no
+# dashboard (the chart's `config.dashboard: false`). Kept in `Settings.environment` when empty,
+# so the admin's overview shows it as set (§16.14, settings_overview).
+EMPTY_IS_SET = frozenset({"MAITY_WEB_DIR"})
+
 
 class ConfigError(ValueError):
     """A setting is present but unusable. The message never contains a credential."""
@@ -243,7 +248,12 @@ class Settings:
             port=port,
             public_url=public,
             public_url_guessed=not public_url and host in _WILDCARD_HOSTS,
-            web_dir=Path(web_dir_env) if web_dir_env else checkout_web_dir(),
+            # Set and empty: no dashboard, the API alone. Unset: the checkout's or the package's.
+            web_dir=(
+                None
+                if web_dir_env == ""
+                else Path(web_dir_env) if web_dir_env else checkout_web_dir()
+            ),
             web_dir_required=bool(web_dir_env),
             trusted_proxies=parse_networks(env.get("MAITY_TRUSTED_PROXIES", "")),
             forge_github_token=env.get("MAITY_FORGE_GITHUB_TOKEN") or None,
@@ -345,7 +355,11 @@ class Settings:
             badge_limit=parse_rate(env, "MAITY_BADGE_LIMIT", (60, 60)),
             hsts_max_age=parse_whole(env, "MAITY_HSTS_MAX_AGE", 31536000, 0, 63072000),
             environment=tuple(
-                sorted((k, v) for k, v in env.items() if k.startswith("MAITY_") and v)
+                sorted(
+                    (k, v)
+                    for k, v in env.items()
+                    if k.startswith("MAITY_") and (v or k in EMPTY_IS_SET)
+                )
             ),
         )
 

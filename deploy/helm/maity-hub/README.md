@@ -263,7 +263,7 @@ silently ignored. These are the values that matter:
 | `config.publicUrl` | `https://<ingress.host>` | `MAITY_PUBLIC_URL`, the address in join links; required without the Ingress |
 | `config.trustedProxies` | none; required with the Ingress | `MAITY_TRUSTED_PROXIES`, the ingress controller's pod network |
 | `config.allowPlainHttp` | `false` | `MAITY_ALLOW_PLAIN_HTTP`; refused with the Ingress or a non-ClusterIP Service |
-| `config.dashboard` | `true` | serve the dashboard; `false` serves the API only |
+| `config.dashboard` | `true` | serve the dashboard; `false` sets `MAITY_WEB_DIR` empty, and the hub serves the API only, no dashboard |
 | `migrate.enabled` | `true` | the hook Job; off means you migrate before every upgrade |
 | `migrate.activeDeadlineSeconds` | `300` | keep it under Helm's `--timeout` |
 | `ingress.joinHost` | none | an optional second host for the agent join only (`MAITY_JOIN_URL`, docs/api.md §1.1); it joins the Ingress rules and the certificate (a Secret of your own must cover it), and the hub routes between the hosts; it must differ from `ingress.host` and needs the Ingress enabled (with your own Ingress, set `MAITY_JOIN_URL` through `extraEnv`) |

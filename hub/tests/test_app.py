@@ -730,6 +730,18 @@ def test_without_a_dashboard_the_api_still_serves(
         assert client.get("/").status_code == 404
 
 
+def test_an_empty_web_dir_serves_the_api_only(database_url: str, migrated: Engine) -> None:
+    """MAITY_WEB_DIR set and empty is no dashboard, as the chart's `config.dashboard: false`
+    renders it: the API answers, `/` and the assets do not. Unset keeps the default dashboard
+    (below), and a set path that does not exist still stops the hub (above)."""
+    settings = Settings.from_env({"MAITY_DATABASE_URL": database_url, "MAITY_WEB_DIR": ""})
+    assert settings.web_dir is None and not settings.web_dir_required
+    with TestClient(create_app(settings, migrated)) as client:
+        assert client.get("/api/v1/health").status_code == 200
+        assert client.get("/").status_code == 404
+        assert client.get("/assets/js/app.js").status_code == 404
+
+
 @pytest.mark.wheel
 def test_the_default_dashboard_is_served(database_url: str, migrated: Engine) -> None:
     """Whatever this runs from, a checkout or the installed wheel (CI's hub-wheel job), the

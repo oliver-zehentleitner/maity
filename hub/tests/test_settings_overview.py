@@ -10,7 +10,7 @@ import pytest
 from sqlalchemy import Engine
 
 from maity_hub import settings_overview
-from maity_hub.config import Settings
+from maity_hub.config import EMPTY_IS_SET, Settings
 from tests import flow
 from tests.conftest import ClientFactory
 from tests.test_orgs import make_org
@@ -290,3 +290,27 @@ def test_as_written_is_what_the_parsers_do() -> None:
             if _loaded({**without, entry.name: "  "}) != _loaded(without):
                 taken.add(entry.name)
     assert taken == {e.name for e in settings_overview.ENTRIES if e.as_written}
+
+
+def test_empty_is_set_is_what_the_parsers_do() -> None:
+    """`config.EMPTY_IS_SET` is bound to the hub's own parsers: a setting set and empty loads a
+    hub that differs from unset exactly for the names listed there, in every mode that reads
+    it, so the overview never shows one of them as unset while the hub runs with it. An empty
+    value the hub refuses at start (MAITY_BIND, MAITY_DATABASE_URL) runs no hub to show."""
+    taken = set()
+    for base in MODE_BASES:
+        for entry in settings_overview.ENTRIES:
+            without = {k: v for k, v in base.items() if k != entry.name}
+            empty = _loaded({**without, entry.name: ""})
+            if isinstance(empty, Settings) and empty != _loaded(without):
+                taken.add(entry.name)
+    assert taken == set(EMPTY_IS_SET)
+
+
+def test_an_empty_web_dir_is_shown_as_set(make_client: ClientFactory, migrated: Engine) -> None:
+    """MAITY_WEB_DIR set and empty serves no dashboard: the overview says the environment set
+    it, with no directory, where unset shows the default dashboard's directory."""
+    loaded = Settings.from_env({"MAITY_WEB_DIR": ""})
+    who = flow.human(lambda **kw: make_client(environment=loaded.environment, **kw), migrated)
+    row = by_name(who.get(PATH).json())["MAITY_WEB_DIR"]
+    assert row["source"] == "environment" and row["value"] is None
