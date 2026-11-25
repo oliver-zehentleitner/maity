@@ -3800,6 +3800,8 @@
   "placements.finding.login_needed": "Anmeldung nötig",
   "placements.finding.log": "Runner-Log",
   "placements.generation": "Generation {generation}",
+  "placements.no_instance": "noch keine Instanz",
+  "placements.clone": "Klon {clone}",
   "placements.fresh_session": "eine frische Sitzung",
   "placements.hint": "Agents, die ein Runner für dieses Projekt startet: was gewünscht ist und was der Runner zuletzt gemeldet hat.",
   "placements.last_report": "letzter Bericht {ago}",

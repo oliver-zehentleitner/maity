@@ -3701,6 +3701,8 @@
   "placements.finding.login_needed": "로그인 필요",
   "placements.finding.log": "러너 로그",
   "placements.generation": "세대 {generation}",
+  "placements.no_instance": "아직 인스턴스 없음",
+  "placements.clone": "클론 {clone}",
   "placements.fresh_session": "새 세션",
   "placements.hint": "러너가 이 프로젝트를 위해 시작하는 에이전트: 요구되는 것과 러너가 마지막으로 보고한 것이에요.",
   "placements.last_report": "마지막 보고 {ago}",

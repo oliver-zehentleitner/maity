@@ -851,18 +851,18 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const pickList = hashEntry.querySelector(".mention-list");
   const options = () => pickList.querySelectorAll("li").map((li) => li.querySelector(".mention-handle").textContent);
   freeText.value = "Ask @age"; freeText.dispatch("input"); await tick(); await tick();
-  // An agent's instances follow it (tsk-bczgjkfpw1wg): @agent-b#wle2, @agent-c#k3pa in the fixture.
-  expect(!pickList.hidden && JSON.stringify(options()) === JSON.stringify(["@agent-a", "@agent-b", "@agent-b#wle2", "@agent-c", "@agent-c#k3pa", "@agent-d"])
+  // An agent's instances follow it (tsk-bczgjkfpw1wg): @agent-b#wme2, @agent-c#k3pa in the fixture.
+  expect(!pickList.hidden && JSON.stringify(options()) === JSON.stringify(["@agent-a", "@agent-b", "@agent-b#wme2", "@agent-c", "@agent-c#k3pa", "@agent-d"])
     && freeText.getAttribute("aria-expanded") === undefined && freeText.getAttribute("aria-activedescendant") === pickList.attrs.id + "-0",
     "mentions: @ offers the project's members by handle " + JSON.stringify(options()));
   freeText.dispatch("keydown", { key: "ArrowDown" }); freeText.dispatch("keydown", { key: "Enter" }); await tick();
   expect(freeText.value === "Ask @agent-b " && pickList.hidden && !freeText.getAttribute("aria-activedescendant"), "mentions: arrow and Enter put the handle in");
   freeText.value = "Ask @agent-b#"; freeText.dispatch("input"); await tick(); await tick();
-  expect(!pickList.hidden && JSON.stringify(options()) === JSON.stringify(["@agent-b#wle2"])
+  expect(!pickList.hidden && JSON.stringify(options()) === JSON.stringify(["@agent-b#wme2"])
     && text(pickList.querySelector("li")).includes("Agent B · instance"),
     "mentions: after # only the instances of the agent named, as instances " + JSON.stringify(options()));
   freeText.dispatch("keydown", { key: "Enter" }); await tick();
-  expect(freeText.value === "Ask @agent-b#wle2 " && pickList.hidden, "mentions: Enter puts the instance's address in");
+  expect(freeText.value === "Ask @agent-b#wme2 " && pickList.hidden, "mentions: Enter puts the instance's address in");
   // A revoked instance is not offered, a dormant one is marked.
   const inText = document.createElement("textarea");
   const inList = win.Maity.mentionPicker(inText, () => Promise.resolve([
@@ -1819,31 +1819,31 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     win.Maity.api.patch = (p, b) => { if ("dormant" in (b || {})) drPatches.push([p, b]); return drPatch(p, b); };
     await agOpen("agt-b");
     const drPart = () => main.querySelectorAll("tr.member-manage").find((r) => r.id === "member-manage-agt-b").querySelector(".member-dormant-part");
-    expect(drPart() && btn(drPart(), "Put @agent-b#wle2 to rest") && !text(agRow("agt-b")).includes("dormant"),
+    expect(drPart() && btn(drPart(), "Put @agent-b#wme2 to rest") && !text(agRow("agt-b")).includes("dormant"),
       "dormant: the agent's row offers to put each instance to rest, by its address");
-    btn(drPart(), "Put @agent-b#wle2 to rest").click(); for (let k = 0; k < 8; k++) await tick();
-    expect(JSON.stringify(drPatches[0]) === JSON.stringify(["/projects/maintainer/maity/members/agt-b", { dormant: true, instance: "wle2" }])
-      && text(main).includes("@agent-b#wle2 is dormant.")
-      && text(agRow("agt-b")).includes("dormant — ask @agent-b#wle2 directly")
+    btn(drPart(), "Put @agent-b#wme2 to rest").click(); for (let k = 0; k < 8; k++) await tick();
+    expect(JSON.stringify(drPatches[0]) === JSON.stringify(["/projects/maintainer/maity/members/agt-b", { dormant: true, instance: "wme2" }])
+      && text(main).includes("@agent-b#wme2 is dormant.")
+      && text(agRow("agt-b")).includes("dormant — ask @agent-b#wme2 directly")
       && text(agRow("agt-b")).includes("Resting: every instance is dormant")
-      && btn(drPart(), "Wake @agent-b#wle2")
-      && !byId("team-lead-agt-b").querySelectorAll("option").some((o) => o.getAttribute("value") === "wle2"),
+      && btn(drPart(), "Wake @agent-b#wme2")
+      && !byId("team-lead-agt-b").querySelectorAll("option").some((o) => o.getAttribute("value") === "wme2"),
       "dormant: not offered as the team's lead; sent with its instance; the row says how to reach it and that only an instance address reaches the team " + JSON.stringify(drPatches));
-    btn(drPart(), "Wake @agent-b#wle2").click(); for (let k = 0; k < 8; k++) await tick();
-    expect(JSON.stringify(drPatches[1][1]) === JSON.stringify({ dormant: false, instance: "wle2" }) && !text(agRow("agt-b")).includes("dormant")
-      && btn(drPart(), "Put @agent-b#wle2 to rest"), "dormant: woken again, the notes gone");
+    btn(drPart(), "Wake @agent-b#wme2").click(); for (let k = 0; k < 8; k++) await tick();
+    expect(JSON.stringify(drPatches[1][1]) === JSON.stringify({ dormant: false, instance: "wme2" }) && !text(agRow("agt-b")).includes("dormant")
+      && btn(drPart(), "Put @agent-b#wme2 to rest"), "dormant: woken again, the notes gone");
     win.Maity.api.patch = drPatch;
     // The fixture hub as the hub: an instance named, a human only, never the team's lead.
     const drPath = "/projects/maintainer/maity/members/agt-b";
     // Seen by everyone where the instance is shown: the member's Sessions tab and the organisation (§6.17).
-    await win.Maity.api.patch(drPath, { dormant: true, instance: "wle2" });
+    await win.Maity.api.patch(drPath, { dormant: true, instance: "wme2" });
     await go("#/maintainer/maity/team/agt-b/sessions"); for (let k = 0; k < 6; k++) await tick();
-    const drSaid = "dormant — ask @agent-b#wle2 directly";
+    const drSaid = "dormant — ask @agent-b#wme2 directly";
     expect(main.querySelector(".member-instances .member-dormant") && text(main.querySelector(".member-instances")).includes(drSaid),
       "dormant: the member's instances say it, with its address");
     await go("#/maintainer/maity/organisation"); for (let k = 0; k < 6; k++) await tick();
     expect(main.querySelector(".org-tree .member-dormant") && text(main.querySelector(".org-tree")).includes(drSaid), "dormant: the organisation says it too");
-    await win.Maity.api.patch(drPath, { dormant: false, instance: "wle2" });
+    await win.Maity.api.patch(drPath, { dormant: false, instance: "wme2" });
     const noInst = await win.Maity.api.patch(drPath, { dormant: true }).catch((e) => e);
     expect(noInst.status === 400 && noInst.details.fields.instance === "required", "dormant: without an instance it is invalid, as the hub answers");
     const ghost = await win.Maity.api.patch(drPath, { dormant: true, instance: "zzzz" }).catch((e) => e);
@@ -3353,6 +3353,22 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(cluster.includes("revoked") && cluster.includes("pods in maity-agents") && cluster.includes("pi 0.9.1 · without a command allowlist: its pod is the only boundary")
     && cluster.includes("Each agent on maity-agents runs in its own pod"), "runners: a revoked cluster runner, a tool without an allowlist");
   expect(!text(main).includes("Open pairings"), "runners: an expired pairing is not listed as open");
+  // The owner's own list of agents on a runner (§15.3) names each instance, handle#id: two of one
+  // agent told apart, and one before its first pickup without an instance (tsk-m8rpxpnyg0zd).
+  {
+    const olGetAll = win.Maity.api.getAll;
+    const ol = (id, instance) => ({ id, project: "maintainer/maity", agent: { handle: "agent-b" }, instance, desired: "running", state: instance ? "running" : null, foreign: false, created_at: "2026-11-20T10:00:00Z" });
+    win.Maity.api.getAll = (p, ...rest) => (p === "/runners/rnr-0002/placements"
+      ? Promise.resolve({ items: [ol("plc-0001", "wqe2"), ol("plc-0091", "k7mq"), ol("plc-0092", null)], next_cursor: null })
+      : olGetAll(p, ...rest));
+    await go("#/all"); await go("#/runners"); for (let k = 0; k < 6; k++) await tick();
+    const olLines = (card("home-laptop").querySelector("section.runner-placements") || { querySelectorAll: () => [] }).querySelectorAll("li").map((li) => text(li));
+    win.Maity.api.getAll = olGetAll;
+    await go("#/all"); await go("#/runners"); await tick();
+    expect(olLines.length === 3 && olLines[0].startsWith("agent-b#wqe2 in maintainer/maity") && olLines[1].startsWith("agent-b#k7mq in maintainer/maity")
+      && olLines[2].startsWith("agent-b in maintainer/maity · no instance yet"),
+      "runners: the owner's list names each instance as handle#id, two of one agent apart, none yet before the first pickup " + JSON.stringify(olLines));
+  }
   // Pair: the name is checked first; the line is shown once, with the starter configuration.
   byId("pair-name").value = "New Laptop";
   main.querySelector("form.pair-form").dispatch("submit"); await tick();
@@ -6371,6 +6387,32 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     expect([...withLog, ...noLog, ...none, ...unknownCode].every(Boolean),
       "placements: the finding's cause, seen and signals; its log closed and as text; none without log, a null finding or an empty log; an unknown cause as its code "
         + JSON.stringify({ withLog, noLog, none, unknownCode }));
+  }
+  // Which instance a placement runs (§15.5 `instance`, tsk-m8rpxpnyg0zd): `handle#id` as the board
+  // names it, the clone beside the harness, and "no instance yet" before the first pickup. Two
+  // placements of one agent on one runner are told apart by both.
+  {
+    const inGetAll = win.Maity.api.getAll;
+    win.Maity.api.getAll = (p) => (p === "/projects/maintainer/maity/placements"
+      ? inGetAll(p).then((r) => {
+        const first = r.items.find((x) => x.id === "plc-0001");
+        const items = r.items.map((x) => (x.id === "plc-0004" ? { ...x, instance: null } : x));
+        return { ...r, items: items.concat([{ ...first, id: "plc-0091", instance: "k7mq", workspace: { ...first.workspace, clone: "agent-b-2" } }]) };
+      })
+      : inGetAll(p));
+    await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/placements"); for (let k = 0; k < 8; k++) await tick();
+    const head = (id) => text(plRow(id).querySelector(".placement-head"));
+    const got = {
+      one: head("plc-0001"), two: head("plc-0091"), waiting: head("plc-0004"),
+      clones: [plFacts("plc-0001").includes("clone agent-b"), plFacts("plc-0091").includes("clone agent-b-2")],
+      link: (plRow("plc-0091").querySelector(".member-instance") || { getAttribute: () => null }).getAttribute("href"),
+    };
+    win.Maity.api.getAll = inGetAll;
+    await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/placements"); for (let k = 0; k < 8; k++) await tick();
+    expect(got.one.startsWith("agent-b#wme2 on home-laptop") && got.two.startsWith("agent-b#k7mq on home-laptop")
+      && got.clones.every(Boolean) && !!got.link && got.link.includes("k7mq")
+      && got.waiting.includes("no instance yet") && !/#/.test(got.waiting.split(" on ")[0]),
+      "placements: each row names its instance as handle#id with its clone, two of one agent told apart, none yet before the first pickup " + JSON.stringify(got));
   }
   const plStop = btn(plRow("plc-0001"), "Stop");
   plStop.click(); plStop.click(); for (let k = 0; k < 6; k++) await tick();
@@ -9759,8 +9801,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   inPick("agt-b");
   const inStoredB = (await win.Maity.api.getAll("/projects/maintainer/maity/members")).items.find((x) => x.id === "agt-b");
   const inOpts = byId("join-replaces").querySelectorAll("option");
-  expect(!inBox().hidden && byId("join-replace").checked && inOpts.length === 1 && inOpts[0].attrs.value === "wle2"
-    && text(inOpts[0]).startsWith("agent-b#wle2 · last seen") && text(inOpts[0]).endsWith(" · 1 card")
+  expect(!inBox().hidden && byId("join-replace").checked && inOpts.length === 1 && inOpts[0].attrs.value === "wme2"
+    && text(inOpts[0]).startsWith("agent-b#wme2 · last seen") && text(inOpts[0]).endsWith(" · 1 card")
     && ["join-trust", "join-role", "join-areas", "join-briefing", "join-subagents"].every((id) => byId(id).disabled && !byId(id).parentNode.hidden)
     && byId("join-role").value === "coder" && byId("join-areas").value === "hub/" && byId("join-reports").parentNode.hidden
     // The briefing as the hub holds it now (an earlier test cleared agt-b's).
@@ -9775,7 +9817,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "join: an agent already here links to its Manage, where its membership is changed " + (inManage && inManage.getAttribute("href")));
   await inSubmit();
   const inBody = inPosts[0] && inPosts[0][1];
-  expect(inPosts.length === 1 && inBody.replaces === "wle2" && !("new_instance" in inBody) && ["role", "reports_to", "areas", "capabilities", "briefing"].every((k) => !(k in inBody))
+  expect(inPosts.length === 1 && inBody.replaces === "wme2" && !("new_instance" in inBody) && ["role", "reports_to", "areas", "capabilities", "briefing"].every((k) => !(k in inBody))
     && main.querySelector(".join-result"), "join: Replace instance sends replaces and leaves the membership's fields out " + JSON.stringify(inBody));
   // An instance runs with a state directory of its own (tsk-axmb8dsyvrpb): said before the line, with the export to set.
   const inNote = () => main.querySelector(".join-result .instance-note");
@@ -14917,7 +14959,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     const rpBody = (clone) => ({ runner: "rnr-0002", harness: "claude-code", agent: { id: "agt-b" }, workspace: { clone } });
     const rpMade = await win.Maity.api.post("/projects/maintainer/maity/placements", rpBody("agent-b")).catch((e) => e);
     const rpOther = await win.Maity.api.post("/projects/maintainer/maity/placements", rpBody("agent-b-9")).catch((e) => e);
-    expect(rpMade && rpMade.credential_id === "crd-b-0003" && rpMade.instance === "wle2" && rpMade.workspace && rpMade.workspace.continues_existing === true
+    expect(rpMade && rpMade.credential_id === "crd-b-0003" && rpMade.instance === "wme2" && rpMade.workspace && rpMade.workspace.continues_existing === true
       && rpOther && rpOther.code === "instance_quota",
       "placements: an agent placed again where its removed placement ran takes up the credential at its limit; another clone is refused "
       + JSON.stringify([rpMade && (rpMade.code || rpMade.credential_id), rpOther && (rpOther.code || rpOther.id)]));
@@ -15008,7 +15050,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   // the notification's way to the agent. Quiet where the commitment is optional.
   await go("#/maintainer/maity/team"); for (let k = 0; k < 4; k++) await tick();
   const ktRow = (name) => main.querySelectorAll("tr.member").find((tr) => tr.querySelector(".member-name").textContent === name);
-  expect(ktRow("Agent B").querySelector(".ktw-unconfirmed") && text(ktRow("Agent B")).includes("agent-b#wle2: to confirm by " + win.Maity.dom.formatTime("2026-10-21T10:42:00Z"))
+  expect(ktRow("Agent B").querySelector(".ktw-unconfirmed") && text(ktRow("Agent B")).includes("agent-b#wme2: to confirm by " + win.Maity.dom.formatTime("2026-10-21T10:42:00Z"))
     && !ktRow("Agent C").querySelector(".ktw-unconfirmed") && text(ktRow("Agent C")).includes("agent-c#k3pa: confirmed")
     && !main.querySelector(".error"), "keep the why: an agent past its deadline is marked with it, a confirmed one says when, per instance");
   const ktGetAll = win.Maity.api.getAll;
@@ -17784,8 +17826,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && text(mpsSess).includes("not listening since") && !btn(main.querySelector(".member-section"), "Revoke"),
     "member page: Sessions & credentials lists the instances with their session, without Revoke (that is in Manage)");
   // An instance's address (tsk-bczgjkfpw1wg): members/<id>/sessions/<instance> marks that instance's line and focuses it.
-  await go("#/maintainer/maity/team/agt-b/sessions/wle2"); for (let k = 0; k < 8; k++) await tick();
-  const mpsChosen = byId("member-instance-wle2");
+  await go("#/maintainer/maity/team/agt-b/sessions/wme2"); for (let k = 0; k < 8; k++) await tick();
+  const mpsChosen = byId("member-instance-wme2");
   expect(mpsChosen && mpsChosen.classList.contains("chosen") && mpsChosen.getAttribute("aria-current") === "true" && mpsChosen.getAttribute("tabindex") === "-1"
     && main.querySelectorAll(".member-instances li.chosen").length === 1,
     "member page: an instance's address marks its line on Sessions as the current one");
