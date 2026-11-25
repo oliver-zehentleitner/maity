@@ -1559,6 +1559,73 @@ def test_a_deleted_account_leaves_nothing_its_link_read(
     assert _answered(name, owner) == []
 
 
+@pytest.mark.parametrize("how", ["demoted", "removed", "left", "moved"])
+def test_grants_ended_before_the_cache_reads_keep_nothing_of_the_link(
+    owner: flow.Human,
+    app: FakeApp,
+    repo: FakeForge,
+    migrated: Engine,
+    make_client: ClientFactory,
+    monkeypatch: pytest.MonkeyPatch,
+    how: str,
+) -> None:
+    """Review A2595 P2-1: after §11.3 chose the link and before the cache reads with it, the
+    grants end with the link left as it is: the confirming organisation owner is demoted,
+    removed or leaves, or the project moves. That call keeps nothing, and §11.3 (also forced),
+    the project view and the list answer nothing read through the link, the owner's or a
+    guest's."""
+    org = make_org(owner, "oz-team", "OZ Team")
+    if how == "moved":
+        confirmer, name = owner, "maintainer/maity"
+        _confirm(owner)
+    else:
+        confirmer = flow.human(make_client, migrated, "second")
+        add_member(migrated, org["id"], confirmer.id, "owner")
+        moved = owner.post("/projects/maintainer/maity/transfer", {"to": org["id"]})
+        assert moved.status_code == 200, moved.text
+        name = "oz-team/maity"
+        confirmed = confirmer.post(f"/projects/{name}/repository/confirm", {"url": URL})
+        assert confirmed.status_code == 200, confirmed.text
+    _org_link(migrated, confirmer.id, checked=timedelta(minutes=1), ok=timedelta(minutes=1))
+    project_id = _project_id(migrated)
+    guest = flow.human(make_client, migrated, "bob")
+    factory.membership(migrated, project_id, role="guest", human_id=guest.id)
+    real_walk = ktw.walk
+
+    def walk(reader: forge.Forge, repository: str, deadline: float | None = None) -> Any:
+        if reader.token == LINK_TOKEN:
+            return _family("secret-plan")
+        return real_walk(reader, repository, deadline)
+
+    monkeypatch.setattr(ktw, "walk", walk)
+    get = ktw.Cache.get
+    ended: list[str] = []
+
+    def end_first(self: ktw.Cache, reader: forge.Forge, *args: Any, **kwargs: Any) -> Any:
+        if not ended:
+            assert reader.via == "app"  # §11.3 chose the link
+            if how == "moved":
+                done = owner.post(f"/projects/{name}/transfer", {"to": org["id"]})
+                assert done.status_code == 200, done.text
+                ended.append("oz-team/maity")
+            elif how == "demoted":
+                done = owner.patch(f"/orgs/oz-team/members/{confirmer.id}", {"role": "admin"})
+                assert done.status_code == 200, done.text
+                ended.append(name)
+            else:
+                by = owner if how == "removed" else confirmer
+                done = by.delete(f"/orgs/oz-team/members/{confirmer.id}")
+                assert done.status_code == 204, done.text
+                ended.append(name)
+        return get(self, reader, *args, **kwargs)
+
+    monkeypatch.setattr(ktw.Cache, "get", end_first)
+    first = owner.get(f"/projects/{name}/keep-the-why")
+    assert ended and "secret-plan" not in first.text, first.text
+    assert ktw.CACHE.cached(project_id) is None
+    assert _answered(ended[0], owner, guest) == []
+
+
 def _observed_then_not_admin(owner: flow.Human, migrated: Engine) -> None:
     """A probe observation read while the link served, then the link `not_admin`."""
     _org_link(migrated, owner.id, checked=timedelta(minutes=1), ok=timedelta(minutes=1))

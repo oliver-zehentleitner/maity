@@ -182,11 +182,7 @@ class ForgeAccess:
                 ).where(t.project.c.id == project_id)
             ).one()
             handle = namespace.current_handle(conn, project.owner_id) or ""
-            # The namespace owner's grants for a project of a human; for one of an organisation
-            # the grants of the owner who confirmed it, and nobody's while none did.
-            grants = project.repository_confirmed_by or (
-                project.owner_id if project.owner_org_id is None else ""
-            )
+            grants = grants_of(project)
             links = tuple(forge_links.Link.of(row) for row in forge_links.rows(conn, grants))
             token = conn.execute(
                 select(t.forge_token).where(t.forge_token.c.human_id == grants)
@@ -221,7 +217,11 @@ class ForgeAccess:
                 bound = self._bound(base, project_id, repository, "app", via_app)
                 # only a link on a forge organisation keeps its grant for a time (`_by_org_link`),
                 # and what it read is kept only while it serves still (review A2585 P2-1)
-                still = None if served is None else self._still_serves(served)
+                still = (
+                    None
+                    if served is None
+                    else self._still_serves(served, project_id, facts.repository_url)
+                )
                 bound = dataclasses.replace(bound, serves_until=until, still_serves=still)
                 return bound, until
             # A link that serves nothing is not the project's source: the choice goes on with
@@ -305,14 +305,35 @@ class ForgeAccess:
             return None, reason, None, None  # never checked again: nothing to keep it until
         return None, reason, link.checked_at + forge_links.CHECK_EVERY, None
 
-    def _still_serves(self, link: forge_links.Link) -> Callable[[], bool]:
-        """Whether the link serves still, its row read now: gone, another human's or no longer
-        serving, it does not."""
+    def _still_serves(
+        self, link: forge_links.Link, project_id: str, repository_url: str | None
+    ) -> Callable[[], bool]:
+        """Whether the link serves the project still, both rows read now. The link's as `serves`
+        asks: gone, another human's or no longer serving, it does not. The project's as `_facts`
+        and `_choose` ask: still confirmed, still the URL the choice read, its grants
+        (`grants_of`) still the link human's. A move, or an owner who stops being one, ends the
+        grants and leaves the link as it is (review A2595 P2-1). Plain reads, no lock."""
 
         def ask() -> bool:
             with self.engine.connect() as conn:
                 row = forge_links.current(conn, link)
-            return row is not None and forge_links.serves(row)
+                project = conn.execute(
+                    select(
+                        t.project.c.repository_url,
+                        t.project.c.owner_id,
+                        t.project.c.owner_org_id,
+                        t.project.c.repository_owner_confirmed,
+                        t.project.c.repository_confirmed_by,
+                    ).where(t.project.c.id == project_id)
+                ).first()
+            return (
+                row is not None
+                and forge_links.serves(row)
+                and project is not None
+                and bool(project.repository_owner_confirmed)
+                and project.repository_url == repository_url
+                and grants_of(project) == link.human_id
+            )
 
         return ask
 
@@ -423,6 +444,16 @@ def _note_via(project_id: str, via: str | None) -> None:
         bounded.put(_last_via, project_id, via, VIA_KEPT)
 
 
+def grants_of(project: Any) -> str:
+    """The human whose grants count for the project (§11.4): the namespace owner's for a
+    project of a human; for one of an organisation the owner who confirmed it, and nobody's
+    ("") while none did."""
+    grants: str = project.repository_confirmed_by or (
+        project.owner_id if project.owner_org_id is None else ""
+    )
+    return grants
+
+
 def is_confirmer(caller: Any, project: Any) -> bool:
     """Whether the caller is the human named in the project's `confirmed_by` (§11.4), who gets
     the specific reason of a link on a forge organisation that serves nothing: that human
@@ -441,9 +472,7 @@ def org_link_serves_nothing(conn: Connection, project: Any) -> bool:
     nothing as stored: `not_admin`, `suspended`, `removed`, or its success 10 minutes old. Read
     from the database alone, never the forge, for a view that must not wait on a read; it
     cannot tell which installation the repository rests on, so any such link counts."""
-    grants = project.repository_confirmed_by or (
-        project.owner_id if project.owner_org_id is None else ""
-    )
+    grants = grants_of(project)
     if not grants:
         return False
     links = conn.execute(
