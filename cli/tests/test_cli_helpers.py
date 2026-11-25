@@ -4,11 +4,12 @@ linked pull requests, JSON input and project paths (tsk-sgaz43qazfzx)."""
 from __future__ import annotations
 
 import io
+import sys
 from typing import Any
 
 import pytest
 
-from maity import cli
+from maity import cli, gitfacts
 
 
 class _Client:
@@ -82,9 +83,70 @@ def test_json_file_checks_the_object_and_the_one_stdin(
         cli._json_file(str(review), "--file")
     assert cli._json_file(str(review), "--file", object_only=False) == [1]
     review.write_text("{oops", encoding="utf-8")
-    with pytest.raises(cli.UsageError, match="--file: not JSON: Expecting property name"):
+    with pytest.raises(
+        cli.UsageError,
+        match=(
+            r"--file: not JSON: Expecting property name enclosed in double quotes: "
+            r"line 1 column 2"
+        ),
+    ):
         cli._json_file(str(review), "--file")
     monkeypatch.setattr("sys.stdin", io.StringIO('{"a": 1}'))
     assert cli._json_file("-", "--file") == {"a": 1}
     with pytest.raises(cli.UsageError, match="cannot both come from stdin"):
         cli._json_file("-", "--review-file", stdin_used=True)
+
+
+def test_json_file_maps_a_decoder_value_error_that_is_not_json_decode_error(
+    tmp_path: Any,
+) -> None:
+    """json.loads raises a plain ValueError when a number exceeds the integer conversion
+    limit, not JSONDecodeError; that must still become a usage error, as the review-file
+    reader already did."""
+    limit = sys.get_int_max_str_digits()
+    if not limit:
+        pytest.skip("this interpreter has no integer conversion limit")
+    path = tmp_path / "r.json"
+    path.write_text("1" * (limit + 100), encoding="utf-8")
+    with pytest.raises(cli.UsageError, match="--review-file: not JSON: Exceeds the limit"):
+        cli._json_file(str(path), "--review-file", object_only=False)
+
+
+def _facts(
+    url: str, number: int = 1, title: str = "", body: str = "", branch: str = "work"
+) -> gitfacts.Facts:
+    head = "a" * 40
+    return gitfacts.Facts(
+        head=head,
+        branch=branch,
+        remote="origin",
+        remote_branch=branch,
+        remote_head=head,
+        dirty=False,
+        pr=gitfacts.PullRequest(
+            number=number, head=head, state="open", url=url, title=title, body=body
+        ),
+    )
+
+
+def test_belongs_falls_back_to_the_last_report_before_the_card_id() -> None:
+    """A last report that names this pull request is enough, even when no link matches and
+    the card id is not in the title, body or branch."""
+    card = {
+        "links": [{"kind": "pr", "forge_url": "https://github.com/o/r/issues/9", "number": 9}],
+        "report": {"pr": {"url": "https://github.com/o/r/pull/7", "number": 7}},
+    }
+    facts = _facts(url="https://github.com/o/r/pull/7", number=7, title="unrelated", branch="other")
+    assert cli._belongs(card, facts, "tsk-0004") is True
+
+
+def test_belongs_still_treats_two_unrecognised_report_urls_as_the_same() -> None:
+    card = {"report": {"pr": {"url": "https://example.com/not-a-pr", "number": 1}}}
+    facts = _facts(url="https://example.org/also-not", number=2, title="", branch="work")
+    assert cli._belongs(card, facts, "tsk-0004") is True
+
+
+def test_belongs_does_not_treat_two_unrecognised_link_urls_as_the_same() -> None:
+    card = {"links": [{"kind": "pr", "forge_url": "https://example.com/not-a-pr"}]}
+    facts = _facts(url="https://example.org/also-not", number=1, title="", branch="work")
+    assert cli._belongs(card, facts, "tsk-0004") is False

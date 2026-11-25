@@ -3330,7 +3330,7 @@ def _all_pages(
     seen: set[str] = set()
     cursor: str | None = None
     while True:
-        page_query = [*query, *([("limit", str(limit))] if limit else [])]
+        page_query = [*query, *([("limit", str(limit))] if limit is not None else [])]
         page = session.client.call(
             "GET", path, query=[*page_query, *([("cursor", cursor)] if cursor else [])]
         )
@@ -4683,7 +4683,7 @@ def _json_file(path: str, flag: str, *, object_only: bool = True, stdin_used: bo
     raw = _stdin_text() if path == "-" else _read_text_file(path, flag)
     try:
         data = json.loads(raw)
-    except json.JSONDecodeError as exc:
+    except ValueError as exc:  # JSONDecodeError, and a plain ValueError (int conversion limit)
         raise UsageError(f"{flag}: not JSON: {exc}") from None
     if object_only and not isinstance(data, dict):
         raise UsageError(f"{flag}: the body is one JSON object")
