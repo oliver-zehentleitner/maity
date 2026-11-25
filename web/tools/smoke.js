@@ -610,6 +610,27 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     swProto.focus = swFocus; document.activeElement = undefined;
     expect(swRedrawn && swFocusKept && swHeld && swAfter,
       "tabs: a counts redraw keeps the focused tab focused, and waits for a drag to end " + JSON.stringify([swRedrawn, swFocusKept, swHeld, swAfter]));
+    // A drop that moves a tab while a counts redraw waits: the move's own redraw is the latest, and the drag's end
+    // redraws no second time (A2598).
+    const swDragged = tabChip(SA);
+    swDragged.dispatch("dragstart", { dataTransfer: null });
+    await fireIntervals(); for (let k = 0; k < 4; k++) await tick();
+    const swTarget = tabChip(MA);
+    swTarget.dispatch("drop", { dataTransfer: null, currentTarget: swTarget });
+    const swDropRow = header.querySelector("nav.switcher");
+    const swMoved = tabIds() === SA + "," + MA;
+    swDragged.dispatch("dragend");
+    const swOnce = header.querySelector("nav.switcher") === swDropRow;
+    // The header drawn anew mid-drag (another page): the drag is over, so later redraws are not held for it.
+    tabChip(MA).dispatch("dragstart", { dataTransfer: null });
+    await go("#/maintainer/maity/inbox"); await go("#/all"); for (let k = 0; k < 4; k++) await tick();
+    const swNewRow = header.querySelector("nav.switcher");
+    await fireIntervals(); for (let k = 0; k < 4; k++) await tick();
+    const swNotHeld = !!swNewRow && header.querySelector("nav.switcher") !== swNewRow;
+    expect(swMoved && swOnce && swNotHeld,
+      "tabs: a drop's move supersedes a held redraw, and a header drawn anew ends the drag " + JSON.stringify([swMoved, swOnce, swNotHeld]));
+    tabChip(MA).dispatch("keydown", { key: "ArrowLeft", altKey: true, shiftKey: true });
+    expect(tabIds() === MA + "," + SA, "tabs: back in the order the next cases start from");
     // The tabs menu: one switch per project, the start set, nothing sent for a switch.
     const tabsButton = () => header.querySelector(".tabs-menu-box").querySelector("button");
     // The tabs menu is drawn as the row's last tab but is no tab (tsk-qa2r972wjsws): a menu button outside the tabs,

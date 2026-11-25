@@ -423,6 +423,7 @@ window.Maity = window.Maity || {};
     M.notify.halt();
     M.presence.stop();
     stopTimers();
+    dragTab.reset();
     if (M.clearChatDrafts) M.clearChatDrafts();
     // As a sign-out does: the next human in this tab starts with their own settings.
     M.notify.stopBrowser();
@@ -1750,6 +1751,7 @@ window.Maity = window.Maity || {};
     marked: null,
     start(e, id) {
       dragTab.id = id;
+      dragTab.redraw = null;
       if (e.dataTransfer) {
         e.dataTransfer.effectAllowed = "move";
         try { e.dataTransfer.setData("text/plain", id); } catch (err) { /* the id is kept here too */ }
@@ -1799,6 +1801,13 @@ window.Maity = window.Maity || {};
       const redraw = dragTab.redraw;
       dragTab.redraw = null;
       if (redraw) redraw();
+    },
+    // The header is drawn anew (another page, a session ended): a drag of the old row is over,
+    // and a redraw it held is the old page's, so neither carries over (A2598).
+    reset() {
+      dragTab.id = null;
+      dragTab.unmark(dragTab.marked);
+      dragTab.redraw = null;
     },
   };
 
@@ -2130,6 +2139,8 @@ window.Maity = window.Maity || {};
     const old = document.getElementById("header").querySelector("nav.switcher");
     if (!old) return;
     if (dragTab.id) { dragTab.redraw = () => renderSwitcher(ctx); return; }
+    // This redraw is the latest (a drop's move included): one held during the drag is not run again.
+    dragTab.redraw = null;
     const active = document.activeElement;
     const keyOf = (el) => el.getAttribute("data-project") || el.getAttribute("href");
     const focusedKey = active && active !== old && old.contains && old.contains(active) && active.getAttribute ? keyOf(active) : null;
@@ -2149,6 +2160,7 @@ window.Maity = window.Maity || {};
 
   function renderHeader(ctx, current) {
     const header = document.getElementById("header");
+    dragTab.reset();
     // Park what is there, then build. The lockups stay when the link matches;
     // keepImages moves the other images (switcher logos, the profile) across.
     const previous = h("div");
