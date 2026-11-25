@@ -113,6 +113,59 @@ window.Maity = window.Maity || {};
       claim.lease_until ? h("span", { class: "lease" }, " · ", M.t("board.claim.lease_until", { time: formatTime(claim.lease_until) })) : null);
   }
 
+  // An outsider's claim request (docs/api.md §6.5 "An outsider's claim"; §6.4 claim_requests): the agent
+  // that asks, by handle#instance, and since when. A confirmer (§6.5: the coordinator, if that member may,
+  // and every holder of tasks:admin; under outside_claims human only humans, which a dashboard reader is;
+  // never the requesting agent's owner, lotse's ruling of 222451) gets Confirm, and Decline with a reason.
+  // The hub decides; its refusal is said in words, and a conflict means the request was declined by it.
+  const DECLINE_REASONS = () => [["declined", M.t("board.claim_request.reason.declined")], ["not_a_fit", M.t("board.claim_request.reason.not_a_fit")],
+    ["duplicate", M.t("board.claim_request.reason.duplicate")]];
+  const CONFIRM_REFUSALS = {
+    taken: () => M.t("board.claim_request.conflict.taken"),
+    gone: () => M.t("board.claim_request.conflict.gone"),
+    isolated: () => M.t("board.claim_request.conflict.isolated"),
+    not_public: () => M.t("board.claim_request.conflict.not_public"),
+    not_open_to_outsiders: () => M.t("board.claim_request.conflict.not_open_to_outsiders"),
+    not_a_confirmer: () => M.t("board.claim_request.not_a_confirmer"),
+  };
+  function confirmer(ctx, request) {
+    if (!M.trust.writes(ctx) || ctx.trust === "outside") return false;
+    const agent = (ctx.memberById || {})[request.member_id];
+    if (agent && agent.owner_id && agent.owner_id === ctx.me.id) return false;
+    const coordinator = ((ctx.project || {}).policy || {}).coordinator;
+    return M.trust.governs(ctx) || (!!coordinator && coordinator === ctx.me.id && !((ctx.memberById || {})[ctx.me.id] || {}).isolated);
+  }
+  // The answer is given in the opened card only, as its other forms are: one set of ids on the page.
+  function claimRequest(ctx, c, redraw, inPanel) {
+    const request = (c.claim_requests || [])[0];
+    if (!request) return null;
+    const who = h("strong", null, M.dom.memberRef(ctx, request.member_id, { instance: request.instance }));
+    const line = h("p", { class: "claim-request" }, M.tn("board.claim_request.asks", { who }), " · " + formatAgo(request.requested_at));
+    if (!inPanel || !confirmer(ctx, request)) return h("div", { class: "claim-request-box" }, line);
+    const path = ctx.base + "/tasks/" + encodeURIComponent(c.id) + "/claim/";
+    const said = M.statusLine();
+    const reason = h("select", { id: "claim-decline-reason-" + c.id }, DECLINE_REASONS().map(([v, l]) => h("option", { value: v }, l)));
+    reason.value = "declined";
+    const send = async (what, body, button) => {
+      button.disabled = true;
+      said.busy(M.t("board.saving"));
+      try {
+        redraw(await M.api.post(path + what, body), button.getAttribute("id"));
+      } catch (err) {
+        button.disabled = false;
+        const code = ((err.details || {}).reason) || "";
+        const words = Object.hasOwn(CONFIRM_REFUSALS, code) ? CONFIRM_REFUSALS[code]() : null;
+        said.fail(what === "confirm" ? M.t("board.claim_request.not_confirmed") : M.t("board.claim_request.not_declined"), words ? { message: words } : err);
+      }
+    };
+    const confirm = h("button", { type: "button", id: "claim-confirm-" + c.id,
+      onclick: () => send("confirm", { request_id: request.id }, confirm) }, M.t("board.claim_request.confirm"));
+    const decline = h("button", { type: "button", id: "claim-decline-" + c.id,
+      onclick: () => send("decline", { request_id: request.id, reason: reason.value }, decline) }, M.t("board.claim_request.decline"));
+    return h("div", { class: "claim-request-box" }, line,
+      h("div", { class: "actions" }, confirm, h("label", { for: reason.id }, M.t("board.claim_request.reason")), reason, decline), said.el);
+  }
+
   // Whose card it is, in its header: a small picture and the handle, the
   // full name as tooltip and as what a screen reader says.
   function assignee(ctx, c) {
@@ -643,6 +696,7 @@ window.Maity = window.Maity || {};
       h("h3", null, inPanel ? M.ids.link(c.title, M.ids.where(ctx))
         : h("a", { class: "card-open", href: ctx.link("tasks", c.id), onclick: manage && manage.remember ? () => manage.remember(c.id) : null }, c.title)),
       claimLine(ctx, c),
+      claimRequest(ctx, c, redraw, inPanel),
       approvals(ctx, c),
       // In the panel the row of controls comes right under the claim (the
       // designer's pass part 2): on a phone it was far down.

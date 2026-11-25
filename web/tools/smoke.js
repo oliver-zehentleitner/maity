@@ -15411,6 +15411,53 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const ooRefused = await win.Maity.api.patch("/projects/maintainer/maity/tasks/tsk-0006", { title: "changed", open_to_outsiders: "yes" }).then(() => "ok", (e) => e.code + ":" + JSON.stringify(e.details));
   expect(ooRefused === 'invalid:{"fields":{"open_to_outsiders":"invalid"}}' && (await win.Maity.api.get("/projects/maintainer/maity/tasks/tsk-0006")).title === ooBefore,
     "fixture hub: open_to_outsiders that is no boolean refuses the whole PATCH, the title unchanged " + ooRefused);
+  // An outsider's claim request (§6.5): the card says who asks, by handle#instance. A confirmer (tasks:admin,
+  // not the agent's owner) gets Confirm and Decline with a reason; the agent's own owner gets neither.
+  const crFx = win.Maity.api.fixturesLive();
+  const crCard = crFx["maity/tasks.json"].items.find((t) => t.status === "open" && !t.claim && !t.parent && t.kind === "task");
+  const crAgent = crFx["maity/members.json"].items.find((x) => x.id === "agt-b");
+  const crOwner = crAgent.owner_id;
+  const crAsk = () => { crCard.claim_requests = [{ id: "clr-0001", member_id: "agt-b", instance: "k7mq", requested_at: "2026-11-25T10:00:00Z" }]; };
+  const crOpen = async () => { win.Maity.onWrite("/projects/maintainer/maity"); await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/tasks/" + crCard.id); for (let k = 0; k < 6; k++) await tick(); };
+  const crBox = () => stPanel().querySelector(".claim-request-box");
+  crAsk(); crAgent.owner_id = crOwner;
+  await crOpen();
+  expect(crBox() && text(crBox()).startsWith("agent-b#k7mq from outside asks to claim it") && !byId("claim-confirm-" + crCard.id) && !byId("claim-decline-" + crCard.id),
+    "claim request: shown with who asks; the agent's own owner confirms nothing " + (crBox() && text(crBox())));
+  crAgent.owner_id = "hum-other";
+  await crOpen();
+  expect(byId("claim-confirm-" + crCard.id) && byId("claim-decline-" + crCard.id) && byId("claim-decline-reason-" + crCard.id).value === "declined"
+    && main.querySelectorAll(".claim-request-box").length === 2 && main.querySelectorAll("button").filter((b) => b.getAttribute("id") === "claim-confirm-" + crCard.id).length === 1,
+    "claim request: a confirmer gets Confirm, and Decline with declined as the reason, in the opened card only (the board's copy shows the line)");
+  const crPosts = [];
+  const crPost = win.Maity.api.post;
+  win.Maity.api.post = (p, b) => { if (p.includes("/claim/")) crPosts.push([p, b]); return crPost(p, b); };
+  byId("claim-decline-reason-" + crCard.id).value = "not_a_fit";
+  byId("claim-decline-" + crCard.id).click(); for (let k = 0; k < 6; k++) await tick();
+  expect(JSON.stringify(crPosts[0]) === JSON.stringify(["/projects/maintainer/maity/tasks/" + crCard.id + "/claim/decline", { request_id: "clr-0001", reason: "not_a_fit" }]) && !crBox(),
+    "claim request: Decline sends the request and its reason; the card shows no request after " + JSON.stringify(crPosts));
+  crAsk(); await crOpen();
+  byId("claim-confirm-" + crCard.id).click(); for (let k = 0; k < 6; k++) await tick();
+  expect(JSON.stringify(crPosts[1]) === JSON.stringify(["/projects/maintainer/maity/tasks/" + crCard.id + "/claim/confirm", { request_id: "clr-0001" }])
+    && !crBox() && text(stPanel().querySelector(".claim")).includes("agent-b"),
+    "claim request: Confirm sends the request; the card is now held by the agent " + JSON.stringify(crPosts[1]));
+  // A confirmation that no longer holds is said in words: the hub declined the request.
+  crCard.claim = null; crCard.status = "open"; crAsk(); await crOpen();
+  win.Maity.api.post = (p) => Promise.reject(new win.Maity.api.ApiError("the claim no longer holds", 409, p, "conflict", { reason: "gone" }));
+  byId("claim-confirm-" + crCard.id).click(); for (let k = 0; k < 6; k++) await tick();
+  expect(text(crBox()).includes("Not confirmed: The agent is no longer in the project, so the hub declined the request."),
+    "claim request: a confirmation that no longer holds says why " + text(crBox()));
+  win.Maity.api.post = crPost;
+  // The fixture hub, as the hub: the agent's owner is no confirmer; an unknown reason and request are refused.
+  crAgent.owner_id = crOwner;
+  const crSay = (b, what) => win.Maity.api.post("/projects/maintainer/maity/tasks/" + crCard.id + "/claim/" + what, b).then(() => "ok", (e) => e.code + ":" + JSON.stringify(e.details));
+  const crAnswers = [await crSay({ request_id: "clr-0001" }, "confirm")];
+  crAgent.owner_id = "hum-other";
+  crAnswers.push(await crSay({ request_id: "clr-0001", reason: "rude" }, "decline"), await crSay({ request_id: "clr-9999" }, "confirm"));
+  expect(JSON.stringify(crAnswers) === JSON.stringify(['forbidden:{"reason":"not_a_confirmer"}', 'invalid:{"fields":{"reason":"unknown"}}', "not_found:{}"]),
+    "fixture hub: the agent's owner is no confirmer; an unknown reason and a request that is not pending are refused " + JSON.stringify(crAnswers));
+  crCard.claim_requests = []; crAgent.owner_id = crOwner; crCard.claim = null; crCard.status = "open";
+  win.Maity.onWrite("/projects/maintainer/maity");
   await go("#/maintainer/maity/tasks/tsk-0006"); for (let k = 0; k < 6; k++) await tick();
   byId("card-parent-tsk-0006").value = "tsk-0001";
   stPanel().querySelector("form.card-family-form").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();

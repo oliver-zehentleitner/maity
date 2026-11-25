@@ -5795,6 +5795,32 @@ window.Maity = window.Maity || {};
       card.updated_at = at;
       return card;
     }],
+    // §6.5 "An outsider's claim": a confirmer confirms or declines the card's pending claim request. The
+    // fixture's confirmers are holders of tasks:admin who do not own the requesting agent; a confirmation
+    // is checked as a claim (taken, gone), and a refused one declines the request with that reason.
+    ["POST", /^\/projects\/([^/]+)\/tasks\/([^/]+)\/claim\/(confirm|decline)$/, (m, body, path) => {
+      const card = file(m[1], "tasks.json", path).items.find((x) => x.id === m[2]);
+      if (!card) fail(404, "not_found", "no such card", path);
+      const request = (card.claim_requests || []).find((r) => r.id === body.request_id);
+      const agent = request ? file(m[1], "members.json", path).items.find((x) => x.id === request.member_id) : null;
+      if (!tasksAdmin(m[1]) || (agent && agent.owner_id === me().member.id)) fail(403, "forbidden", "not among the claim's confirmers", path, { reason: "not_a_confirmer" });
+      if (!request) fail(404, "not_found", "no such pending request", path);
+      if (m[3] === "decline") {
+        if ("reason" in body && !["declined", "not_a_fit", "duplicate"].includes(body.reason)) fail(400, "invalid", "unknown reason", path, { fields: { reason: "unknown" } });
+        card.claim_requests = [];
+        card.updated_at = nowIso();
+        return card;
+      }
+      const why = card.claim || card.status !== "open" ? "taken" : !agent || agent.removed_at ? "gone" : null;
+      if (why) { card.claim_requests = []; fail(409, "conflict", "the claim no longer holds", path, { reason: why }); }
+      const at = nowIso();
+      card.claim = { holder: request.member_id, instance: request.instance || null, session_id: null, since: at,
+        lease_until: new Date(Date.now() + 3600 * 1000).toISOString().replace(/\.\d{3}Z$/, "Z"), expired: false };
+      card.status = "in_progress";
+      card.claim_requests = [];
+      card.updated_at = at;
+      return card;
+    }],
     // §6.4 card order: the card placed within its status column, under the
     // project's lock; the mock gives the whole column fresh ranks, as the
     // hub may at any time.
