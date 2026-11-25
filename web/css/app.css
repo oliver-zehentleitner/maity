@@ -1428,10 +1428,11 @@ html.chat-full .chat-pane.chat-full-pane { position: fixed; inset: 0; z-index: 2
 /* A menu in the sticky header (the tabs menu, "+", the gear and profile menus) never scrolls away
    with the page, so it ends at the screen's bottom edge: a longer list scrolls inside it, and the page
    behind does not scroll along. --menu-top is where the list starts on screen, set on the list when
-   it opens (js/menu.js, which wins over the default here); dvh follows a phone's browser bars where
-   vh does not (tsk-hhyccgssr2pr). */
-#header .menu { --menu-top: 8rem; max-height: calc(100vh - var(--menu-top) - 8px); max-height: calc(100dvh - var(--menu-top) - 8px);
-  overflow-y: auto; overscroll-behavior: contain; }
+   it opens (js/menu.js, which wins over the default here). dvh follows a phone's browser bars;
+   it is in @supports, as a var() line is valid at parse time and would win over the vh one, then
+   fail with no cap where dvh is unknown (tsk-hhyccgssr2pr). */
+#header .menu { --menu-top: 8rem; max-height: calc(100vh - var(--menu-top) - 8px); overflow-y: auto; overscroll-behavior: contain; }
+@supports (height: 100dvh) { #header .menu { max-height: calc(100dvh - var(--menu-top) - 8px); } }
 .menu-item { display: block; width: 100%; padding: 8px 10px; border: 0; border-radius: 4px; background: none; color: var(--text);
   text-align: start; text-decoration: none; font: inherit; cursor: pointer; }
 .menu-item:hover, .menu-item:focus-visible { background: var(--surface-2); }
