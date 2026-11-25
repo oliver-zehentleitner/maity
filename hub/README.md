@@ -85,7 +85,7 @@ under the project lock, so a combined edit cannot bypass depth or cycle
 rules. Parent and related edits are in history; computed counts are events.
 
 The public project badge (`docs/api.md` §6.20) is served at
-`GET /badge/{slug}.svg`, outside the API and without a session. It is off
+`GET /badge/{owner}/{slug}.svg`, outside the API and without a session. It is off
 by default; a human project admin sets `policy.badge` to `members` or
 `agents_online` with a reason. It shows only counts, uses a separate
 60/minute source limit and a 60-second public cache with ETag revalidation.
@@ -275,7 +275,7 @@ All settings come from the environment.
 | `MAITY_FORGE_GITHUB_APP_ID`, `MAITY_FORGE_GITHUB_APP_SLUG` | unset | The GitHub App of the instance (`docs/api.md` §11.4): its id and its URL name, for the installation link. All five `MAITY_FORGE_GITHUB_APP_*` or none; a partial set stops the hub. |
 | `MAITY_FORGE_GITHUB_APP_PRIVATE_KEY` | unset | The App's private key (PEM), from a Secret; never logged, never in an answer. |
 | `MAITY_FORGE_GITHUB_APP_CLIENT_ID`, `MAITY_FORGE_GITHUB_APP_CLIENT_SECRET` | unset | The App's OAuth client, used once per link to confirm who installed it; the secret from a Secret. |
-| `MAITY_SMTP_HOST`, `MAITY_SMTP_PORT` | unset; port 587, 465 or 25 by `MAITY_SMTP_TLS` | The one SMTP server the hub sends through (`docs/api.md` §16.2). Every mail setting may instead be set by the instance admin in the dashboard; a value set here wins and cannot be changed there. |
+| `MAITY_SMTP_HOST`, `MAITY_SMTP_PORT` | unset; port 587, 465 or 25 by `MAITY_SMTP_TLS` | The one SMTP server the hub sends through (`docs/api.md` §16.2). Every mail setting but `MAITY_MAIL_SIGNING_KEY`, `MAITY_SMTP_CA_FILE` and `MAITY_SMTP_ALLOW_PLAINTEXT`, which come from the environment only, may instead be set by the instance admin in the dashboard; a value set here wins and cannot be changed there. |
 | `MAITY_SMTP_TLS` | `starttls` | `starttls`, `implicit` or `none`. Under `starttls` a server without STARTTLS fails the send; nothing goes out in clear. `none` only for `localhost` or a loopback address; any other host stops the hub at startup. |
 | `MAITY_SMTP_CA_FILE` | unset | A PEM file the server's certificate is verified against instead of the system store. Certificates are always verified. |
 | `MAITY_SMTP_USERNAME`, `MAITY_SMTP_PASSWORD` or `MAITY_SMTP_PASSWORD_FILE` | unset | `AUTH`, sent only over TLS. The password (or the file a Secret is mounted at, one trailing newline dropped) is never stored, logged or returned. |
@@ -296,8 +296,11 @@ What an instance needs before strangers can register, in the order of
 [Opening registration](../docs/install/README.md#opening-registration).
 All but `MAITY_PUBLIC_URL`, `MAITY_REGISTRATION_BREAKER`, `MAITY_SECRET_KEY`,
 `MAITY_MAIL_SIGNING_KEY`, `MAITY_TRUSTED_PROXIES`,
-`MAITY_ALLOW_PLAIN_HTTP`, `MAITY_AGENT_FIREWALL` and the `MAITY_PUBLIC_PAGES*` settings can also
-be set by the instance admin in the dashboard; the environment wins.
+`MAITY_ALLOW_PLAIN_HTTP`, `MAITY_SECOND_FACTOR_WRONG_PER_DAY`,
+`MAITY_SMTP_CA_FILE`, `MAITY_SMTP_ALLOW_PLAINTEXT`, `MAITY_AGENT_FIREWALL`,
+`MAITY_ROUTE_LIMITS`, `MAITY_PUBLIC_PAGE_LIMIT`, `MAITY_BADGE_LIMIT` and the
+`MAITY_PUBLIC_PAGES*` settings can also be set by the instance admin in the
+dashboard; the environment wins.
 
 | Variable | Default | Without it | Contract |
 |---|---|---|---|

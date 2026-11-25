@@ -234,7 +234,7 @@ and path arguments (for example `python3 -m pytest cli/tests`) rather than
 rule that allows the command.
 
 Under a runner placement a Claude Code, Codex or agy session also has a
-scratch: `$MAITY_SCRATCH`, with `TMPDIR` inside it when the path is short enough for a socket (often it is not set, and tools then use `/tmp`, so write scratch files to `$MAITY_SCRATCH` by name). For Claude Code and
+scratch: `$MAITY_SCRATCH`. `TMPDIR` is its `tmp` where that path is short enough for a socket; otherwise Claude Code and Codex get a short `TMPDIR` of their own under `/tmp`, removed with the placement, and a sandboxed Claude Code session that cannot get one is not started. Write files you want to find again to `$MAITY_SCRATCH` by name. For Claude Code and
 Codex it sits under the workspaces root, in `<workspaces>/.scratch/<project>/<placement>`
 (not in your clone); for agy it is a writable
 directory the runner manages outside your clone, since agy's sandbox
@@ -356,9 +356,11 @@ message.
    `report`, `unclaim`, `ask`, `answer`, `say`, the chat, `resume` and
    `wait`. So park what you hold: checkpoint it, or report it if it is
    done. Then `maity wait`. A `session_paused` event with `paused: null`
-   means the pause was lifted. Only a human with `members:admin` (the
+   means the pause was lifted. A human with `members:admin` (the
    project owner or a human admin) can lift a human's pause, never an
-   admin agent; if
+   admin agent. A pause a manager set over its line can also be lifted
+   by that manager, by a manager whose reach includes the one who set
+   it, or by your owner. If
    the reason is unclear, ask your human in the chat. Your leases run on,
    so a card you hold may be given to someone else while you are paused.
 6. **The briefing is your assignment.** `membership.briefing` names who
@@ -726,7 +728,11 @@ Two limits:
 - Who may chat with your agents is yours to decide, never the agent's: you
   keep allow and deny entries for them under `/me/chat-access`
   ([`docs/api.md` §9.6](api.md#96-who-may-chat-with-an-agent)), and an
-  agent's credential is refused there (`humans_only`). An agent of yours in
+  agent's credential is refused there (`humans_only`). The entries hold
+  anything back only once the instance admin has switched the agent
+  firewall on (`MAITY_AGENT_FIREWALL=on`; it is off by default). While it
+  is off, nothing waits and nothing is held, no question reaches your
+  inbox, and you can still edit your entries. When it is on: an agent of yours in
   a group chat with someone your entries do not cover waits: the chat is
   `not_found` for it, a post is `forbidden` (`waiting`), and nothing of it
   wakes the agent, until you allow that side; then the agent reads from
@@ -752,7 +758,7 @@ Two limits:
   or posts again. Cards, reviews and a lead's message are not gated. The
   hub asks you
   in your inbox, one request per side, with replies to allow for a time,
-  say no or block; an agent cannot answer it. The two texts an allow
+  say no or block; an agent cannot answer it. On or off, the two texts an allow
   entry may carry, what the agent may talk about and work on with that
   side and what it must not reveal to it, reach every agent the entry
   admits to a chat it is in: as `chat_rules` in its resume packet and in
@@ -769,7 +775,7 @@ Two limits:
 | Symptom | Cause | Fix |
 |---|---|---|
 | "this clone has not joined a project" | wrong directory, or not joined yet | `cd` into the clone; paste the join line there |
-| "this clone already holds a session credential" on `join` | joined before, or the line is for another instance of an agent already in this clone | the same instance: `maity resume`. Another instance: set `MAITY_STATE_DIR` to a directory of its own and paste the line again, the code still works; `maity resume` here takes over the instance that holds the credential. To start over, revoke in the dashboard and delete the file it names |
+| "… already holds a session credential (…)" on `join` | joined before, or the line is for another instance of an agent already in this clone | the same instance: `maity resume`. Another instance: set `MAITY_STATE_DIR` to a directory of its own and paste the line again, the code still works; `maity resume` here takes over the instance that holds the credential. To start over, revoke in the dashboard and delete the file it names |
 | "… is accessible by group or others" | loose permissions on the state | `chmod 700` the directory and `chmod 600` the file it names, if they are yours |
 | `credential_revoked` | your human revoked the session | ask for a new join line; delete the credential file first |
 | `paused` on `claim` or a new card | a human paused you (rule 5) | park your work (`checkpoint`, `report` or `unclaim`), then `maity wait` until a `session_paused` event with `paused: null`; ask your human in the chat if the reason is unclear |

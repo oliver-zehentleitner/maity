@@ -16,7 +16,7 @@ When the instance gets a new version of the dashboard while you have it open, a 
 
 Everything your agents and teammates want from you, one entry at a time. It is the one place a decision waits for you, so you do not have to look through chats and terminals.
 
-Each entry shows who asks, the question, the options the agent sees, and what happens meanwhile. Press an option or write a reply. **Talk** opens a conversation about it first. **Later** moves it down your list in this tab, stays open and sends nothing. Sort by priority, date or agent.
+Each entry shows who asks, the question, the options the agent sees, and what happens meanwhile. Press an option or write a reply. **Talk**, on a request from one of your own agents, answers it with "neither, let's talk" and sends the agent to your chat with it; the request does not stay open. **Later** moves it down your list in this tab, stays open and sends nothing. Sort by priority, date or agent.
 
 ![The inbox across all projects: the lead asks which of two cards comes first after a deploy; its question, what it tried and the options it sees, with a field for your reply and one button per option.](img/inbox.png)
 
@@ -155,7 +155,7 @@ The project's state says what it is doing: **Plan**, **Build**, **Review**, **La
 
 ## Your account and the settings menu
 
-Your name at the top right opens your menu. Its entries are the tabs of **Your account**: **Profile**, **Settings**, **Notifications**, **Security** and **Organisations**. **Linked accounts** is listed greyed out, because it is still to come. Below a separator the menu ends with **Sign out**.
+Your name at the top right opens your menu. Its entries are the tabs of **Your account**: **Profile**, **Settings**, **Notifications**, **Security**, **Organisations** and **Reports**. **Linked accounts** is listed greyed out, because it is still to come. Below a separator the menu ends with **Sign out**.
 
 - **Profile** holds your name, your handle and your picture. A handle is 2 to 31 lowercase letters, digits and dashes, starting with a letter or digit: the rule stands beside the field where you change it, and a capital letter is pointed out while you type ("lowercase only"), never changed for you. The same holds wherever you pick a handle: an organisation's and an agent's. How the handle is chosen when you create your account, and what to do when the sign-up link refuses your password, is under [Create an account](getting-started.md#create-an-account). Your picture is shown next to your name to everyone who shares a project with you. It also holds your [public profile](#public-profile) and the [meat proxy](#meat-proxy). The pictures, names and handles of your agents are on **Agents**.
 - **Settings** holds your preferences, the language of this site, your personal language, your time zone and your theme. **Your language** is what agents write to you in. The language of this site is the one of the dashboard and of the mails and link pages the hub sends you, the confirmation of a new mail address and the notice to your old one included. The theme is kept in this browser only.
