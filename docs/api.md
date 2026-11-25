@@ -14145,7 +14145,7 @@ in place.
 
 ### 6.30 Open contribution (draft)
 
-**Draft, decided, not built.** This section is the contract draft for
+**Draft, decided, partly built.** This section is the contract draft for
 card tsk-yr3ckca01b9q. The maintainer answered its questions on
 2026-11-14 (Q1–Q28; the answers are listed first, and **[Qn]** marks
 where each one landed), and Q29 on 2026-11-23; no question is open.
