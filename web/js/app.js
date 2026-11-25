@@ -423,6 +423,7 @@ window.Maity = window.Maity || {};
     M.notify.halt();
     M.presence.stop();
     stopTimers();
+    dragTab.reset();
     if (M.clearChatDrafts) M.clearChatDrafts();
     // As a sign-out does: the next human in this tab starts with their own settings.
     M.notify.stopBrowser();
@@ -1592,6 +1593,15 @@ window.Maity = window.Maity || {};
 
   // Always visible: every project of this human with what waits there, and
   // the cross-project view with the total.
+  // What a freshly built row shows: its elements, their attributes and their words, taken before
+  // anything is moved into it or marked on it. Two rows drawn alike are the same row to a reader.
+  function drawnAs(el) {
+    if (el.nodeType === 3) return JSON.stringify(el.textContent);
+    if (el.nodeType !== 1) return "";
+    const attrs = el.getAttributeNames().sort().map((name) => name + "=" + JSON.stringify(el.getAttribute(name)));
+    return "<" + el.tagName + " " + attrs.join(" ") + ">" + Array.from(el.childNodes).map(drawnAs).join("") + "</>";
+  }
+
   function switcher(ctx) {
     const N = M.notify.state;
     // What asks for the human, requests and unread chats (docs/api.md §18.2);
@@ -1605,7 +1615,7 @@ window.Maity = window.Maity || {};
     String(c.total)) : null);
     const pill = (p) => (N.counts ? counted(M.notify.projectCount(p)) : count(p.open_requests));
     const all = N.counts ? counted({ requests: N.counts.inbox, chat: N.counts.chat, total }) : count(total);
-    return h("nav", { class: "switcher", "aria-label": M.t("header.projects") },
+    const row = h("nav", { class: "switcher", "aria-label": M.t("header.projects") },
       h("a", { href: "/all", "aria-current": !ctx.visiting && ALL_PAGES.some((page) => page.scope === ctx.scope) ? "page" : null }, M.t("header.all_projects"), all),
       // The tabs this browser has open, in its order (js/tabs.js): dragged
       // into place, or moved with Alt+Shift+Arrow, or from the tabs menu.
@@ -1628,6 +1638,8 @@ window.Maity = window.Maity || {};
       privateMark(p),
       h("span", { class: "dot state-dot-" + p.state, title: M.dom.word("project", p.state), "aria-label": M.dom.word("project", p.state) }),
       pill(p)))));
+    row.drawnAs = drawnAs(row);
+    return row;
     // Runners belong to the person, not to a project (the maintainer's
     // wish, tsk-cb6myw32def0): they are in the gear menu, not this row. A new
     // project is in the "+" menu, so the tabs menu stands right after the tabs (tsk-hp9gq9rmrdq2).
@@ -1750,6 +1762,7 @@ window.Maity = window.Maity || {};
     marked: null,
     start(e, id) {
       dragTab.id = id;
+      dragTab.redraw = null;
       if (e.dataTransfer) {
         e.dataTransfer.effectAllowed = "move";
         try { e.dataTransfer.setData("text/plain", id); } catch (err) { /* the id is kept here too */ }
@@ -1791,7 +1804,22 @@ window.Maity = window.Maity || {};
       const before = after ? order[order.indexOf(targetId) + 1] || null : targetId;
       if (M.tabs.moveBefore(ctx, id, before)) tabsMoved(ctx, id);
     },
-    end() { dragTab.id = null; dragTab.unmark(dragTab.marked); },
+    // A redraw of the row that came while a tab was dragged (renderSwitcher) runs once the drag ends.
+    redraw: null,
+    end() {
+      dragTab.id = null;
+      dragTab.unmark(dragTab.marked);
+      const redraw = dragTab.redraw;
+      dragTab.redraw = null;
+      if (redraw) redraw();
+    },
+    // The header is drawn anew (another page, a session ended): a drag of the old row is over,
+    // and a redraw it held is the old page's, so neither carries over (A2598).
+    reset() {
+      dragTab.id = null;
+      dragTab.unmark(dragTab.marked);
+      dragTab.redraw = null;
+    },
   };
 
   // The keyboard's way, and the one without a drag (WCAG 2.5.7): Alt+Shift
@@ -2116,10 +2144,21 @@ window.Maity = window.Maity || {};
 
   // The counts changed: only the switcher is replaced, so an open State &
   // absence panel and the tab row's scroll position stay as they are.
+  // The counts now often answer just after the page is drawn (tsk-hyfqc0sp2bvc): a redraw keeps a
+  // tab's focus on the same tab, and waits while a tab is dragged, so neither is lost mid-way.
   function renderSwitcher(ctx) {
     const old = document.getElementById("header").querySelector("nav.switcher");
     if (!old) return;
+    if (dragTab.id) { dragTab.redraw = () => renderSwitcher(ctx); return; }
+    // This redraw is the latest (a drop's move included): one held during the drag is not run again.
+    dragTab.redraw = null;
     const fresh = switcher(ctx);
+    // Drawn alike, the row stays: most counts rounds change nothing in it, and a row replaced for
+    // nothing takes a read or a click aimed at the old one along (PR 2201's web-e2e, outsider tab).
+    if (old.drawnAs && fresh.drawnAs === old.drawnAs) return;
+    const active = document.activeElement;
+    const keyOf = (el) => el.getAttribute("data-project") || el.getAttribute("href");
+    const focusedKey = active && active !== old && old.contains && old.contains(active) && active.getAttribute ? keyOf(active) : null;
     const scrolled = old.scrollLeft;
     M.dom.keepImages(old, fresh);
     old.parentNode.insertBefore(fresh, old);
@@ -2127,10 +2166,15 @@ window.Maity = window.Maity || {};
     fresh.scrollLeft = scrolled;
     scrollCue(fresh);
     showFocused(fresh);
+    if (focusedKey) {
+      const again = Array.from(fresh.querySelectorAll("a")).find((a) => keyOf(a) === focusedKey);
+      if (again) again.focus({ preventScroll: true });
+    }
   }
 
   function renderHeader(ctx, current) {
     const header = document.getElementById("header");
+    dragTab.reset();
     // Park what is there, then build. The lockups stay when the link matches;
     // keepImages moves the other images (switcher logos, the profile) across.
     const previous = h("div");
