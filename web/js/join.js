@@ -223,6 +223,8 @@ window.Maity = window.Maity || {};
     // The fields a member's join leaves out.
     const membershipFields = [];
     const membershipField = (el) => { membershipFields.push(el); return el; };
+    let stewardField = null; // drawn with the role picker below
+    let role = null;
     // One click to what the form cannot change (tsk-svqsdp6qf0f3): the chosen agent's profile
     // and, where it is a member here, the rulebook with its instance limit.
     const profileLinks = h("p", { class: "hint join-profile-links" });
@@ -266,6 +268,8 @@ window.Maity = window.Maity || {};
       handle.disabled = display.disabled = newFields.hidden;
       instanceBox.hidden = !m;
       membershipFields.forEach((f) => { f.hidden = !!m; });
+      // Shown only for a new membership whose role is steward.
+      if (stewardField && role && role.value !== "steward") stewardField.hidden = true;
       memberReportsField.hidden = !m || !!outside;
       reportsOptions();
       if (m && fresh) memberReportsOptions(m);
@@ -298,7 +302,7 @@ window.Maity = window.Maity || {};
     const trusts = outside ? ["outside"] : own ? M.trust.MEMBER_TRUSTS : ctx.isOwner ? ["member", "guest", "admin"] : ["member", "guest"];
     const trust = h("select", { id: "join-trust" }, trusts.map((r) => h("option", { value: r }, M.trust.trustWord(r))));
     trust.value = trusts[0];
-    const role = h("select", { id: "join-role" });
+    role = h("select", { id: "join-role" });
     // The project's own roles follow the built-in ones (§2.3): for one's own agent only those on
     // a base a member join may give (not ops), as the hub's member limits check it. A start on a
     // runner takes this role too: with members:admin every base, as validate_assignment takes it
@@ -311,7 +315,7 @@ window.Maity = window.Maity || {};
     const fillRoles = () => {
       const wanted = role.value || fallback;
       const offered = outside ? outside.roles.slice()
-        : (own ? M.trust.MEMBER_ROLES : M.trust.ROLES.filter((r) => r !== "proxy" || (ctx.isOwner && trust.value === "admin")))
+        : M.trust.offered(ctx, own ? M.trust.MEMBER_ROLES : M.trust.ROLES.filter((r) => r !== "proxy" || (ctx.isOwner && trust.value === "admin")))
           .concat(ownRoles.map((x) => x.name));
       M.trust.fillRoles(role, offered, wanted, fallback, ownRoles);
     };
@@ -328,12 +332,27 @@ window.Maity = window.Maity || {};
       if (!subagentsTouched) subagents.checked = SUBAGENT_ROLES.includes(role.value);
       english.disabled = !subagents.checked;
     };
+    // A steward's "Expert for" and "Sources" (§2.3 "The steward", §6.2): a join names neither,
+    // and the hub fills them for the steward; they are shown as they will be, and changed in
+    // the member's Manage once it joined.
+    stewardField = h("div", { class: "field wide join-steward", hidden: true },
+      h("p", { class: "join-steward-for" }, h("strong", null, M.t("members.expert.for.label")), " ", h("code", null, M.trust.STEWARD_EXPERT_FOR)),
+      h("p", { class: "join-steward-sources" }, h("strong", null, M.t("members.expert.sources.label")), " ", h("code", null, M.trust.STEWARD_SOURCES.join(", "))),
+      h("p", { class: "hint" }, M.t("join.steward.hint")));
+    const followSteward = () => {
+      const m = agentSelect.value ? memberOf(agentSelect.value) : null;
+      stewardField.hidden = !!m || role.value !== "steward";
+    };
+    agentSelect.addEventListener("change", followSteward);
     subagents.addEventListener("change", () => { subagentsTouched = true; followRole(); });
     role.addEventListener("change", followRole);
+    role.addEventListener("change", followSteward);
+    trust.addEventListener("change", followSteward);
     trust.addEventListener("change", fillRoles);
     trust.addEventListener("change", followRole);
     fillRoles();
     followRole();
+    followSteward();
     const subagentsField = h("div", { class: "field wide join-subagents" },
       h("div", { class: "join-offer" }, subagents, " ", h("label", { for: "join-subagents" }, M.t("join.subagents.label"))),
       h("p", { class: "hint", id: "join-subagents-hint" }, M.t("join.subagents.hint")),
@@ -836,6 +855,7 @@ window.Maity = window.Maity || {};
         memberReportsField,
         outside ? null : membershipField(h("div", { class: "field" }, h("label", { for: "join-trust" }, M.t("join.field.trust")), trust)),
         membershipField(h("div", { class: "field" }, h("label", { for: "join-role" }, M.t("join.field.role")), role, roleHelp)),
+        membershipField(stewardField),
         outside ? null : membershipField(h("div", { class: "field" }, h("label", { for: "join-reports" }, M.t("join.field.reports_to")), reportsTo)),
         outside ? membershipField(h("p", { class: "hint field wide join-outside-hint" }, M.t("join.field.outsider_hint")))
           : own ? membershipField(h("p", { class: "hint field wide" }, M.t("join.field.own_hint")))

@@ -862,6 +862,12 @@ window.Maity = window.Maity || {};
       guide: "You answer: learn the sources your owner named for you, answer the questions addressed to you or to the experts from them, and name the source of each answer — file and line, or the contract's §. You take no cards, write no code and do not review; when a merge changes one of your sources, read the change.",
       scopes: ["project:read", "events:post"],
     },
+    {
+      name: "steward",
+      description: "keeps the project's reasoning complete: answers why questions across `context/` with the source, the requests addressed to it or to `role:steward` (§7), and follows up on what is open until each item is done or someone has said why not; every member still writes its own entries, and the steward is no substitute for that (below)",
+      guide: "You keep the project's reasoning complete: answer why questions from `context/` and name the entry of each answer. After each merge, check for a decision without an entry and ask its author; follow up on open entries until each is done or someone has said why not, and send your lead a short status. Every member writes its own entries: ask, with a note on the card first, do not write them for others, and never take or change another member's card.",
+      scopes: ["project:read", "tasks:write", "requests:ask", "events:post"],
+    },
   ];
   const RESTRICTED_MODES = ["nobody_except", "all_except"];
   const restrictedTexts = {};  // "<slug> <task id>" -> { task_id, text, version, updated_by, updated_at, history }
@@ -1171,11 +1177,15 @@ window.Maity = window.Maity || {};
   // member or guest, to those trusts and the work roles; capabilities, admin,
   // owner, proxy and manager stay a human's.
   const AGENT_TRUSTS = ["member", "guest"];
-  const AGENT_ROLES = ["coder", "reviewer", "tester", "designer", "ops", "writer", "red-team", "blue-team", "purple-team", "expert"];
+  const AGENT_ROLES = ["coder", "reviewer", "tester", "designer", "ops", "writer", "red-team", "blue-team", "purple-team", "expert", "steward"];
   // Every built-in role (§2.3), as the hub's one list; and what a member may
   // give an agent of their own (§3.1: not ops, not proxy).
-  const HUB_ROLES = ["coder", "reviewer", "tester", "designer", "writer", "ops", "proxy", "manager", "red-team", "blue-team", "purple-team", "expert"];
+  const HUB_ROLES = ["coder", "reviewer", "tester", "designer", "writer", "ops", "proxy", "manager", "red-team", "blue-team", "purple-team", "expert", "steward"];
   const MEMBER_ROLES = HUB_ROLES.filter((r) => r !== "ops" && r !== "proxy");
+  // The roles that carry expert_for and expert_sources (§6.2): a change between them keeps the
+  // fields. The fixture makes no membership from a join, so the steward's filled fields at its
+  // join (§2.3 "The steward") have no place here.
+  const EXPERT_FIELD_ROLES = ["expert", "steward"];
   // The built-in role whose scopes `role` has, as project_roles.base_of answers it (§2.3):
   // itself for a built-in role, the base of one of the project's own, null for any other name.
   function roleBaseIn(slug, role, path) {
@@ -5946,7 +5956,7 @@ window.Maity = window.Maity || {};
         } else if (!who.admin && !(target.kind === "agent" && target.owner_id === who.member.id)) {
           fail(403, "forbidden", "members:admin needed", path, { scope: "members:admin" });
         }
-        if (target.role !== "expert") fail(400, "invalid", "only an expert has these fields", path, { fields: Object.fromEntries(own.map((k) => [k, "expert_only"])) });
+        if (!EXPERT_FIELD_ROLES.includes(target.role)) fail(400, "invalid", "only an expert or a steward has these fields", path, { fields: Object.fromEntries(own.map((k) => [k, "expert_only"])) });
         const errors = {};
         if ("expert_for" in body && body.expert_for !== null && [...body.expert_for].length > 120) errors.expert_for = "string_too_long";
         if ("expert_sources" in body) {
@@ -5979,7 +5989,7 @@ window.Maity = window.Maity || {};
           }
           if (base === null) fail(400, "invalid", "the request does not validate", path, { fields: { role: "unknown" } });
           holdsCards(m[1], target, body, path);
-          if (target.role === "expert" && body.role !== "expert") Object.assign(target, { expert_for: null, expert_sources: [] });
+          if (!EXPERT_FIELD_ROLES.includes(body.role)) Object.assign(target, { expert_for: null, expert_sources: [] });
           target.role = body.role;
           target.role_base = base;
           return asRead(target);
@@ -6043,8 +6053,9 @@ window.Maity = window.Maity || {};
       const applies = (k) => k in body && !held.includes(k);
       if (applies("trust")) target.trust = body.trust;
       if (applies("role")) {
-        // A role change away from expert clears its fields (§6.2 "An expert's fields").
-        if (target.role === "expert" && body.role !== "expert") Object.assign(target, { expert_for: null, expert_sources: [] });
+        // A change to a role that is neither expert nor steward clears the fields; one between
+        // the two keeps them (§6.2 "An expert's fields").
+        if (!EXPERT_FIELD_ROLES.includes(body.role)) Object.assign(target, { expert_for: null, expert_sources: [] });
         target.role = body.role;
         if (projectRole) target.role_base = projectRole.base;
         else delete target.role_base;

@@ -8491,6 +8491,10 @@
     "en": "0365bc43945f8179",
     "text": "6d993044155187df"
   },
+  "join.steward.hint": {
+    "en": "77717a274f1da1a2",
+    "text": "5ad39e3550f3faf2"
+  },
   "join.subagents.english": {
     "en": "7c6e4d24c8258b2f",
     "text": "c8f1ac085d58bdec"
@@ -11398,6 +11402,14 @@
   "members.seen": {
     "en": "bd1cee97842c0df5",
     "text": "9c38cffc5350fe78"
+  },
+  "members.steward.prefilled": {
+    "en": "fe388b6ccf098b60",
+    "text": "6da67eee5416c846"
+  },
+  "members.steward.title": {
+    "en": "f9206d8238a4e3af",
+    "text": "0511c96dda769b31"
   },
   "members.title": {
     "en": "015c33c4ec95d38f",
@@ -16907,6 +16919,14 @@
     "en": "8caf33b74f32a38a",
     "text": "18afd5c133d28bf0"
   },
+  "role.steward": {
+    "en": "8056175490b77f51",
+    "text": "8056175490b77f51"
+  },
+  "role.steward.help": {
+    "en": "0ca8a999942b5138",
+    "text": "f0eda376dd4aa11d"
+  },
   "role.tester": {
     "en": "8a954e065116c83b",
     "text": "8a954e065116c83b"
@@ -18727,6 +18747,10 @@
     "en": "5461f51145ef0783",
     "text": "a5b03da7512ffd0b"
   },
+  "settings.onboarding.role.steward": {
+    "en": "005f6f53bb8d7de5",
+    "text": "c272877bdf214035"
+  },
   "settings.onboarding.role.tester": {
     "en": "e327a4c5990c43e7",
     "text": "28825ef54460aedf"
@@ -19058,6 +19082,46 @@
   "settings.state.title": {
     "en": "2a3edb7abc9e6929",
     "text": "8bdc4fa997bbf0f4"
+  },
+  "settings.steward_writes.cards_only": {
+    "en": "1e94d2ebf5ab555d",
+    "text": "7a7f0a4d23665c47"
+  },
+  "settings.steward_writes.hint": {
+    "en": "efbe06b2970bea86",
+    "text": "fa7fa2c4b80d5486"
+  },
+  "settings.steward_writes.label": {
+    "en": "d7c672eec8b95efd",
+    "text": "4108bcf4eeefbdfd"
+  },
+  "settings.steward_writes.not_saved": {
+    "en": "87aeef0b37fc6d37",
+    "text": "e10bb5c83f643ec1"
+  },
+  "settings.steward_writes.reason": {
+    "en": "dafc3476fe7d3275",
+    "text": "499506a536ab7705"
+  },
+  "settings.steward_writes.reason_placeholder": {
+    "en": "c2950f8a1e414fa1",
+    "text": "1412e67c21f01a3c"
+  },
+  "settings.steward_writes.save": {
+    "en": "a6b1ba0f36034cb8",
+    "text": "cc636a80330552e1"
+  },
+  "settings.steward_writes.saved": {
+    "en": "a0a137b78e9105df",
+    "text": "3773749eb98e9435"
+  },
+  "settings.steward_writes.self": {
+    "en": "b29d268ba9b541ab",
+    "text": "ea2abdd5efe019a4"
+  },
+  "settings.steward_writes.title": {
+    "en": "0b82118f309e44ea",
+    "text": "0b82118f309e44ea"
   },
   "settings.tab.general": {
     "en": "468d61a94d9f9d93",
@@ -20775,6 +20839,10 @@
     "en": "4a6f228f9a0c60df",
     "text": "0a8cad1957bceeaf"
   },
+  "trust.every.role.steward": {
+    "en": "b087555385a9b175",
+    "text": "e8b10ef649a429ca"
+  },
   "trust.every.role.tester": {
     "en": "cd7db828c59b97cb",
     "text": "ba6e64486f046929"
@@ -20822,6 +20890,10 @@
   "trust.role_word.reviewer": {
     "en": "02b93b284a355f07",
     "text": "02b93b284a355f07"
+  },
+  "trust.role_word.steward": {
+    "en": "4108bcf4eeefbdfd",
+    "text": "4108bcf4eeefbdfd"
   },
   "trust.role_word.tester": {
     "en": "9aaf66d48dc13a73",

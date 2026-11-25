@@ -69,7 +69,7 @@ window.Maity = window.Maity || {};
 
   // What an expert answers about, under its role wherever the role is shown (§2.3 "The expert").
   function expertLine(m) {
-    if (!m || m.role !== "expert" || !m.expert_for) return null;
+    if (!m || !M.trust.EXPERT_FIELD_ROLES.includes(m.role) || !m.expert_for) return null;
     return h("span", { class: "muted member-expert-for" }, M.t("members.expert.for", { topic: m.expert_for }));
   }
   M.expertLine = expertLine;
@@ -413,16 +413,21 @@ window.Maity = window.Maity || {};
 
     // An expert's fields (§6.2 "An expert's fields"): what it answers about and the paths it
     // learned, set by its owner or an admin, alone in their own PATCH, at once and with no
-    // consent; only while the role is expert.
+    // consent; only while the role is expert or steward (§2.3 "The steward"). A steward with
+    // neither field yet, one that became steward by a role change, starts from the steward's
+    // defaults, saved only with the form.
     function expertPart(m, memberPath) {
-      if (m.kind !== "agent" || m.role !== "expert" || m.removed_at || ctx.me.kind !== "human" || !(ownAgent(m) || ctx.canAdmin)) return null;
+      if (m.kind !== "agent" || !M.trust.EXPERT_FIELD_ROLES.includes(m.role) || m.removed_at || ctx.me.kind !== "human" || !(ownAgent(m) || ctx.canAdmin)) return null;
       const id = (what) => "member-expert-" + what + "-" + m.id;
       const draft = edits.get(m.id) || {};
       const keep = (k, v) => { edits.set(m.id, Object.assign(edits.get(m.id) || {}, { [k]: v })); };
+      const steward = m.role === "steward";
+      const prefilled = steward && !m.expert_for && !(m.expert_sources || []).length;
       const topic = keyed("expert-for:" + m.id, h("input", { id: id("for"), maxlength: String(EXPERT_FOR_MAX), autocomplete: "off", placeholder: M.t("members.expert.for.placeholder") }));
-      topic.value = draft.expertFor !== undefined ? draft.expertFor : m.expert_for || "";
+      topic.value = draft.expertFor !== undefined ? draft.expertFor : m.expert_for || (prefilled ? M.trust.STEWARD_EXPERT_FOR : "");
       const sources = keyed("expert-sources:" + m.id, h("input", { id: id("sources"), autocomplete: "off", spellcheck: "false", placeholder: M.t("members.expert.sources.placeholder") }));
-      sources.value = draft.expertSources !== undefined ? draft.expertSources : (m.expert_sources || []).join(", ");
+      sources.value = draft.expertSources !== undefined ? draft.expertSources
+        : (prefilled ? M.trust.STEWARD_SOURCES : m.expert_sources || []).join(", ");
       topic.addEventListener("input", () => keep("expertFor", topic.value));
       sources.addEventListener("input", () => keep("expertSources", sources.value));
       const error = h("p", { class: "field-error", id: id("sources") + "-error", role: "alert" });
@@ -448,7 +453,8 @@ window.Maity = window.Maity || {};
             () => M.api.patch(memberPath, body), "expert-for:" + m.id,
             () => { const d = edits.get(m.id); if (d) { delete d.expertFor; delete d.expertSources; } });
         },
-      }, h("h4", null, M.t("members.expert.title")),
+      }, h("h4", null, steward ? M.t("members.steward.title") : M.t("members.expert.title")),
+      prefilled ? h("p", { class: "hint member-steward-prefilled" }, M.t("members.steward.prefilled")) : null,
       h("label", { for: id("for") }, M.t("members.expert.for.label")), topic,
       h("p", { class: "hint", id: id("for") + "-hint" }, M.t("members.expert.for.hint")),
       h("label", { for: id("sources") }, M.t("members.expert.sources.label")), sources,
@@ -609,7 +615,7 @@ window.Maity = window.Maity || {};
       const memberBase = (list) => list.filter((x) => M.trust.MEMBER_ROLES.includes(x.base));
       let own = memberBase(M.trust.projectRoles(ctx, (list) => { own = memberBase(list); if (own.length) fill(); }));
       const fill = () => {
-        const offered = M.trust.MEMBER_ROLES.concat(own.map((x) => x.name));
+        const offered = M.trust.offered(ctx, M.trust.MEMBER_ROLES).concat(own.map((x) => x.name));
         if (!offered.includes(m.role)) offered.push(m.role);
         M.trust.fillRoles(pick, offered, pick.value || m.role, m.role, own);
       };
@@ -849,7 +855,7 @@ window.Maity = window.Maity || {};
       const fillRoles = () => {
         const wanted = role.value || (draft.role !== undefined ? draft.role : m.role);
         const proxyOk = trust.value === "admin" && (ctx.isOwner || m.role === "proxy");
-        const offered = M.trust.ROLES.filter((r) => r !== "proxy" || proxyOk).concat(own.map((x) => x.name));
+        const offered = M.trust.offered(ctx, M.trust.ROLES.filter((r) => r !== "proxy" || proxyOk)).concat(own.map((x) => x.name));
         if (m.role && m.role !== "proxy" && !offered.includes(m.role)) offered.push(m.role);
         M.trust.fillRoles(role, offered, wanted, offered.includes(m.role) ? m.role : "coder", own);
       };

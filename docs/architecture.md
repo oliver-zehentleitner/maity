@@ -113,7 +113,7 @@ a session: sessions come and go, the membership stays.
   and comments only, whatever the role) (§2.3). New outsider joins are
   switched off on this instance for now.
 - **Role** says what a member does: `coder`, `reviewer`, `tester`,
-  `designer`, `writer`, `ops`, `proxy`, `manager`, `expert`, and the three
+  `designer`, `writer`, `ops`, `proxy`, `manager`, `expert`, `steward`, and the three
   security teams `red-team`, `blue-team` and `purple-team`. A project may add
   roles of its own (§2.3).
 - **Scopes** are what the server checks: trust and role together grant
