@@ -6,6 +6,7 @@ confirms or declines a claim request; an outsider's agent still claims no card i
 
 from __future__ import annotations
 
+import re
 from dataclasses import replace
 from datetime import timedelta
 from typing import Any
@@ -100,7 +101,8 @@ def test_the_three_fields_take_their_values_and_refuse_others(owner: flow.Human)
         "policy.looking_for_coders": "unknown"
     }
     assert _fields(_set(owner, outside_claims="anyone")) == {"policy.outside_claims": "unknown"}
-    for wrong in (0, -1, "2", True, 1.5, 2_147_483_648, 10**20):
+    wrong_caps: tuple[Any, ...] = (0, -1, "2", True, False, 1.5, 2_147_483_648, 10**20, [], {})
+    for wrong in wrong_caps:
         assert _fields(_set(owner, outside_claims_max=wrong)) == {
             "outside_claims_max": "out_of_range"
         }, wrong
@@ -122,6 +124,58 @@ def test_a_refused_field_leaves_the_whole_policy_as_it_was(owner: flow.Human) ->
     before = _policy(owner)
     assert _set(owner, looking_for_coders="all", outside_claims_max=0).status_code == 400
     assert _policy(owner) == before
+
+
+NOT_A_CHOICE: tuple[Any, ...] = (None, 1, 0, True, False, 1.5, [], ["all"], {}, {"x": "all"})
+
+
+@pytest.mark.parametrize("field", ["looking_for_coders", "outside_claims"])
+def test_null_and_a_value_that_is_no_string_are_unknown(owner: flow.Human, field: str) -> None:
+    """The row's choices only (§6.1): an explicit `null` is no left-out field, and a number, a
+    bool, a list or an object is `unknown` as a wrong string is, never `string_type`."""
+    before = _policy(owner)
+    for wrong in NOT_A_CHOICE:
+        assert _fields(_set(owner, **{field: wrong})) == {f"policy.{field}": "unknown"}, wrong
+    assert _policy(owner) == before
+
+
+@pytest.mark.parametrize("field", ["looking_for_coders", "outside_claims"])
+def test_a_bad_choice_beside_a_good_field_applies_nothing(
+    owner: flow.Human, migrated: Engine, field: str
+) -> None:
+    """One bad field refuses the whole PATCH: the valid field beside it, the project's name
+    and the other choice stay as they were, and no `policy_changed` is written."""
+    other = "outside_claims" if field == "looking_for_coders" else "looking_for_coders"
+    good = {"looking_for_coders": "all", "outside_claims": "human"}[other]
+    before = owner.get(P).json()
+    with migrated.connect() as conn:
+        events = conn.execute(select(t.event.c.seq).where(t.event.c.kind == "policy_changed")).all()
+    for wrong in NOT_A_CHOICE:
+        body = {
+            "name": "Renamed",
+            "reason": "outsiders",
+            "policy": {field: wrong, other: good, "outside_claims_max": 5},
+        }
+        refused = owner.patch(P, body)
+        assert _fields(refused) == {f"policy.{field}": "unknown"}, wrong
+        assert owner.get(P).json() == before, wrong
+    with migrated.connect() as conn:
+        after = conn.execute(select(t.event.c.seq).where(t.event.c.kind == "policy_changed")).all()
+    assert after == events
+
+
+def test_null_on_the_cap_removes_it_and_applies_with_the_rest(owner: flow.Human) -> None:
+    """`outside_claims_max: null` is the row's no cap (§6.1), deliberately not refused: it
+    clears a stored cap, and the other fields of the same PATCH apply with it."""
+    assert _set(owner, outside_claims_max=3).status_code == 200
+    done = _set(owner, outside_claims_max=None, looking_for_coders="off")
+    assert done.status_code == 200, done.text
+    shown = _policy(owner)
+    assert (shown["outside_claims_max"], shown["looking_for_coders"]) == (None, "off")
+    # A bad cap beside a good choice applies nothing, as a bad choice does.
+    refused = _set(owner, outside_claims_max=False, looking_for_coders="all")
+    assert _fields(refused) == {"outside_claims_max": "out_of_range"}
+    assert _policy(owner) == shown
 
 
 def test_each_change_is_stored_with_its_reason(owner: flow.Human, migrated: Engine) -> None:
@@ -360,6 +414,13 @@ def test_an_outsiders_agent_never_names_it(
     # Even a value that is not a boolean is the trust's refusal, not a validation answer.
     refused = outside.patch(f"{TASKS}/{own.json()['id']}", {"open_to_outsiders": "yes"})
     assert (refused.status_code, _reason(refused)) == (403, "outside_trust")
+    with migrated.connect() as conn:
+        cards_before = conn.execute(select(t.card.c.id)).all()
+    for wrong in ("yes", 1, None):  # so on POST, and nothing is created
+        refused = _card(outside, open_to_outsiders=wrong)
+        assert (refused.status_code, _reason(refused)) == (403, "outside_trust"), wrong
+    with migrated.connect() as conn:
+        assert conn.execute(select(t.card.c.id)).all() == cards_before
 
 
 def test_claim_requests_is_the_hubs_alone(owner: flow.Human) -> None:
@@ -434,6 +495,9 @@ def test_the_waiting_request_reads_in_the_contract_shape_and_a_settled_one_not(
         (only,) = shown.json()["claim_requests"]
         assert set(only) == {"id", "member_id", "instance", "requested_at"}
         assert (only["id"], only["member_id"], only["instance"]) == (waiting, outside.id, "wle2")
+        # A `clr-` id and the hub's time to the second (§1.2; the lead's ruling Q18).
+        assert only["id"].startswith("clr-")
+        assert re.fullmatch(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ", only["requested_at"])
     listed = owner.get(TASKS).json()["items"]
     assert [c["claim_requests"] for c in listed if c["id"] == card][0][0]["id"] == waiting
     with migrated.connect() as conn:
