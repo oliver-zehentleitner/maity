@@ -474,8 +474,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(text(header).includes("Build") && text(header).includes("Fixtures") && header.querySelectorAll("button").some((b) => (b.getAttribute("aria-label") || "").startsWith("Your profile: ")), "project header: state, fixtures label, sign out");
   expect(chip("Maity").getAttribute("aria-current") === "page", "switcher marks the current project");
   const sRow = header.querySelector(".switcher-row");
-  expect(sRow && sRow.childNodes.length === 2 && sRow.childNodes[0].className === "switcher" && sRow.childNodes[1].className === "tabs-menu-box",
-    "header: the tabs menu at the projects' right");
+  expect(sRow && sRow.childNodes.length === 3 && sRow.childNodes[0].className === "switcher" && sRow.childNodes[1].className === "tabs-menu-box"
+    && sRow.childNodes[2].className === "explore-link" && (sRow.childNodes[2].getAttribute("href") || "").replace(/^#/, "") === "/explore" && text(sRow.childNodes[2]) === "Explore",
+    "header: the tabs menu at the projects' right, then the link to Explore at the row's end (tsk-r6bk2py3ezwg)");
   // The project's tabs and, at their right, its links and state share one row (tsk-dradpje67ak1).
   const vRow = header.querySelector(".views-row");
   expect(vRow && vRow.childNodes.length === 2 && vRow.childNodes[0].tagName === "NAV" && vRow.childNodes[0].className === "views"
@@ -663,11 +664,11 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     M_.api.patch = (path, body) => { patchesTabs.push([path, body]); return realPatchTabs(path, body); };
     tabsButton().click(); await tick();
     expect(tabsButton().getAttribute("aria-label") === "Project tabs" && tabsItems().map((i) => i.getAttribute("role") + ":" + (i.getAttribute("aria-checked") || "-") + ":" + i.textContent).join("|")
-      === "menuitemcheckbox:true:Maity|menuitemcheckbox:true:Sample shop|menuitem:-:Keep these tabs at start|menuitem:-:New project",
-      "tabs: the menu lists each project as a switch, then the start set, then a new project (tsk-c4dz5x6rb2h8)");
-    tabsItems()[1].click(); await tick();
+      === "menuitem:-:New project|menuitem:-:Explore|menuitem:-:Keep these tabs at start|menuitemcheckbox:true:Maity|menuitemcheckbox:true:Sample shop",
+      "tabs: the menu has New project, Explore and the start set, then each project as a switch (tsk-c4dz5x6rb2h8, tsk-r6bk2py3ezwg)");
+    tabsItems().find((i) => i.textContent === "Sample shop").click(); await tick();
     expect(tabIds() === MA && kept().open.join() === MA && !header.querySelector(".tabs-menu-box").querySelector("ul").hidden
-      && tabsItems()[1].getAttribute("aria-checked") === "false" && said() === "Sample shop is no longer a tab" && !patchesTabs.length,
+      && tabsItems().find((i) => i.textContent === "Sample shop").getAttribute("aria-checked") === "false" && said() === "Sample shop is no longer a tab" && !patchesTabs.length,
       "tabs: switching a project off closes its tab, the menu stays open, nothing is sent");
     // The inbox filter to open tabs, kept per viewer.
     const pfTabs = byId("inbox-project");
@@ -18637,6 +18638,99 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     await otRealPatch("/me", { start_tabs: null, starred: [] });
     await otFreshMenu();
     otItems().find((i) => i.textContent === "stranger/toolnot a member").click(); await tick();
+    // Explore inside the dashboard (tsk-r6bk2py3ezwg; docs/api.md §16.9, "Explore, signed in"; web/context/views.md):
+    // the row's Explore link and the tabs menu's Explore open a tab of its own for the browser session at /explore,
+    // without a project's views, its list GET /public/explore's; a project one is no member of opens from it as the
+    // dashed tab, whose star sends PATCH /me with the id its view read; a member's opens as its own tab; the × closes it.
+    {
+      const EXPLORE = "maity.tabs.explore.hum-maintainer";
+      // The fixture hub's answer, read past this block's stub of the public reads, and a member's project beside it.
+      const exAnswer = await viGet("/public/explore");
+      expect(exAnswer.projects.some((p) => p.full_name === "stranger/tool") && exAnswer.projects.some((p) => p.full_name === "stranger/gadget")
+        && exAnswer.projects.every((p) => JSON.stringify(Object.keys(p).sort()) === '["full_name","name"]')
+        && exAnswer.projects.map((p) => p.name.toLowerCase()).join() === exAnswer.projects.map((p) => p.name.toLowerCase()).sort().join(),
+        "fixture hub: GET /public/explore lists the public projects as {name, full_name}, by name " + JSON.stringify(exAnswer));
+      viPages["/public/explore"] = { projects: exAnswer.projects.filter((p) => p.full_name !== "maintainer/maity").concat({ name: "Maity", full_name: "maintainer/maity" }) };
+      const exTab = () => otNav().querySelector("a.explore-tab");
+      const exClose = () => otNav().querySelector("button.tab-close");
+      const exLink = () => header.querySelector(".switcher-row").querySelectorAll("a").find((a) => a.classList.contains("explore-link")) || null;
+      const exCard = (full) => main.querySelectorAll("a.explore-card").find((a) => a.getAttribute("data-full-name") === full) || null;
+      const exHref = (a) => (a.getAttribute("href") || "").replace(/^#/, "");
+      const exPath = () => M_.route.current().path;
+      // Signed in, nothing open yet: the link at the row's end, no Explore tab.
+      await go("#/all"); for (let k = 0; k < 3; k++) await tick();
+      expect(exLink() && exHref(exLink()) === "/explore" && !exTab() && !ssStore[EXPLORE], "explore: the row's Explore link stands there, no Explore tab before it is opened");
+      const exFrom = viAll.length;
+      await go("#" + exHref(exLink())); for (let k = 0; k < 6; k++) await tick();
+      expect(exPath() === "/explore" && main.querySelector("section.view-explore") && exTab() && exTab().getAttribute("aria-current") === "page"
+        && otLinks()[otLinks().length - 1] === exTab() && !exTab().getAttribute("data-project") && !exTab().attrs.draggable && !header.querySelector("nav.views")
+        && text(header.querySelector(".bar .project")) === "Explore" && ssStore[EXPLORE] === "1" && /^Explore · Maity/.test(plainTitle())
+        && viAll.slice(exFrom).includes("/public/explore"),
+        "explore: the link opens the Explore tab at /explore, last in the row, current, kept for the session, with no project views, its list read from GET /public/explore "
+        + JSON.stringify([exPath(), ssStore[EXPLORE], plainTitle()]));
+      const exTool = exCard("stranger/tool");
+      expect(exTool && exHref(exTool) === "/stranger/tool/overview" && text(exTool).includes("Tool") && !exTool.querySelector(".explore-mark")
+        && exCard("maintainer/maity") && exHref(exCard("maintainer/maity")) === "/maintainer/maity/inbox" && text(exCard("maintainer/maity").querySelector(".explore-mark")) === "member"
+        && !main.querySelector(".tab-star"),
+        "explore: a card per project, a member's to its inbox and marked so, another's to its Overview; no star on a card");
+      // A project one is no member of opens from Explore as the dashed tab; its star reads nothing more than the view did and sends PATCH /me.
+      otPatches.length = 0;
+      const exViewFrom = viAll.length;
+      await go("#" + exHref(exTool)); for (let k = 0; k < 6; k++) await tick();
+      expect(exPath() === "/stranger/tool/overview" && otTab("stranger/tool") && otTab("stranger/tool").getAttribute("aria-current") === "page"
+        && exTab() && !exTab().getAttribute("aria-current") && otStar() && otStar().getAttribute("aria-pressed") === "false"
+        && viAll.slice(exViewFrom).filter((p) => p === "/projects/stranger/tool").length === 1,
+        "explore: a project one is no member of opens as the dashed tab, its id read once by GET /projects/{owner}/{slug}, the Explore tab kept "
+        + JSON.stringify(viAll.slice(exViewFrom).filter((p) => p.startsWith("/projects/stranger/tool"))));
+      const exStarFrom = viAll.length;
+      otStar().click(); for (let k = 0; k < 4; k++) await tick();
+      expect(otPatches.length === 1 && otPatches[0][0] === "/me" && JSON.stringify(otPatches[0][1]) === JSON.stringify({ starred: [TOOL] })
+        && otStar().getAttribute("aria-pressed") === "true" && !viAll.slice(exStarFrom).includes("/projects/stranger/tool"),
+        "explore: the star in the dashed tab opened from Explore sends PATCH /me {starred: [id]} with the id its view read " + JSON.stringify(otPatches));
+      // Back on Explore through its tab: the card says starred, read from /me.
+      await go("#" + exHref(exTab())); for (let k = 0; k < 6; k++) await tick();
+      expect(exPath() === "/explore" && exCard("stranger/tool") && text(exCard("stranger/tool").querySelector(".explore-mark")) === "starred",
+        "explore: the Explore tab leads back to the list, the starred project marked so");
+      // A member's project opens as its own tab, solid and current.
+      await go("#" + exHref(exCard("maintainer/maity"))); for (let k = 0; k < 6; k++) await tick();
+      {
+        const own = otLinks().find((a) => a.getAttribute("data-project") === MA);
+        expect(exPath() === "/maintainer/maity/inbox" && own && own.getAttribute("aria-current") === "page" && !own.classList.contains("outsider") && exTab(),
+          "explore: a member's project opens as its own tab, current, the Explore tab kept");
+      }
+      // The tabs menu: New project, Explore, the start set first; Explore is an action, a link to /explore, no switch.
+      await otFreshMenu();
+      {
+        const items = otItems();
+        const ex = items.find((i) => i.textContent === "Explore");
+        expect(items.slice(0, 3).map((i) => i.textContent).join("|") === "New project|Explore|Keep these tabs at start"
+          && ex && ex.getAttribute("role") === "menuitem" && !ex.getAttribute("aria-checked") && exHref(ex) === "/explore",
+          "explore: the tabs menu starts New project, Explore, Keep these tabs at start; Explore is a link, no switch " + items.map((i) => i.textContent).join("|"));
+        otButton().click(); await tick();
+      }
+      // The × beside the tab, away from it: the tab goes for the session, nothing is sent, the page stays.
+      otPatches.length = 0;
+      exClose().click(); for (let k = 0; k < 3; k++) await tick();
+      expect(!exTab() && !(EXPLORE in ssStore) && exPath() === "/maintainer/maity/inbox" && !otPatches.length && otSaid() === "Explore is no longer a tab",
+        "explore: its × closes the tab elsewhere, nothing sent, the page stays, and says so");
+      // The menu's Explore opens it again; its × on its own page leads to All projects.
+      await otFreshMenu();
+      await go("#" + exHref(otItems().find((i) => i.textContent === "Explore"))); for (let k = 0; k < 6; k++) await tick();
+      expect(exPath() === "/explore" && exTab() && exTab().getAttribute("aria-current") === "page" && ssStore[EXPLORE] === "1",
+        "explore: the tabs menu's Explore opens the tab again, current");
+      exClose().click(); for (let k = 0; k < 6; k++) await tick();
+      expect(exPath() === "/all" && !exTab() && !(EXPLORE in ssStore) && !otPatches.length, "explore: its × on its own page closes it and leads to All projects " + exPath());
+      // While the instance serves no public pages, GET /public/explore is not_found: the page says so.
+      delete viPages["/public/explore"];
+      await go("#/explore"); for (let k = 0; k < 6; k++) await tick();
+      expect(main.querySelector("section.view-explore") && text(main).includes("This hub serves no public pages, so there is nothing to explore.") && !main.querySelector(".error"),
+        "explore: not_found from GET /public/explore says the hub serves no public pages");
+      exClose().click(); for (let k = 0; k < 6; k++) await tick();
+      // Back as before: no star, the Explore tab closed.
+      await otRealPatch("/me", { starred: [] });
+      await go("#/all"); for (let k = 0; k < 3; k++) await tick();
+      expect(!exTab() && !otTab("stranger/tool"), "explore: back as before, no Explore tab and no dashed tab");
+    }
     M_.api.patch = otRealPatch;
     win.sessionStorage = ssBefore; win.localStorage = lsBefore;
     if (ssBefore === undefined) delete win.sessionStorage;
@@ -22254,6 +22348,14 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && rtNotHub.every(([drawn, route]) => !drawn && route),
     "route: a click on /explore or /for/<slug> is a page load, the address still a route; /explorer, /for and deeper paths are not those pages "
     + JSON.stringify(rtHub) + JSON.stringify(rtNotHub));
+  // Signed in, bare /explore is the dashboard's Explore tab (§16.9, "Explore, signed in"; tsk-r6bk2py3ezwg): a route
+  // change, as the hub answers a session there with the shell; with a query, ?as=public above all, still the hub's page.
+  rtWin.Maity.api = { session: () => ({ session_id: "ses-x" }) };
+  const rtSignedBefore = rtPushed.length;
+  const rtSigned = ["/explore", "/explore?as=public", "/explore?lang=de", "/for/teams"].map((x) => rtLink(x));
+  expect(JSON.stringify(rtSigned) === "[true,false,false,false]" && rtPushed.length === rtSignedBefore + 1 && R.current().path === "/explore",
+    "route: signed in, a click on /explore is a route change to the Explore tab; /explore?as=public and the others stay page loads " + JSON.stringify(rtSigned));
+  delete rtWin.Maity.api;
   // A layer over the view (the full-screen chat) over http(s): its entry is taken by a route change,
   // go() or a link, never left as a second stop at the same address (fmzu, e5kk at #1525).
   rtWin.location.href = rtWin.location.pathname + rtWin.location.search;
