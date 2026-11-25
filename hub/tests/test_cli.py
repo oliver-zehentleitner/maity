@@ -481,8 +481,8 @@ def test_owner_create_reads_the_password_from_stdin(
     ("args", "stdin"),
     [
         (["--handle", "Bad Handle", "--display-name", "X", "--email", "ok@example.org"], "pw\n"),
-        (["--handle", "ok", "--display-name", "X", "--email", "ok@example.org"], "\n"),
-        (["--handle", "ok", "--display-name", "X", "--email", "ok@example.org"], "eleven char\n"),
+        (["--handle", "okay", "--display-name", "X", "--email", "ok@example.org"], "\n"),
+        (["--handle", "okay", "--display-name", "X", "--email", "ok@example.org"], "eleven char\n"),
     ],
 )
 def test_owner_create_refuses_a_bad_handle_or_an_empty_password(
@@ -526,7 +526,7 @@ def test_owner_create_needs_a_migrated_database(
                 "owner",
                 "create",
                 "--handle",
-                "ok",
+                "okay",
                 "--display-name",
                 "X",
                 "--email",
@@ -633,11 +633,11 @@ def test_quickstart_sets_up_a_new_hub_and_ends_on_the_dashboard(
 ) -> None:
     _banner_only(monkeypatch)
     _stdin(monkeypatch, ACCOUNT_PASSWORD + "\n")
-    assert main(["quickstart", "--handle", "me", "--email", "Me@Example.org"]) == 0
+    assert main(["quickstart", "--handle", "mine", "--email", "Me@Example.org"]) == 0
     captured = capsys.readouterr()
     out = captured.out.strip().splitlines()
     assert out[0] == f"maity-hub: schema empty -> {head()}"
-    assert out[1].startswith("maity-hub: created me (hum-")
+    assert out[1].startswith("maity-hub: created mine (hum-")
     assert out[-2:] == ["maity-hub: sign in as me@example.org", out[-1]]
     assert out[-1].startswith("maity-hub: dashboard at http://127.0.0.1:8080/") or (
         "API only" in out[-1]
@@ -660,7 +660,7 @@ def test_quickstart_never_migrates_a_hub_behind_the_schema(
     engine = make_engine("sqlite:///maity-hub.db")
     downgrade(engine, "0001")
     capsys.readouterr()
-    assert main(["quickstart", "--handle", "me"]) == 1
+    assert main(["quickstart", "--handle", "mine"]) == 1
     assert "run `maity-hub migrate` first" in capsys.readouterr().err
     assert current_revision(engine) == "0001"
     engine.dispose()
@@ -681,6 +681,8 @@ def test_quickstart_is_for_sqlite_only(
         ("alice", "alice"),
         ("Bob Smith", "owner"),
         ("admin", "owner"),
+        ("bob", "owner"),  # three characters: kept for the product (§16.11)
+        ("pricing", "owner"),
         ("a" * 31, "a" * 31),
         ("a" * 32, "owner"),
     ],
@@ -706,7 +708,7 @@ def test_quickstart_never_migrates_a_file_that_holds_tables(
     with sqlite3.connect("maity-hub.db") as db:
         db.execute("CREATE TABLE notes (text TEXT)")
         db.execute("INSERT INTO notes VALUES ('mine')")
-    assert main(["quickstart", "--handle", "me"]) == 1
+    assert main(["quickstart", "--handle", "mine"]) == 1
     assert "holds tables but no Maity schema version" in capsys.readouterr().err
     with sqlite3.connect("maity-hub.db") as db:
         tables = {r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
@@ -742,7 +744,7 @@ def test_quickstart_never_adds_a_second_first_account(
 
     monkeypatch.setattr(cli, "_read_password", meanwhile)
     _banner_only(monkeypatch)
-    assert main(["quickstart", "--handle", "me", "--email", "me@example.org"]) == 1
+    assert main(["quickstart", "--handle", "mine", "--email", "me@example.org"]) == 1
     captured = capsys.readouterr()
     assert "an account was created meanwhile" in captured.err
     assert "sign in as me" not in captured.out
@@ -933,7 +935,7 @@ def test_quickstart_asks_for_the_address_at_a_terminal(
     monkeypatch.setattr("builtins.input", answer)
     monkeypatch.setattr("getpass.getpass", lambda prompt: ACCOUNT_PASSWORD)
     _banner_only(monkeypatch)
-    assert main(["quickstart", "--handle", "me"]) == 0
+    assert main(["quickstart", "--handle", "mine"]) == 0
     assert asked == ["email address (you sign in with it): "]
     assert "maity-hub: sign in as me@example.org" in capsys.readouterr().out
 
@@ -947,7 +949,7 @@ def test_quickstart_without_a_terminal_needs_the_address(
 
     _banner_only(monkeypatch)
     _stdin(monkeypatch, ACCOUNT_PASSWORD + "\n")
-    assert main(["quickstart", "--handle", "me"]) == 2
+    assert main(["quickstart", "--handle", "mine"]) == 2
     assert "--email" in capsys.readouterr().err
     engine = make_engine("sqlite:///maity-hub.db")
     with engine.connect() as conn:

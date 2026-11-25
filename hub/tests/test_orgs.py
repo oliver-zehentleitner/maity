@@ -393,18 +393,18 @@ def test_a_rename_keeps_the_old_handle_as_an_alias_that_still_finds_the_organisa
     migrated: Engine, owner: flow.Human
 ) -> None:
     org = make_org(owner)
-    renamed = _rename(owner, "oz-team", "oz")
+    renamed = _rename(owner, "oz-team", "ozzy")
     assert renamed.status_code == 200, renamed.text
-    assert (renamed.json()["handle"], renamed.json()["aliases"]) == ("oz", ["oz-team"])
-    assert _register_of(migrated, org["id"]) == "oz"  # the row moved in the same transaction
+    assert (renamed.json()["handle"], renamed.json()["aliases"]) == ("ozzy", ["oz-team"])
+    assert _register_of(migrated, org["id"]) == "ozzy"  # the row moved in the same transaction
     assert owner.get("/orgs/oz-team").json()["id"] == org["id"]  # {org} takes an alias
     project = owner.post(
         "/projects", {"slug": "shop", "name": "Shop", "owner": "oz-team"}  # so does `owner`
     )
     assert project.status_code == 201, project.text
-    assert project.json()["full_name"] == "oz/shop"
-    assert owner.get("/projects/oz-team/shop").json()["full_name"] == "oz/shop"
-    assert owner.get("/people/oz-team").json()["handle"] == "oz"  # names the current handle
+    assert project.json()["full_name"] == "ozzy/shop"
+    assert owner.get("/projects/oz-team/shop").json()["full_name"] == "ozzy/shop"
+    assert owner.get("/people/oz-team").json()["handle"] == "ozzy"  # names the current handle
 
 
 def test_a_rename_alone_or_with_other_fields_and_by_an_owner_only(
@@ -417,9 +417,9 @@ def test_a_rename_alone_or_with_other_fields_and_by_an_owner_only(
             403,
             {"reason": "org_role"},
         )
-    both = owner.patch("/orgs/oz-team", {"handle": "oz", "display_name": "OZ"})
+    both = owner.patch("/orgs/oz-team", {"handle": "ozzy", "display_name": "OZ"})
     assert both.status_code == 200, both.text
-    assert (both.json()["handle"], both.json()["display_name"]) == ("oz", "OZ")
+    assert (both.json()["handle"], both.json()["display_name"]) == ("ozzy", "OZ")
 
 
 def test_a_taken_handle_or_alias_and_a_reserved_word_are_refused(
@@ -457,9 +457,9 @@ def test_the_own_handle_is_a_noop_and_an_alias_comes_back(
     assert (noop.status_code, noop.json()["aliases"]) == (200, [])
     with migrated.connect() as conn:
         assert conn.execute(select(t.handle_change)).first() is None  # it does not count
-    assert _rename(owner, "oz-team", "oz").json()["aliases"] == ["oz-team"]
-    back = _rename(owner, "oz", "oz-team")
-    assert (back.json()["handle"], back.json()["aliases"]) == ("oz-team", ["oz"])
+    assert _rename(owner, "oz-team", "ozzy").json()["aliases"] == ["oz-team"]
+    back = _rename(owner, "ozzy", "oz-team")
+    assert (back.json()["handle"], back.json()["aliases"]) == ("oz-team", ["ozzy"])
 
 
 def test_three_renames_a_day_and_at_most_eight_aliases_at_the_highest_value(
@@ -496,7 +496,7 @@ def test_each_project_says_so_in_its_log_and_on_its_ticker(
     make_org(owner)
     project = owner.post("/projects", {"slug": "shop", "name": "Shop", "owner": "oz-team"})
     assert project.status_code == 201, project.text
-    assert _rename(owner, "oz-team", "oz").status_code == 200
+    assert _rename(owner, "oz-team", "ozzy").status_code == 200
     with migrated.connect() as conn:
         updated = conn.execute(
             select(t.event)
@@ -504,10 +504,10 @@ def test_each_project_says_so_in_its_log_and_on_its_ticker(
             .order_by(t.event.c.seq.desc())
         ).first()
     assert updated is not None
-    assert updated.payload["fields"]["full_name"] == "oz/shop"
-    assert updated.payload["fields"]["owner"]["handle"] == "oz"
-    ticker = owner.get("/projects/oz/shop/ticker").json()["items"]
-    assert any(item["text"] == "oz-team/shop is now oz/shop" for item in ticker)
+    assert updated.payload["fields"]["full_name"] == "ozzy/shop"
+    assert updated.payload["fields"]["owner"]["handle"] == "ozzy"
+    ticker = owner.get("/projects/ozzy/shop/ticker").json()["items"]
+    assert any(item["text"] == "oz-team/shop is now ozzy/shop" for item in ticker)
 
 
 def test_a_credential_limited_to_the_old_name_keeps_its_project(
@@ -518,10 +518,10 @@ def test_a_credential_limited_to_the_old_name_keeps_its_project(
         owner.post("/projects", {"slug": "shop", "name": "Shop", "owner": "oz-team"}).status_code
         == 201
     )
-    assert _rename(owner, "oz-team", "oz").status_code == 200
+    assert _rename(owner, "oz-team", "ozzy").status_code == 200
     with migrated.connect() as conn:
         project = conn.execute(select(t.project).where(t.project.c.slug == "shop")).one()
-        assert allowed_projects.names_of(conn, project) == {"oz/shop", "oz-team/shop"}
+        assert allowed_projects.names_of(conn, project) == {"ozzy/shop", "oz-team/shop"}
         assert allowed_projects.admits(conn, ["oz-team/shop"], project)
 
 
@@ -539,7 +539,7 @@ def test_a_rename_withdraws_an_open_transfer_of_each_project(
     add_member(migrated, other["id"], owner.id, "admin")
     filed = owner.post("/projects/oz-team/shop/transfer", {"to": other["id"]})
     assert filed.status_code == 202, filed.text
-    assert _rename(owner, "oz-team", "oz").status_code == 200
+    assert _rename(owner, "oz-team", "ozzy").status_code == 200
     with migrated.connect() as conn:
         row = conn.execute(select(t.request).where(t.request.c.id == filed.json()["id"])).one()
     assert (row.status, row.withdraw_reason) == ("withdrawn", "the organisation was renamed")
@@ -553,11 +553,11 @@ def test_a_rename_moves_each_public_page(make_client: ClientFactory, migrated: E
         == 201
     )
     assert boss.patch("/projects/oz-team/shop", {"public_page": "on"}).status_code == 200
-    assert _rename(boss, "oz-team", "oz").status_code == 200
+    assert _rename(boss, "oz-team", "ozzy").status_code == 200
     with migrated.connect() as conn:
         paths_now = set(
             conn.execute(
                 select(t.public_page.c.path).where(t.public_page.c.kind == "project")
             ).scalars()
         )
-    assert "/oz/shop" in paths_now and "/oz-team/shop" not in paths_now
+    assert "/ozzy/shop" in paths_now and "/oz-team/shop" not in paths_now

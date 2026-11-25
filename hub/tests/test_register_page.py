@@ -73,7 +73,7 @@ def form_of(page: Any) -> dict[str, str]:
 def answer(client: TestClient, link: str, page: Any, **given: str) -> Any:
     body = {
         "password": PASSWORD,
-        "handle": "ada",
+        "handle": "adal",
         "display_name": "Ada",
         **form_of(page),
         **given,
@@ -123,7 +123,7 @@ def test_the_post_makes_the_account_and_signs_this_browser_in(
     assert done.status_code == 303 and done.headers["location"] == "/"
     [created] = humans(migrated)
     assert (created.handle, created.display_name, created.account_status) == (
-        "ada",
+        "adal",
         "Ada",
         "active",
     )
@@ -131,7 +131,7 @@ def test_the_post_makes_the_account_and_signs_this_browser_in(
     assert any(c.startswith("maity_session=") and "HttpOnly" in c for c in cookies)
     assert any(c.startswith("maity_csrf=") for c in cookies)
     me = client.get("/api/v1/me")
-    assert me.status_code == 200 and me.json()["member"]["handle"] == "ada"
+    assert me.status_code == 200 and me.json()["member"]["handle"] == "adal"
     with migrated.connect() as conn:
         session = conn.execute(select(t.human_session.c.method)).all()
     assert ("register",) in [tuple(r) for r in session]
@@ -155,7 +155,7 @@ def test_the_post_needs_its_own_form(
 ) -> None:
     client, link = start(make_client, migrated, hub())
     page = client.get(link)
-    body = {"password": PASSWORD, "handle": "ada", "display_name": "Ada", **form_of(page)}
+    body = {"password": PASSWORD, "handle": "adal", "display_name": "Ada", **form_of(page)}
     if "form" in tamper:
         if tamper["form"] is None:
             body.pop("form")
@@ -214,6 +214,7 @@ def test_a_wrong_password_is_the_pages_error_and_the_fifth_voids(
         ({"handle": "Ada Lovelace"}, "lowercase only"),  # the word the field shows while typed
         ({"handle": "ada lovelace"}, "2 to 31"),
         ({"handle": "x"}, "2 to 31"),
+        ({"handle": "abc"}, "reserved"),  # three characters: kept for the product (§16.11)
         ({"handle": "maintainer"}, "taken"),
         ({"display_name": ""}, "1 to 64"),
         ({"display_name": "a" * 65}, "1 to 64"),
@@ -376,7 +377,7 @@ def test_a_form_value_that_is_not_ascii_is_refused_not_a_server_error(
 ) -> None:
     client, link = start(make_client, migrated, hub())
     page = client.get(link)
-    body = {"password": PASSWORD, "handle": "ada", "display_name": "Ada", **form_of(page)}
+    body = {"password": PASSWORD, "handle": "adal", "display_name": "Ada", **form_of(page)}
     body["form"] = "ünïcode-wert"
     refused = client.post(link, data=body, headers=SAME, follow_redirects=False)
     assert refused.status_code == 403 and humans(migrated) == []
@@ -409,7 +410,7 @@ def test_the_completion_is_a_sign_in_like_the_login(
         c.startswith("maity_form=") and "SameSite=strict" in c.replace("Strict", "strict")
         for c in cookies
     )
-    [created] = [h for h in humans(migrated) if h.handle == "ada"]
+    [created] = [h for h in humans(migrated) if h.handle == "adal"]
     with migrated.connect() as conn:
         mine = conn.execute(
             select(t.human_session).where(t.human_session.c.human_id == created.id)

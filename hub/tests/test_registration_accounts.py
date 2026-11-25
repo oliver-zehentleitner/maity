@@ -81,7 +81,7 @@ def requested(
 def complete(engine: Engine, settings: Settings, pending_id: str, **given: Any) -> Any:
     body = {
         "password": PASSWORD,
-        "handle": "ada",
+        "handle": "adal",
         "display_name": "Ada",
         "terms_seen": None,
         "terms_accepted": False,
@@ -121,7 +121,7 @@ def test_completion_makes_an_active_account_and_signs_it_in(
     done = complete(migrated, settings, row.id)
     assert (done.kind, done.account_status, done.next) == ("created", "active", "/")
     made = human(migrated, done.human_id)
-    assert (made.handle, made.display_name, made.account_status) == ("ada", "Ada", "active")
+    assert (made.handle, made.display_name, made.account_status) == ("adal", "Ada", "active")
     assert made.registered_at is not None and made.password_hash == row.password_hash
     assert claims == {"ada@example.com": done.human_id}
     assert all(r.voided_at is not None for r in pending(migrated) if r.id in (row.id, other.id))
@@ -160,7 +160,7 @@ def test_a_taken_address_makes_no_account(
         assert address.claim_verified(conn, "ada@example.com", holder.id, secret_key=None)
     assert complete(migrated, settings, row.id).kind == "gone"
     with migrated.connect() as conn:
-        assert conn.execute(select(t.human).where(t.human.c.handle == "ada")).first() is None
+        assert conn.execute(select(t.human).where(t.human.c.handle == "adal")).first() is None
     assert pending(migrated)[0].voided_at is not None
 
 
@@ -184,7 +184,7 @@ def test_the_admission_is_checked_again_at_completion(
     blocked = requested(make_client, migrated, opened, "bob@example.com")
     with migrated.begin() as conn:
         registration_accounts.block(conn, "bob@example.com", clock.now() + timedelta(days=1))
-    assert complete(migrated, opened, blocked.id, handle="bob").kind == "closed"
+    assert complete(migrated, opened, blocked.id, handle="bobby").kind == "closed"
     assert claims == {}
 
 
@@ -249,7 +249,7 @@ def test_the_hourly_cap_keeps_the_pending_registration(
     first = requested(make_client, migrated, settings)
     assert complete(migrated, settings, first.id).kind == "created"
     second = requested(make_client, migrated, settings, "bob@example.com")
-    assert complete(migrated, settings, second.id, handle="bob").kind == "later"
+    assert complete(migrated, settings, second.id, handle="bobby").kind == "later"
     assert [r.voided_at for r in pending(migrated) if r.id == second.id] == [None]
 
 
@@ -282,7 +282,7 @@ def test_two_completions_at_once_create_one_account(
     first_tx = first.begin()
     try:
         done = registration_accounts.complete(
-            first, resolver(settings), one.id, password=PASSWORD, handle="ada", display_name="Ada",
+            first, resolver(settings), one.id, password=PASSWORD, handle="adal", display_name="Ada",
             terms_seen=None, terms_accepted=False, source="203.0.113.7",
             secret_key=settings.secret_key,
         )  # fmt: skip
@@ -439,12 +439,12 @@ def test_two_addresses_never_both_take_the_last_place_of_the_hour(
 
     def first(conn: Any) -> None:
         assert registration_accounts.complete(
-            conn, resolver(settings), ada.id, password=PASSWORD, handle="ada",
+            conn, resolver(settings), ada.id, password=PASSWORD, handle="adal",
             display_name="Ada", terms_seen=None, terms_accepted=False, source="203.0.113.7",
             secret_key=settings.secret_key,
         ).kind == "created"  # fmt: skip
 
-    answer = _held(migrated, first, lambda: complete(migrated, settings, bob.id, handle="bob"))
+    answer = _held(migrated, first, lambda: complete(migrated, settings, bob.id, handle="bobby"))
     assert answer.kind == "later"
     assert [r.voided_at for r in pending(migrated) if r.id == bob.id] == [None]  # kept
 
@@ -501,7 +501,7 @@ def pending_account(
     make_client: ClientFactory,
     engine: Engine,
     address: str = "ada@example.com",
-    handle: str = "ada",
+    handle: str = "adal",
 ) -> tuple[Any, flow.Human]:
     settings = settings_for()  # approval: operator, the default
     row = requested(make_client, engine, settings, address)
@@ -547,12 +547,12 @@ def test_the_admin_lists_and_approves(
     admin: flow.Human, make_client: ClientFactory, migrated: Engine, claims: dict[str, str]
 ) -> None:
     first, person = pending_account(make_client, migrated)
-    second, _ = pending_account(make_client, migrated, "bob@example.com", "bob")
+    second, _ = pending_account(make_client, migrated, "bob@example.com", "bobby")
     listed = admin.get(ADMIN).json()
     assert [i["id"] for i in listed["items"]] == [first.human_id, second.human_id]
     item = listed["items"][0]
     assert (item["handle"], item["address"], item["source_ip"]) == (
-        "ada",
+        "adal",
         "ada@example.com",
         "203.0.113.7",
     )
@@ -561,7 +561,7 @@ def test_the_admin_lists_and_approves(
     assert [i["id"] for i in paged["items"] + rest["items"]] == [first.human_id, second.human_id]
     approved = admin.post(f"{ADMIN}/{first.human_id}/approve")
     assert approved.status_code == 200, approved.text
-    assert approved.json()["account_status"] == "active" and approved.json()["handle"] == "ada"
+    assert approved.json()["account_status"] == "active" and approved.json()["handle"] == "adal"
     assert person.get("/projects").status_code == 200  # the same session, now in standing
     late = admin.post(f"{ADMIN}/{first.human_id}/approve")
     assert late.status_code == 409 and late.json()["error"]["details"]["from"] == "active"
@@ -720,7 +720,7 @@ def test_a_waiting_registration_is_the_admins_inbox_item_until_decided(
     done, _ = pending_account(make_client, migrated)
     bell = admin.get("/me/notifications").json()
     [item] = [i for i in bell["items"] if i["kind"] == "inbox"]
-    assert item["title"] == "ada waits for approval"
+    assert item["title"] == "adal waits for approval"
     assert item["target"] == {"type": "registration", "id": done.human_id}
     assert (item["read"], item["project"]) == (False, None)
     assert bell["counts"]["inbox"] == 1 and bell["by_project"] == {}
@@ -814,7 +814,7 @@ def test_without_mail_a_decision_queues_no_mail(
 ) -> None:
     """A mail held until mail is switched on could arrive weeks after the decision."""
     first, _ = pending_account(make_client, migrated)
-    second, _ = pending_account(make_client, migrated, "bob@example.com", "bob")
+    second, _ = pending_account(make_client, migrated, "bob@example.com", "bobby")
     before = len(_mailed(migrated, "ada@example.com")), len(_mailed(migrated, "bob@example.com"))
     assert admin.post(f"{ADMIN}/{first.human_id}/approve").status_code == 200  # a hub without mail
     assert admin.post(f"{ADMIN}/{second.human_id}/reject", {"reason": "No."}).status_code == 200

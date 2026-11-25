@@ -3001,7 +3001,7 @@ def reset_by_mail(run: Run, browser, catcher: MailCatcher, owner: Page) -> None:
     """Admin → Users (§2.8.3, §2.8.7): the admin's press only sends a mail; the person's press on
     the mail's page resets, ends their sessions, and the next sign-in starts with the setup."""
     run.step("second hub: an admin resets a person's two-factor sign-in, which that person confirms by mail")
-    address, handle, password = "ada@e2e.example", "ada", "ada-e2e-password-1"
+    address, handle, password = "ada@e2e.example", "ada-e2e", "ada-e2e-password-1"
     owner.evaluate("""() => window.Maity.api.patch("/admin/settings/registration", { mode: "open", approval: "automatic" })""")
     context, page = new_page(run, browser)
     page.goto(run.base + "/")
