@@ -27832,7 +27832,9 @@ Scope `instance:admin`, human only (§16.1).
   trim surrounding spaces, so a value of only spaces is unset; the hub
   reads `MAITY_BIND`, `MAITY_PUBLIC_URL`, `MAITY_WEB_DIR`, the two
   database URLs, `MAITY_SMTP_PASSWORD` and `MAITY_FORGE_GITHUB_TOKEN`
-  as written, spaces and all. A secret's `set` follows the same rule:
+  as written, spaces and all. `MAITY_WEB_DIR` set and empty is a value,
+  not unset: it serves no dashboard, so its `source` is `environment` and
+  its `value` `null`. A secret's `set` follows the same rule:
   it is `true` when the variable has a value under its parser's rule
   for spaces, also while the feature it belongs to is not in use (an
   S3 key with the `local` store). With a `default`,

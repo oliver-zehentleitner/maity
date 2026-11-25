@@ -16,6 +16,7 @@ from maity_hub import limits, registration
 from maity_hub.config import (
     DEFAULT_BIND,
     DEFAULT_CLI_INSTALL,
+    EMPTY_IS_SET,
     KTW_SKILL_COMMIT,
     KTW_SKILL_GUIDE,
     KTW_SKILL_SOURCE,
@@ -254,14 +255,16 @@ def _entry(entry: Entry, settings: Settings, env: Mapping[str, str]) -> dict[str
     # A secret is shown set when it has a value under that rule, also while its feature is not
     # in use, e.g. an S3 key with the local store (A895 N1, A899 P2, A904, A930).
     value = raw if entry.as_written else raw.strip()
+    # Set and empty is a value for a few (config.EMPTY_IS_SET): MAITY_WEB_DIR's means no dashboard.
+    chosen = bool(value) or (entry.name in EMPTY_IS_SET and entry.name in env)
     row: dict[str, Any] = {"name": entry.name, "group": entry.group}
-    row["source"] = "environment" if value else "default"
+    row["source"] = "environment" if chosen else "default"
     if entry.secret:
         # Never the value, nor a default: a secret is only there or not.
         row |= {"value": None, "secret": True, "set": bool(value)}
     else:
         default = entry.default(settings, env) if callable(entry.default) else entry.default
-        row |= {"value": value or default, "secret": False}
+        row |= {"value": value or (None if chosen else default), "secret": False}
     row["admin"] = entry.admin
     return row
 
