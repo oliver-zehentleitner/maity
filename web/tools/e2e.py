@@ -6818,6 +6818,7 @@ def start_on_runner_form(run: Run, page: Page, name: str) -> None:
     expect(page.get_by_role("heading", name="Managed agents", exact=True, level=3)).to_be_visible()
     expect(page.locator("main section.placements button.placement-new-open")).to_have_count(0)
     agents_page_tabs(run, page)
+    placement_instances_case(run, page)
     run.step("placements: Join an agent → On a runner: without a repository no runner fields; with one the paired runner allowed here is offered, no tool yet")
     page.goto(f"{run.base}/owner/e2e-alpha/placements")
     section = page.locator("main .join-slot")
@@ -6857,6 +6858,46 @@ def start_on_runner_form(run: Run, page: Page, name: str) -> None:
         page.unroute(runners_read, offering_it)
         page.unroute(BOOTSTRAP, in_bundle)
     no_problems(run, "start on a runner")
+
+
+def placement_instances_case(run: Run, page: Page) -> None:
+    """Which instance a placement runs (§15.5 `instance`, tsk-m8rpxpnyg0zd), in a real browser: the e2e
+    hub runs no runner, so the placements' read is answered with two placements of e2e-agent on one
+    runner (instances wqe2 and k7mq, clones e2e-agent and e2e-agent-2) and one not picked up yet.
+    Each row names its instance as handle#id with its clone; the unpicked one says no instance yet."""
+    run.step("placements: each row names its instance, handle#id, with its clone; none yet before the first pickup")
+    members = page.request.get(f"{run.base}/api/v1/projects/owner/e2e-alpha/members").json()["items"]
+    agent = next(m for m in members if m.get("handle") == "e2e-agent")
+
+    def row(pid: str, instance: str | None, clone: str) -> dict:
+        return {
+            "id": pid, "project": "owner/e2e-alpha",
+            "agent": {"id": agent["id"], "handle": "e2e-agent", "display_name": agent.get("display_name") or "E2E Agent", "avatar_url": None},
+            "runner": {"id": "rnr-e2e", "name": "e2e-box"}, "target": None, "harness": "claude-code", "mode": "interactive", "model": None,
+            "workspace": {"clone": clone, "branch": None, "continues_existing": False},
+            "desired": "running", "generation": 1, "rejoin": False, "fresh_session": False, "stop_grace_seconds": 120,
+            "approval": {"status": "approved", "request_id": None, "pending_change": None},
+            "credential_id": None, "instance": instance, "reported_current": False, "reported": None,
+            "session_hint": None, "logs_hint": None, "active": True, "closed_at": None, "closed_reason": None,
+            "created_by": "hum-owner", "proposed_by": None, "foreign": False,
+            "created_at": "2026-11-25T10:00:00Z", "updated_by": None, "updated_at": "2026-11-25T10:00:00Z",
+        }
+
+    items = [row("plc-e2e1", "wqe2", "e2e-agent"), row("plc-e2e2", "k7mq", "e2e-agent-2"), row("plc-e2e3", None, "e2e-agent-3")]
+    listing = re.compile(r"/api/v1/projects/owner/e2e-alpha/placements(\?|$)")
+    page.route(listing, lambda route: route.fulfill(json={"items": items, "next_cursor": None}))
+    try:
+        page.goto(f"{run.base}/owner/e2e-alpha/placements")
+        heads = page.locator("main section.placements li.placement .placement-head")
+        expect(heads).to_have_count(3)
+        got = [h.strip() for h in heads.all_inner_texts()]
+        assert got[0].startswith("e2e-agent#wqe2") and got[1].startswith("e2e-agent#k7mq"), f"the instances are not named: {got}"
+        assert "no instance yet" in got[2] and "#" not in got[2].split(" on ")[0], f"the unpicked placement: {got}"
+        facts = page.locator("main section.placements li.placement dl.facts").all_inner_texts()
+        assert "clone e2e-agent" in facts[0] and "clone e2e-agent-2" in facts[1], f"the clones are not named: {facts}"
+        run.shot(page, "placements-instances")
+    finally:
+        page.unroute(listing)
 
 
 def agents_page_tabs(run: Run, page: Page) -> None:

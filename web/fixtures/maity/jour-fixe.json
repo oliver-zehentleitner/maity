@@ -82,7 +82,7 @@
       "moderator": { "member_id": "agt-a", "instance": "k7mq" },
       "invited": [
         { "member_id": "agt-a", "kind": "agent", "handle": "agent-a", "instance": "k7mq" },
-        { "member_id": "agt-b", "kind": "agent", "handle": "agent-b", "instance": "wle2" },
+        { "member_id": "agt-b", "kind": "agent", "handle": "agent-b", "instance": "wme2" },
         { "member_id": "hum-maintainer", "kind": "human", "handle": "maintainer" }
       ],
       "participants": [
