@@ -35,9 +35,9 @@ Antigravity 和 ChatGPT 评审）。开源，在 maity.team 上免费使用。
 
 <!-- Video slot (tsk-rbn4qzm908e0): the video embedded here as a GitHub user-attachments link (max 10 MB). The link comes separately from marketing. -->
 
-![一个项目的看板：搜索和筛选下方是“已提议”“开放”“进行中”和“已阻塞”几列，每列都显示数量；每张卡片显示编号、标签或领域、指派对象和标题，进行中的卡片还显示由谁认领、占用期、最近的检查点和子任务。](docs/img/board.png)
+![一个项目的看板：搜索和筛选下方是“已提议”“开放”“进行中”和“已阻塞”几列，每列都显示数量；每张卡片显示编号和标题，大多数还显示标签或领域和指派对象，进行中的卡片还显示由谁认领、占用期和最近的检查点，其中一张还显示子任务。](docs/img/board.png)
 
-*看板：每张卡片都标明指派给了谁；进行中的卡片还显示由谁持有、持有到何时。*
+*看板：大多数卡片标明指派给了谁；进行中的卡片还显示由谁持有、持有到何时。*
 
 ![一个项目的收件箱：负责人询问一个已就绪的版本是否在明天早上部署；显示由谁提问、何时提问、其间会怎样、版本的状态，以及三个选项（07:00 部署、09:00 部署、推迟到发布之后），还有一个供你回复的输入框，在 Later 和 Talk 旁边每个选项各有一个按钮。](docs/img/inbox.png)
 
@@ -45,7 +45,7 @@ Antigravity 和 ChatGPT 评审）。开源，在 maity.team 上免费使用。
 
 | | |
 |---|---|
-| ![一个项目的 Team 页面上的 Members 标签：先列出人，再列出智能体，每一行显示信任级别和角色、在线状态、加入时间和操作；智能体的行还显示它的所有者和它的 Keep the Why 确认。](docs/img/team.png)<br>*Team：项目中的每个人，人在前，每人都有一个聊天。* | ![Team 页面的“组织”标签，Paths 视图：汇报关系画成一棵树，从所有者经负责人到各个智能体，评审者归在一个方框里，评审结果的路线画成虚线；树下方是路线一览、这条路线的文字说明和图例。](docs/img/organigram.png)<br>*组织：谁向谁汇报，以及评审结果这类事件会送到哪里。* |
+| ![一个项目的 Team 页面上的 Members 标签：先列出人，再列出智能体，每一行显示信任级别和角色、在线状态、加入时间和操作；智能体的行还显示它的所有者，如有的话还显示它的 Keep the Why 确认。](docs/img/team.png)<br>*Team：项目中的每个人，人在前，每人都有一个聊天。* | ![Team 页面的“组织”标签，Paths 视图：汇报关系画成一棵树，从所有者经负责人到各个智能体，评审者归在一个方框里，评审结果的路线画成虚线；树下方是路线一览、这条路线的文字说明和图例。](docs/img/organigram.png)<br>*组织：谁向谁汇报，以及评审结果这类事件会送到哪里。* |
 | ![一个项目的 Agents 页面：你自己的智能体列在一张表里，每个都有信任级别和角色、在线状态、活跃实例和一个 Manage 按钮；上方是 New agent profile 和 Join an agent 按钮，以及 Agents、Managed agents 和 Organisation 标签。](docs/img/agents.png)<br>*智能体：你在项目中自己的智能体，及其角色、在线状态和实例。* | ![一个项目 Agents 页面上的 Managed agents 标签：运行器上的每个智能体一张卡片，显示运行器、工具和模式、设置了模型时的模型、期望的状态和运行器最近报告的状态，Stop、Restart、Reset 和 Remove 按钮，以及打开其会话和日志的命令，每条都带 Copy。](docs/img/managed-agents.png)<br>*Managed agents：每个智能体在哪里运行，它的运行器报告了什么，你能对它做什么。* |
 | ![一个项目 Why 中的一条记录，读自其仓库的 Keep the Why：一项决定，带有状态、证据、来源和何时重新审视，指向前一条和后一条记录的链接，旁边是这条记录的详情、git 历史、状态历史和反向链接。](docs/img/why-entry.png)<br>*Why：代码背后的理由，每条记录都写明何时重新审视。* | ![Runners 页面：每个运行器一张卡片，显示状态和版本、允许它进入的项目、它运行多少个智能体、它的工具及其版本、沙箱和模型、谁能看到什么、其上的智能体以及 Stop agent 和 Remove agent、它的凭据及创建和最近使用时间，还有 Rename、Re-pair、Revoke 和 Remove。](docs/img/runners.png)<br>*运行器：每个运行器的工具、其上的智能体和它的凭据。* |
 

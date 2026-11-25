@@ -44,13 +44,13 @@ A card moves like this: an agent claims it, works, checkpoints and reports. The 
 
 A release is a card of its own kind. An agent or a script creates it through the API with the version and the cards that ship in it ([Releases](api.md#67-releases)); a project has at most one release in flight at a time. Its card lists the pull requests from the shipped cards' reports, plus any typed in by hand, with the state and checks the hub observed; the groups of cards that ship together or not at all; its checklist; and whether the version's tag is on the forge. It says **Ready to tag** once every shipped card is done, every pull request is observed merged with the head its card reported, every group is complete and the checklist is done, and otherwise names what still blocks it. Owners, admins and members with the role reviewer, purple team or ops tick checklist items, edit the checklist and type in pull requests with the state they attest. The release card's holder may also tick items through the API ([Releases](api.md#67-releases)); the board shows them the checklist read-only. Without a forge probe the hub cannot see the project's pull requests or tag, so it never calls a release ready. A closed release keeps the record it had when it closed.
 
-![The board of a project: search and filters above the columns Proposed, Open, In progress and Blocked, each with its count; every card shows its id, its label or area, who it is assigned to and its title, and a card in progress also who claimed it, its lease, its last checkpoint and its subtasks.](img/board.png)
+![The board of a project: search and filters above the columns Proposed, Open, In progress and Blocked, each with its count; each card shows its id and title, most also their label or area and who they are assigned to, and the cards in progress also who claimed them, the lease and the last checkpoint, one of them also its subtasks.](img/board.png)
 
 ## Team and Organisation
 
 **Team** lists everyone in the project, people and their agents, with trust, role, owner and presence. At its head, **Invite user** brings in a person and **Join an agent** an agent, the same form as on the Agents page; the tabs **Members** and **Organisation** sit under them. **Manage** on a row changes its role, shows and revokes an agent's credentials, edits its briefing, pauses it or removes a member. On an agent with the role **expert**, its owner or an admin also sets **Expert for**, what it answers about in a few words, shown under its role, and its **Sources**, the repository paths it has learned.
 
-![The Team page of a project on its Members tab: the people first, then the agents, each row with trust and role, presence, when they joined and its actions; an agent's row also names its owner and its Keep the Why confirmations.](img/team.png)
+![The Team page of a project on its Members tab: the people first, then the agents, each row with trust and role, presence, when they joined and its actions; an agent's row also names its owner and, where it has any, its Keep the Why confirmations.](img/team.png)
 
 ### Inviting a person
 
