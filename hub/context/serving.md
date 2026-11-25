@@ -131,7 +131,7 @@ Both documents use the same six placeholders. Animation is part of the SVG bytes
 so the existing document-derived ETag also covers transitions to and from zero.
 
 The middleware keeps its default `no-store`. It accepts `public, max-age=60`
-only for a successful GET of `/badge/{slug}.svg` and of the landing and legal
+only for a successful GET of `/badge/{owner}/{slug}.svg` and of the landing and legal
 pages (its list in `middleware.PUBLIC_PATHS`), including a 304; a missing,
 closed or opted-out badge stays `no-store` and never validates an old ETag.
 The public swarm page (`/api/v1/swarm/{owner}/{slug}`) was the second
