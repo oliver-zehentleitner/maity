@@ -1435,6 +1435,7 @@ window.Maity = window.Maity || {};
     const fieldError = (code) => (Object.hasOwn(OUTSIDE_CLAIMS_ERRORS, code || "") ? OUTSIDE_CLAIMS_ERRORS[code]() : null);
     return h("form", {
       class: "inline-form outside-claims-form",
+      novalidate: true,
       onsubmit: (e) => {
         e.preventDefault();
         error.textContent = "";
