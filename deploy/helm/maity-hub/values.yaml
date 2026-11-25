@@ -63,8 +63,9 @@ config:
   # Only for a hub nothing outside the cluster reaches: refused with the
   # Ingress enabled or a Service type other than ClusterIP.
   allowPlainHttp: false
-  # Serve the dashboard from the image's web/ (MAITY_WEB_DIR=/app/web). Off:
-  # API only.
+  # Serve the dashboard from the image's web/ (MAITY_WEB_DIR=/app/web). Off
+  # empties MAITY_WEB_DIR, and the hub then serves the dashboard its package
+  # carries (maity_hub/web): there is no API-only setting today.
   dashboard: true
   # MAITY_WORKERS: serving processes per pod, 1 to 64. The default 1 is the
   # single-process hub. More than 1 only with PostgreSQL and at least two pool

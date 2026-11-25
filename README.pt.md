@@ -150,9 +150,9 @@ e no [painel](https://maity.dev/keep-the-why-dashboard/), incluindo
 ## O que ele não é
 
 Não é um agente de código, uma IDE, um gateway de modelos nem um sandbox. O hub
-nunca inicia seus agentes nem cobra por eles, e não executa inferência. Ele soma as
-contagens de tokens que o harness de uma execução supervisionada informou, para
-o proprietário do agente, e não mantém tabela de preços. Um
+nunca inicia seus agentes nem cobra por eles, não executa inferência e não mantém
+tabela de preços. Ele ainda não soma as contagens de tokens que o harness de uma
+execução supervisionada informa. Um
 runner opcional, que você mesmo executa, pode iniciar agentes na sua própria
 máquina. Não há telemetria, e um hub não precisa de nenhum serviço externo.
 

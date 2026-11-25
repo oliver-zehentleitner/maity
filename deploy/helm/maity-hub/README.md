@@ -59,8 +59,8 @@ example; any cluster with the same pieces works.
 
 2. **Image.** Releases are published as `ghcr.io/oliver-zehentleitner/maity-hub`,
    tagged with the version and the full commit SHA and never `latest`. The
-   workflow `publish-image` builds them; until its first release you build
-   the image yourself. The chart pulls the image by digest: `image.digest` is
+   workflow `publish-image` builds them for every `v*` tag; for a commit
+   that is no release, you build the image yourself. The chart pulls the image by digest: `image.digest` is
    required, and the workflow's run summary prints it. A tag can be moved to
    other bytes, so pulling by tag is an explicit opt-in (`image.allowTag: true`
    with `image.tag`, see Values). A release is the image a `v*` tag built,
@@ -128,8 +128,9 @@ example; any cluster with the same pieces works.
    kubectl -n maity create secret generic maity-hub-db-ca --from-file=ca.crt=./ca.crt
    ```
 
-   **Forge token (optional).** It is for the forge probe, which comes with a
-   later hub version: with it, releases can become ready. Read access to
+   **Forge token (optional).** It is for the forge probe (docs/api.md §11),
+   which reads pull requests, checks and tags; with it, releases can become
+   ready. Read access to
    pull requests, contents and checks is enough. It reads only for projects
    in the namespaces you list in `forge.github.instanceNamespaces` (your
    own); every other project connects its repository with its owner's
@@ -263,7 +264,7 @@ silently ignored. These are the values that matter:
 | `config.publicUrl` | `https://<ingress.host>` | `MAITY_PUBLIC_URL`, the address in join links; required without the Ingress |
 | `config.trustedProxies` | none; required with the Ingress | `MAITY_TRUSTED_PROXIES`, the ingress controller's pod network |
 | `config.allowPlainHttp` | `false` | `MAITY_ALLOW_PLAIN_HTTP`; refused with the Ingress or a non-ClusterIP Service |
-| `config.dashboard` | `true` | serve the dashboard; `false` serves the API only |
+| `config.dashboard` | `true` | serve the dashboard from the image's `/app/web`; `false` empties `MAITY_WEB_DIR`, and the hub then serves the dashboard its package carries (`maity_hub/web`): the chart has no API-only setting today |
 | `migrate.enabled` | `true` | the hook Job; off means you migrate before every upgrade |
 | `migrate.activeDeadlineSeconds` | `300` | keep it under Helm's `--timeout` |
 | `ingress.joinHost` | none | an optional second host for the agent join only (`MAITY_JOIN_URL`, docs/api.md §1.1); it joins the Ingress rules and the certificate (a Secret of your own must cover it), and the hub routes between the hosts; it must differ from `ingress.host` and needs the Ingress enabled (with your own Ingress, set `MAITY_JOIN_URL` through `extraEnv`) |
@@ -351,7 +352,8 @@ route, which buffers the body before it reaches the hub.
 The hub has no general request budget per client address. Its own limits
 are per route, among them sign-ins, codes, sign-ups, mail, uploads and the
 public pages' reads, and per credential for a signed-in caller's reads
-(`MAITY_MAX_READS_PER_MINUTE`, default 1000 a minute, counted in each pod;
+(`MAITY_MAX_READS_PER_MINUTE`, default 1000 a minute, counted in each hub
+process, so once per `config.workers` in every pod;
 past it a read is `429 rate_limited` with `Retry-After`). The general limit
 belongs to the controller: one limit per client address for every request. `ingress.requestLimit` sets it for
 ingress-nginx (`limit-rps`, `limit-burst-multiplier`, `limit-connections`).
@@ -483,8 +485,8 @@ lifecycle rule that expires noncurrent versions is what makes a deleted attachme
   `deploy/scripts/test-helm-upgrade.sh` runs the failure paths against stub
   `kubectl`, `helm` and `cosign`. A release whose migration touches no busy table can
   use plain `helm upgrade`.
-- **Rollback.** There is no schema downgrade: `maity-hub` has `serve`,
-  `migrate` and `owner`, and the hook runs only on install and upgrade.
+- **Rollback.** There is no schema downgrade: none of `maity-hub`'s commands
+  migrates down, and the hook runs only on install and upgrade.
   `helm rollback` to a hub version with an older schema starts that version
   against the newer schema; it refuses to serve (`SchemaNotCurrentError`)
   and the pod crash-loops. Roll back only to a version with the same

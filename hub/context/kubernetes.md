@@ -291,6 +291,22 @@ that of the mail settings and cannot be repaired by setting the variable again.
   loudly (`secret_key_missing`).
 
 
+## The chart has no API-only setting since the wheel carries the dashboard
+
+**Id:** 6ee41376-fc55-4bfc-b3a3-e6bf4b9fca53
+**Type:** constraint
+**Status:** open
+**Evidence:** confirmed
+**Source:** review A2634 at main 8293f48f (deploy/helm/maity-hub/README.md, `config.dashboard`); the leads kept the chart as it is for launch
+**See:** packaging.md#the-wheel-carries-the-dashboard — df58484e-1f02-4949-bd3c-3d32456fb57a — as of 2026-11-05
+**Revisit when:** the post-launch card tsk-ss7h63d902dh gives the hub or the chart an explicit API-only switch, or `config.dashboard` is reworked or removed
+
+`config.dashboard: false` renders `MAITY_WEB_DIR` as an empty value, which the hub reads as unset (`config.py`), so an installed hub
+then serves the dashboard its wheel carries (`maity_hub/web`). The switch was written when the image's `/app/web` was the only
+dashboard; since the wheel carries one too, it no longer switches the dashboard off. The chart README and `values.yaml` say so.
+Pointing `MAITY_WEB_DIR` at a missing path is no way around it: an explicitly set one that is no directory stops the hub at start.
+
+
 ## Attachments on the k3s setup: a volume the chart mounts, and a tar in the same backup run
 
 **Id:** 9111cb2f-89b0-4088-8c92-2fa5c1348ec7

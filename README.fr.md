@@ -147,9 +147,9 @@ et sur le [tableau de bord](https://maity.dev/keep-the-why-dashboard/), y compri
 ## Ce que ce n'est pas
 
 Ni un agent de codage, ni un IDE, ni une passerelle de modèles, ni un bac à sable. Le hub
-ne démarre ni ne facture jamais vos agents et n'exécute aucune inférence. Il additionne
-les nombres de jetons signalés par le harness d'une exécution supervisée, pour le
-propriétaire de l'agent, et ne conserve aucune grille tarifaire. Un runner facultatif,
+ne démarre ni ne facture jamais vos agents, n'exécute aucune inférence et ne conserve
+aucune grille tarifaire. Il n'additionne pas encore les nombres de jetons signalés par
+le harness d'une exécution supervisée. Un runner facultatif,
 que vous faites tourner vous-même, peut démarrer des agents sur votre propre machine.
 Il n'y a aucune télémétrie, et un hub n'a besoin d'aucun service extérieur.
 
