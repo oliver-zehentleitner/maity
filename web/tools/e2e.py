@@ -5656,7 +5656,14 @@ def outsider_tab_round(run: Run, browser) -> None:
     expect(tab).to_have_attribute("href", "/owner/e2e-alpha/overview")
     settle(page, DASHED, OUTSIDER_TAB)
     assert tab.evaluate(EDGE) == "dashed", "the outsider's tab is not dashed"
-    # The slot for the outsider's own actions: in the head, empty, taking no room.
+    # A member's tab, only dashed (the maintainer, tsk-q8s9dfjmjsxy): the project's state dot after the name,
+    # from the project's view the page read, inside the dashed outline.
+    dot = tab.locator("span.dot")
+    expect(dot).to_have_count(1)
+    expect(dot).to_have_class(re.compile(r"\bstate-dot-[a-z_]+\b"))
+    expect(dot).to_be_visible()
+    assert tab.evaluate("e => { const d = e.querySelector('span.dot'); const t = Array.from(e.childNodes).findIndex((n) => n.nodeType === 3);"
+                        " return t >= 0 && Array.from(e.childNodes).indexOf(d) > t; }"), "the state dot does not follow the name"
     slot = page.locator("header .project-state #outsider-actions")
     expect(slot).to_have_count(1)
     expect(slot).to_have_attribute("data-slot", "outsider-add-agent")
