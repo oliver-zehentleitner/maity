@@ -11,7 +11,7 @@ from typing import Any
 import pytest
 from sqlalchemy import select
 
-from maity_hub import avatars, public_design, public_pages, public_project_views, public_snapshot
+from maity_hub import avatars, public_design, public_members, public_pages, public_snapshot
 from maity_hub import tables as t
 from tests.test_avatar_public import digest
 from tests.test_avatars import image, put_agent, put_human
@@ -118,15 +118,15 @@ def test_a_project_render_reads_its_members_once(
     world: World, hub: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The Members figure, the pictures and who is online come from one read of the members
-    (`public_project_views.members`), not one each (tsk-3q4kjw4dn610)."""
+    (`public_members.members`), not one each (tsk-3q4kjw4dn610)."""
     reads: list[str] = []
-    real = public_project_views.members
+    real = public_members.members
 
     def counted(conn: Any, project_id: str, only: Any = None) -> Any:
         reads.append(project_id)
         return real(conn, project_id, only)
 
-    monkeypatch.setattr(public_project_views, "members", counted)
+    monkeypatch.setattr(public_members, "members", counted)
     with world.migrated.begin() as conn:
         public_pages.refresh(conn, hub, "project", world.project_id)
     assert reads == [world.project_id]

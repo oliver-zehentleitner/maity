@@ -161,41 +161,23 @@ def public_for_outsiders(conn: Connection, project_ids: Collection[str]) -> set[
     return served_among(conn, project_ids)
 
 
-def team(conn: Connection, project_id: str) -> tuple[list[Any], list[Any]]:
-    """Who the page names (§16.9): every human member and every agent, by handle, whatever
-    their profile says; an open project never only counts them. Active memberships only, in
-    the order of the handles. A person or agent profile under a hold of moderation (§16.8), a
-    suspended owner's agent and an isolated agent (§6.28) are neither named nor counted."""
-    m = t.membership.c
-    people = conn.execute(
-        select(t.human)
-        .join(t.membership, m.human_id == t.human.c.id)
-        .where(m.project_id == project_id, m.active.is_(True))
-        .order_by(t.human.c.handle)
-    ).all()
-    humans = [h for h in people if public_people.served(conn, h)]
-    agents = conn.execute(
-        select(t.agent_profile)
-        .join(t.membership, m.agent_id == t.agent_profile.c.id)
-        .where(m.project_id == project_id, m.active.is_(True), m.isolated_since.is_(None))
-        .order_by(t.agent_profile.c.handle)
-    ).all()
-    owners = (
-        {
-            h.id: h
-            for h in conn.execute(
-                select(t.human).where(t.human.c.id.in_({a.owner_id for a in agents}))
-            )
-        }
-        if agents
-        else {}
-    )
-    # An agent profile under a hold of moderation (§16.8) is no more named than a person's.
-    held = moderation.holds_of(conn, "profile", [a.id for a in agents])
-    shown = [
-        a for a in agents if a.id not in held and public_people.served(conn, owners[a.owner_id])
-    ]
-    return humans, shown
+def team(
+    conn: Connection, project_id: str, who: dict[int, Any] | None = None
+) -> tuple[list[Any], list[Any]]:
+    """Who the page names (§16.9): the shown members of `public_members.members`, humans and
+    agents each in handle order. Active memberships only; a person or agent profile under a
+    hold of moderation (§16.8), a suspended owner's agent and an isolated agent (§6.28) are
+    neither named nor counted. Hidden members (a hold, an account not served) stay in
+    `members` unnamed; `team` drops them. `who` is that read, when the caller has it already
+    (`render_project`)."""
+    from maity_hub import public_members
+
+    if who is None:
+        who = public_members.members(conn, project_id)
+    shown = [p for p in who.values() if p.shown]
+    humans = sorted((p for p in shown if p.human), key=lambda p: p.handle or "")
+    agents = sorted((p for p in shown if not p.human), key=lambda p: p.handle or "")
+    return humans, agents
 
 
 def member_pictures(
@@ -231,8 +213,8 @@ def team_details(
         roles[human_id or agent_id] = role
     harnesses: dict[str, str | None] = {}
     for a in agents:
-        found = public_agents.memberships(conn, a.id)
-        harnesses[a.id] = public_agents.latest_session(conn, found)[1] if found else None
+        found = public_agents.memberships(conn, a.principal)
+        harnesses[a.principal] = public_agents.latest_session(conn, found)[1] if found else None
     return roles, harnesses
 
 
@@ -261,9 +243,13 @@ def agent_statistics(
     if named is None:
         _, named = team(conn, project_id)
     people = {
-        by_agent[a.id]: {"handle": a.handle, "name": a.display_name, "display_name": a.display_name}
+        by_agent[a.principal]: {
+            "handle": a.handle,
+            "name": a.name,
+            "display_name": a.name,
+        }
         for a in named
-        if a.id in by_agent
+        if a.principal in by_agent
     }
     found = swarm.CACHE.get(conn, project_id)
     folded: dict[str, Any] = swarm.fold(
@@ -362,24 +348,17 @@ def render_project(conn: Connection, hub: Settings, project_id: str) -> list[pub
     shown_links = project_links.public(
         project.links, project.repository_url, project.repository_public
     )
-    humans, agents = team(conn, project.id)
-    statistics = agent_statistics(conn, project.id, agents)
-    from maity_hub import public_agents, public_snapshot
-    from maity_hub.public_project_views import members, shown_pictures
+    from maity_hub import public_members, public_snapshot
 
     # The members are read once for the page: the Members figure, the pictures of everyone it
-    # names and who is online all come from this one read.
-    who = members(conn, project.id)
-    pictures = shown_pictures(conn, who)
+    # names, who is online, and `team` (the people and agents it names) all come from this
+    # one read.
+    who = public_members.members(conn, project.id)
+    pictures = public_members.shown_pictures(conn, who)
+    humans, agents = team(conn, project.id, who)
+    statistics = agent_statistics(conn, project.id, agents)
     entries = public_snapshot.ticker(conn, project)
     up = public_snapshot.online(conn, who, pictures)
-    owners = dict(
-        conn.execute(
-            select(t.human.c.id, t.human.c.handle).where(
-                t.human.c.id.in_({a.owner_id for a in agents})
-            )
-        ).all()
-    )
     roles, harnesses = team_details(conn, project.id, agents)
     data = {
         "name": project.name,
@@ -390,22 +369,22 @@ def render_project(conn: Connection, hub: Settings, project_id: str) -> list[pub
         "links": [u for u in shown_links if landing.safe_target(u)],
         "people": [
             {
-                "name": h.display_name,
+                "name": h.name,
                 "handle": h.handle,
-                "page": f"/{h.handle}",
-                "picture": pictures.get(h.id),
-                "role": roles.get(h.id),
+                "page": h.address,
+                "picture": pictures.get(h.principal),
+                "role": roles.get(h.principal),
             }
             for h in humans
         ],
         "agents": [
             {
-                "name": a.display_name,
+                "name": a.name,
                 "handle": a.handle,
-                "page": public_agents.path_of(owners[a.owner_id], a.handle),
-                "picture": pictures.get(a.id),
-                "role": roles.get(a.id),
-                "harness": harnesses.get(a.id),
+                "page": a.address,
+                "picture": pictures.get(a.principal),
+                "role": roles.get(a.principal),
+                "harness": harnesses.get(a.principal),
             }
             for a in agents
         ],

@@ -6,8 +6,9 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
-from sqlalchemy import Engine, select
+from sqlalchemy import Connection, Engine, select
 
+from maity_hub import moderation, public_members, public_people, public_projects
 from maity_hub import tables as t
 from tests import factory, flow
 from tests.conftest import ClientFactory
@@ -195,3 +196,124 @@ def test_a_person_under_a_hold_or_a_suspension_leaves_the_project_page(world: Wo
     assert "Human anna" in shown(world.anyone)
     assert world.owner.post(path, {"action": "suspend"}).status_code == 200
     assert "Human anna" not in shown(world.anyone)
+
+
+def _team_from_rows(conn: Connection, project_id: str) -> tuple[list[Any], list[Any]]:
+    """The form `team` had before it was built from `members` (tsk-mtyyaqj39c22)."""
+    m = t.membership.c
+    people = conn.execute(
+        select(t.human)
+        .join(t.membership, m.human_id == t.human.c.id)
+        .where(m.project_id == project_id, m.active.is_(True))
+        .order_by(t.human.c.handle)
+    ).all()
+    humans = [h for h in people if public_people.served(conn, h)]
+    agents = conn.execute(
+        select(t.agent_profile)
+        .join(t.membership, m.agent_id == t.agent_profile.c.id)
+        .where(m.project_id == project_id, m.active.is_(True), m.isolated_since.is_(None))
+        .order_by(t.agent_profile.c.handle)
+    ).all()
+    owners = (
+        {
+            h.id: h
+            for h in conn.execute(
+                select(t.human).where(t.human.c.id.in_({a.owner_id for a in agents}))
+            )
+        }
+        if agents
+        else {}
+    )
+    held = moderation.holds_of(conn, "profile", [a.id for a in agents])
+    shown = [
+        a for a in agents if a.id not in held and public_people.served(conn, owners[a.owner_id])
+    ]
+    return humans, shown
+
+
+def _named(
+    humans: list[Any], agents: list[Any]
+) -> tuple[list[tuple[str, str, str]], list[tuple[str, str, str]]]:
+    """Handle, principal id and display name, in the order `team` returns them."""
+    return (
+        [(h.handle, h.id, h.display_name) for h in humans],
+        [(a.handle, a.id, a.display_name) for a in agents],
+    )
+
+
+def _from_persons(
+    humans: list[Any], agents: list[Any]
+) -> tuple[list[tuple[str, str, str]], list[tuple[str, str, str]]]:
+    return (
+        [(h.handle, h.principal, h.name) for h in humans],
+        [(a.handle, a.principal, a.name) for a in agents],
+    )
+
+
+def _compare_team(conn: Connection, project_id: str) -> None:
+    old = _named(*_team_from_rows(conn, project_id))
+    new = _from_persons(*public_projects.team(conn, project_id))
+    who = public_members.members(conn, project_id)
+    from_who = _from_persons(*public_projects.team(conn, project_id, who))
+    shown = [p for p in who.values() if p.shown]
+    split = (
+        sorted((p for p in shown if p.human), key=lambda p: p.handle or ""),
+        sorted((p for p in shown if not p.human), key=lambda p: p.handle or ""),
+    )
+    assert new == old
+    assert from_who == old
+    assert _from_persons(*split) == old
+
+
+def test_team_is_the_shown_members_in_handle_order(world: World) -> None:
+    """`team` is the shown members of `members`, split by human, in handle order: the same
+    set and order the row-wise form had, including a hidden person, a held agent and an
+    isolated agent (tsk-mtyyaqj39c22 items 9 and 11)."""
+    with world.migrated.connect() as conn:
+        _compare_team(conn, world.project_id)
+        humans, agents = public_projects.team(conn, world.project_id)
+    # Memberships were created owner, anna, ben, then the agent; handle order is not that.
+    assert [h.handle for h in humans] == ["anna", "ben", "maintainer"]
+    assert len(agents) == 1
+
+    made = world.owner.post(
+        "/reports", {"target": {"type": "profile", "id": world.anna.id}, "reason": "spam"}
+    )
+    assert made.status_code == 201, made.text
+    hide = f"/admin/reports/{made.json()['id']}/resolve"
+    assert world.owner.post(hide, {"action": "hide"}).status_code == 200
+    with world.migrated.connect() as conn:
+        _compare_team(conn, world.project_id)
+        humans, agents = public_projects.team(conn, world.project_id)
+        who = public_members.members(conn, world.project_id)
+    assert [h.handle for h in humans] == ["ben", "maintainer"]
+    # Hidden in `members`, dropped by `team`.
+    hidden = [p for p in who.values() if p.principal == world.anna.id]
+    assert len(hidden) == 1 and not hidden[0].shown
+    assert world.owner.post(hide, {"action": "dismiss"}).status_code == 200
+
+    agent = world.bot.get("/me").json()["member"]
+    held = world.anna.post(
+        "/reports", {"target": {"type": "profile", "id": agent["id"]}, "reason": "spam"}
+    )
+    assert held.status_code == 201, held.text
+    hold_path = f"/admin/reports/{held.json()['id']}/resolve"
+    assert world.owner.post(hold_path, {"action": "hide"}).status_code == 200
+    with world.migrated.connect() as conn:
+        _compare_team(conn, world.project_id)
+        _, agents = public_projects.team(conn, world.project_id)
+        who = public_members.members(conn, world.project_id)
+    assert agents == []
+    held_row = [p for p in who.values() if p.principal == agent["id"]]
+    assert len(held_row) == 1 and not held_row[0].shown
+    assert world.owner.post(hold_path, {"action": "dismiss"}).status_code == 200
+
+    path = f"/projects/maintainer/maity/members/{agent['id']}/isolate"
+    isolated = world.owner.post(path, {"reason": "it rewrote the release notes"})
+    assert isolated.status_code == 200, isolated.text
+    with world.migrated.connect() as conn:
+        _compare_team(conn, world.project_id)
+        _, agents = public_projects.team(conn, world.project_id)
+        who = public_members.members(conn, world.project_id)
+    assert agents == []
+    assert all(p.principal != agent["id"] for p in who.values())
