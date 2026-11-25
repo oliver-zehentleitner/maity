@@ -1094,7 +1094,9 @@ role table above says what it does. Its scopes are the coder's.
   other role where the hub resolves one; a project role named
   `steward` is renamed `steward-custom` by the upgrade that adds the
   role, as for the security teams, wherever the name is stored (the
-  places `role_in_use` reads, below), and its members keep their base;
+  places `role_in_use` reads, below, and the `role:` tokens of
+  `settings.ticker.contract_implementers`, §17.3; the event log keeps
+  the audiences it was written with), and its members keep their base;
   in a project that already has a project role `steward-custom` it
   takes the next free name, `steward-custom-2`, then `-3` and on, and
   the upgrade logs which project got which name (the lead's ruling of

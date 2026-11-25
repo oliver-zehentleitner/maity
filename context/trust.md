@@ -790,8 +790,13 @@ can).
   switches the provider later.
 
 The upgrade that added the role renames an existing project role
-`steward` to `steward-custom` in every place that stores the name,
-rather than stopping as the expert's upgrade did: the lead chose the
+`steward` to `steward-custom` in every setting and column that stores
+the name or its `role:` token: the places `role_in_use` reads (§2.3)
+and the `role:` tokens of `settings.ticker.contract_implementers`, so
+that a stored `role:steward` does not reach the built-in stewards. The
+event log is not rewritten: a past event keeps its audience, as with
+every rename of a project role. It renames rather than stopping as the
+expert's upgrade did: the lead chose the
 security teams' rename for it, and the members keep their base, so a
 project loses nothing it had. Where `steward-custom` is taken too, it
 takes the next free name (`steward-custom-2`, `-3`, …) and logs which

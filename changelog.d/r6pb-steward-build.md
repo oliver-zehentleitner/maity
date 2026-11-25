@@ -8,7 +8,9 @@
   routed a card, never a cover's substitute and never a card's `needs`. It is no base for a
   project role and is not offered to outsiders' agents. Its rules carry a steward line. The
   dashboard offers it after `expert` in Join an agent and Manage, with Expert for and Sources,
-  and hides it there and in Invite user where the memory provider is `none`.
+  and hides it there and in Invite user where the memory provider is `none`. The Way of
+  working tab of Settings gains a Keep the Why steward section, where a human admin sets
+  `policy.steward_writes`.
 
 ### Changed
 

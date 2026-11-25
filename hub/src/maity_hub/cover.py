@@ -585,9 +585,11 @@ def routed(
         return membership_id, None
     sub = conn.execute(select(t.membership).where(t.membership.c.id == row.cover_by)).one()
     if sub.removed_at is None:
-        if sub.role == "expert":
+        if sub.role in ("expert", "steward"):
             # An expert takes no cards (§2.3 "The expert"); the role change waits while the
-            # cover runs, so this is a backstop: the card goes to the covered member.
+            # cover runs, so this is a backstop: the card goes to the covered member. A steward
+            # is never a card's routed owner (§2.3 "The steward"), and a substitute may become
+            # one while the cover runs, since that role change waits for nothing.
             return membership_id, None
         return sub.id, _assignment_cover(row, sub)
     # The substitute's membership has ended. The removal already took them out of every

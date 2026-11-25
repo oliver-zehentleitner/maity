@@ -931,6 +931,26 @@ def test_area_routing_sends_no_card_to_a_substitute_that_became_an_expert(
     assert routed["cover"] is None
 
 
+def test_area_routing_sends_no_card_to_a_substitute_that_became_a_steward(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, now: list[datetime]
+) -> None:
+    """§2.3 "The steward", §6.12: a steward is never a card's routed owner. The role change
+    to steward waits for no cover, so `cover.routed` checks it: the card goes to the covered
+    member, as without cover (A2648 P3-1)."""
+    covered = flow.agent(make_client, owner, areas=["hub/"])
+    sub = flow.agent(make_client, owner)
+    for agent in (covered, sub):
+        agent.resume()
+    policy(owner, covered.id, on_unavailable="substitute", substitutes=[sub.id], grace_minutes=0)
+    limit(covered, now[0] + timedelta(hours=1))
+    assert events(migrated, "cover_started")
+    changed = owner.patch(f"/projects/maintainer/maity/members/{sub.id}", {"role": "steward"})
+    assert changed.status_code == 200, changed.text
+    routed = task(owner, area="hub/")
+    assert routed["assigned_to"] == covered.id
+    assert routed["cover"] is None
+
+
 def test_a_covered_claim_does_not_go_back_to_a_member_that_became_an_expert(
     owner: flow.Human, make_client: ClientFactory, migrated: Engine, now: list[datetime]
 ) -> None:

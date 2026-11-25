@@ -1543,7 +1543,13 @@ def test_the_steward_migration_renames_a_project_role_named_steward(engine: Engi
             .values(
                 roles=[role, legal],
                 outside_roles=["coder", "steward"],
-                settings={"onboarding": {"check_in_with": "role:steward"}},
+                settings={
+                    "onboarding": {"check_in_with": "role:steward"},
+                    "ticker": {
+                        "enabled": True,
+                        "contract_implementers": {"2.3": ["role:steward", "role:coder"]},
+                    },
+                },
             )
         )
         conn.execute(update(t.project).where(t.project.c.id == docs).values(roles=[legal]))
@@ -1572,6 +1578,11 @@ def test_the_steward_migration_renames_a_project_role_named_steward(engine: Engi
     assert [r["name"] for r in stored.roles] == ["steward-custom", "legal"]
     assert stored.outside_roles == ["coder", "steward-custom"]
     assert stored.settings["onboarding"]["check_in_with"] == "role:steward-custom"
+    # A stored `role:steward` would otherwise reach the built-in stewards (A2648 P2-3).
+    assert stored.settings["ticker"] == {
+        "enabled": True,
+        "contract_implementers": {"2.3": ["role:steward-custom", "role:coder"]},
+    }
     assert (member.role, member.role_base) == ("steward-custom", "writer")
     assert member.availability_policy["substitutes"] == ["role:steward-custom", "role:legal"]
     assert other == [legal]

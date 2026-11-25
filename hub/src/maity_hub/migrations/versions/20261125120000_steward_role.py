@@ -5,10 +5,13 @@ A project role named `steward` would turn into the built-in role on the upgrade,
 scopes and duties. Unlike `expert` (20261108230000), whose upgrade stops, the lead's decision
 of 2026-11-25 (point 7 of PR #2221) renames it, as §2.3 says for the security teams, and an
 admin moves the members to the built-in role where that is wanted. The rename covers every
-place that stores a project role's name, the same list `project_roles.uses` reads: the role
-list itself, a membership, an open or used join and invitation, a card's `needs`, a request's
-`to`, a placement's profile, the onboarding's `check_in_with`, a `substitutes` list, the role
-memory and `outside_roles`. A membership's `role_base` is unchanged, so no one's scopes move.
+setting and column that stores a project role's name or its `role:` token: the places
+`project_roles.uses` reads (the role list itself, a membership, a join and an invitation, a
+card's `needs`, a request's `to`, a placement's profile, the onboarding's `check_in_with`, a
+`substitutes` list, the role memory and `outside_roles`), whether open or not, and the
+`role:` tokens of `settings.ticker.contract_implementers`. A membership's `role_base` is
+unchanged, so no one's scopes move. The event log is not rewritten: a past event keeps the
+audience it was written with, as for every rename of a project role (§2.3).
 
 A project that already has a project role `steward-custom` gets the next free name,
 `steward-custom-2`, then `-3` and on (the lead's ruling of 2026-11-25, seq 221098): an upgrade
@@ -134,12 +137,22 @@ def _rename(conn: Any, row: Any, roles: list[dict[str, Any]], new: str) -> None:
     if outside is not None and OLD in outside:
         values["outside_roles"] = [new if r == OLD else r for r in outside]
     settings = _json(row.settings) or {}
+    renamed = dict(settings)
     onboarding = settings.get("onboarding") or {}
     if onboarding.get("check_in_with") == f"role:{OLD}":
-        values["settings"] = {
-            **settings,
-            "onboarding": {**onboarding, "check_in_with": f"role:{new}"},
+        renamed["onboarding"] = {**onboarding, "check_in_with": f"role:{new}"}
+    ticker = settings.get("ticker") or {}
+    implementers = ticker.get("contract_implementers") or {}
+    if any(f"role:{OLD}" in tokens for tokens in implementers.values()):
+        renamed["ticker"] = {
+            **ticker,
+            "contract_implementers": {
+                key: [f"role:{new}" if x == f"role:{OLD}" else x for x in tokens]
+                for key, tokens in implementers.items()
+            },
         }
+    if renamed != settings:
+        values["settings"] = renamed
     conn.execute(sa.update(_project).where(_project.c.id == project_id).values(**values))
     for table, column, old_value, new_value in (
         (_membership, _membership.c.role, OLD, new),
