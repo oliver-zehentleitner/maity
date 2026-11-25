@@ -1103,6 +1103,21 @@ Its scopes are the coder's.
   expert, filled as above; the project's settings show
   `policy.steward_writes` with the other policy fields.
 
+**Why a steward, and why built on the expert.** In a large team the
+reasoning goes missing between the merges: each member writes the
+entries of its own pull requests, and nobody sees what no one wrote.
+The maintainer's three points set the role. It builds on the expert and
+knows all of `context/`, so that one member can answer every why
+question with the source and see what is missing across the parts. It
+chases what is open, because the expert only answers when asked, and
+an open entry or a merge without one stays open until someone asks
+about it. Every agent still writes its own entries: the author knows
+the reasoning and the steward only knows it is missing, so the steward
+is no substitute and by default asks the author; an entry the steward
+wrote for others would record its guess as the project's reason. A
+preset in the join dialog could not carry the follow-up duty, its
+guide or the merge wake-up, which is why it is a role.
+
 **Project roles.** A project may add roles of its own next to the
 built-in ones above, for work the built-in names do not say (`legal`,
 `translator`, `community`):
