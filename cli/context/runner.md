@@ -796,9 +796,9 @@ writable surface and no write that leaves the scratch.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** card tsk-n6sajs3gyh8h (ops, agents03, 2026-11-23); the lead's rulings on the plan: build slice 1, log only on ssh; the review of #2175 (A2463) and the lead's ruling on it: no signal fallback in slice 1, one deadline over the whole stop
+**Source:** card tsk-n6sajs3gyh8h (ops, agents03, 2026-11-23); the lead's rulings on the plan: build slice 1, log only on ssh; the review of #2175 (A2463) and the lead's ruling on it: no signal fallback in slice 1, one deadline over the whole stop; ops' measurement on Codex 0.171.0 and 0.172.0 (2026-11-24: `daemon stop` exits 0 in every case; the updater loop outlives it; Codex's record of the loop and its identity) and the lead's go on slice 2 with its rulings (the loop before the daemon; the pid only from Codex's record, checked through a pidfd; TERM only; also at close)
 **See:** runner.md#codexs-codex_home-lives-inside-the-placement-scratch-not-the-runners-state-directory — 9084b0ed-985d-41ea-906d-cd9cc6e18879 — as of 2026-11-23
-**Revisit when:** ops reports the daemon command's real form or a no-daemon switch, or slice 2 (the stop at placement stop and close, and a fallback for a daemon that does not stop) lands, or the follow-up card tsk-p69g2w9ang28, which reads the agents' home again on a reconnect or an account change, lands
+**Revisit when:** Codex gives a command or switch that ends the updater loop, or changes its record of the loop (`app-server-daemon/daemon-updater.pid`); or a stop when a placement only stops, or a fallback for a daemon that does not stop, is built; or the follow-up card tsk-p69g2w9ang28, which reads the agents' home again on a reconnect or an account change, lands
 
 At every Codex start, interactive or supervised, first or restart, the
 runner stops the app-server daemon that an earlier start left in the
@@ -832,9 +832,36 @@ them, is a home that cannot be checked, and is not stopped either. The
 check and the stop are not atomic: the path is named again to an external
 binary. A stop that exits non-zero,
 does not answer, cannot run or is skipped is one log line, and the start
-goes on. The runner signals no process itself. That the command is
-`codex app-server daemon stop`, with these exit codes, is as the card
-names it and not yet checked on a host; ops is checking.
+goes on. Ops checked the command on Codex 0.171.0: it exits 0 in every
+case, and only its JSON status tells them apart, which the runner neither
+reads nor logs.
+
+**The updater loop (slice 2).** `daemon stop` leaves Codex's
+`app-server daemon pid-update-loop` running (ops: alive 120 s after the
+stop on 0.171.0 and 0.172.0, ended by TERM within 2 s). At a package update
+that loop starts a replacement app-server itself, with the environment of
+the start that made it. So between the home check and the daemon stop,
+within the same deadline, the runner ends the loop (`codexd.end_updater`).
+It goes first so it cannot relaunch the daemon in between. The pid comes
+only from Codex's own record in this home, `app-server-daemon/daemon-updater.pid`,
+read with no link below the home. The pid is opened as a pidfd, and the
+process must show this boot's id, the start ticks Codex recorded, the
+agents' user, the loop's argv and this `CODEX_HOME` in its environment.
+Then signal 0 through the pidfd, which shows the checked process is still
+the one opened, then TERM, and then a wait on the pidfd, up to 3 s, until the
+loop has exited: a loop still running at the daemon stop could still start
+the replacement. Never KILL, never a pattern, nothing outside the home; a
+loop that has not exited in time, and anything else, is one log line, and
+the daemon stop goes on. The record is reached from the runner's root one
+directory at a time with no link at any step, and all four of the
+process's uids must be the agents' user's. Off the
+runner's own user it runs as the agents' user (`maity runner codexd`), and
+a host whose `maity` lacks it logs and goes on. On a system without pidfds
+nothing is signalled. When a Codex placement is closed, the same steps
+(loop, then daemon) run for its scratch in either layout, before its TMPDIR
+leaf and the scratch with its `CODEX_HOME` are removed, or both would run on
+without their home. Where the host's layout is unknown, nothing is asked of
+it that pass, the stop included.
 
 A stop that fails, does not answer or is skipped leaves the
 old daemon running, so the new session may still reach it and fail as it
@@ -860,8 +887,12 @@ sandboxed command of the restarted session panicked.
 - A signal fallback by CODEX_HOME in the environment or arguments, for the
   processes of the agents' uid: no proof of ownership against another
   process of that uid, a stale group snapshot or a reused pid (review of
-  #2175); deferred to slice 2 with an identity Codex records, checked with
-  a pidfd.
+  #2175). Slice 2 uses the identity Codex records instead, checked with a
+  pidfd.
+- Ending the loop after the daemon stop: the loop could start a
+  replacement app-server between the two (ops, the lead).
+- Leaving the loop running because it only updates: it relaunches the
+  daemon with a stale environment at every package update (ops).
 
 ## agy's scratch lives under the host's shared temp directory, not beside the clone
 
