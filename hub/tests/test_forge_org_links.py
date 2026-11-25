@@ -30,6 +30,7 @@ from sqlalchemy import Engine, insert, select, update
 from maity_hub import (
     clock,
     errors,
+    events,
     forge,
     forge_access,
     forge_links,
@@ -725,10 +726,10 @@ def test_a_mint_that_succeeds_never_sets_an_organisation_link_active(
     check sets `active`, and a refused mint leaves the check's cadence alone."""
     link_id = _org_link(migrated, owner.id, status="suspended", checked=timedelta(minutes=3))
     checked = _link_row(migrated).checked_at
-    with migrated.begin() as conn:
+    with events.transaction(migrated) as conn:
         forge_links.set_status(conn, link_id, "active")
     assert _link_row(migrated).status == "suspended"
-    with migrated.begin() as conn:
+    with events.transaction(migrated) as conn:  # it forgets, again after the commit
         forge_links.set_status(conn, link_id, "removed")
     row = _link_row(migrated)
     assert (row.status, row.checked_at) == ("removed", checked)
@@ -1780,7 +1781,7 @@ def test_a_link_that_leaves_active_drops_the_cached_export(
     with migrated.begin() as conn:
         conn.execute(update(t.forge_link).values(status="active"))
     _cached_export(migrated)
-    with migrated.begin() as conn:
+    with events.transaction(migrated) as conn:  # it forgets, again after the commit
         forge_links.set_status(conn, link_id, "suspended")
     assert ktw.CACHE.cached(project_id) is None
 
