@@ -622,7 +622,7 @@ def _role_items(who: flow.Agent) -> list[str]:
     return [item["id"] for item in answer.json()["items"]]
 
 
-def test_an_outsiders_agent_reads_its_roles_memory_but_neither_writes_nor_deletes_it(
+def test_an_outsiders_agent_neither_reads_writes_nor_deletes_its_roles_memory(
     on: None, owner: flow.Human, outsider: flow.Human, make_client: ClientFactory
 ) -> None:
     agent = _outside_agent(make_client, owner, outsider)
@@ -630,7 +630,10 @@ def test_an_outsiders_agent_reads_its_roles_memory_but_neither_writes_nor_delete
     written = member.post(MEMORY, {"store": "role", "text": "How this project reviews."})
     assert written.status_code == 201, written.text  # a member's coder still writes
     entry = written.json()["id"]
-    assert _role_items(agent) == [entry]  # it reads its role's memory
+    # It reads no memory of the project (§2.3 "Outside"): the read answers as an outsider's.
+    read = agent.get(MEMORY, params={"store": "role"})
+    assert read.status_code == 404, read.text
+    assert read.json() == NOT_FOUND
     refused = agent.post(MEMORY, {"store": "role", "text": "Another way to review."})
     assert refused.status_code == 403, refused.text
     assert _reason(refused) == "outside_trust"
