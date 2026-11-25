@@ -5976,14 +5976,17 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
         addEventListener(t, f) { vvOn[t] = f; }, removeEventListener(t, f) { if (vvOn[t] === f) delete vvOn[t]; } };
       try {
         fsBtn().click(); await tick();
-        const opened = [fsPane.style["--chat-full-h"], fsPane.style["--chat-full-top"]];
-        win.visualViewport.height = 400; win.visualViewport.offsetTop = 120.6; vvOn.resize();
-        const keyboard = [fsPane.style["--chat-full-h"], fsPane.style["--chat-full-top"]];
+        const opened = [fsPane.style["--chat-full-h"], fsPane.style["--chat-full-top"], Object.keys(vvOn).sort().join()];
+        win.visualViewport.height = 400; vvOn.resize();
+        const resized = [fsPane.style["--chat-full-h"], fsPane.style["--chat-full-top"]];
+        win.visualViewport.offsetTop = 120.6; vvOn.scroll();
+        const scrolled = [fsPane.style["--chat-full-h"], fsPane.style["--chat-full-top"]];
         fsBtn().click(); await tick();
         const left = [fsPane.style["--chat-full-h"], fsPane.style["--chat-full-top"], Object.keys(vvOn).sort().join()];
-        expect(JSON.stringify(opened) === JSON.stringify(["844px", "0px"]) && JSON.stringify(keyboard) === JSON.stringify(["400px", "121px"])
+        expect(JSON.stringify(opened) === JSON.stringify(["844px", "0px", "resize,scroll"])
+          && JSON.stringify(resized) === JSON.stringify(["400px", "0px"]) && JSON.stringify(scrolled) === JSON.stringify(["400px", "121px"])
           && left[0] === undefined && left[1] === undefined && left[2] === "",
-          "chat full screen: the pane takes the visual viewport's height and top, follows its resize, and lets go on leaving " + JSON.stringify([opened, keyboard, left]));
+          "chat full screen: the pane takes the visual viewport's height and top, follows its resize and its scroll, and lets go of both on leaving " + JSON.stringify([opened, resized, scrolled, left]));
       } finally {
         delete win.visualViewport;
       }

@@ -4040,7 +4040,8 @@ def chat_keyboard_send(run: Run, browser) -> None:
     in the composer's one row beside Attach, taking the click.
     - Full screen (the reported case), at 390 x 400 and 390 x 300: the pane is sized from the visual
       viewport (js/chat.js fullScreen). Headless Chromium shrinks the layout and the visual viewport
-      together, so this proves the sizing, not an Android keyboard, which shrinks the visual one only.
+      together here, which the old 100dvh would follow as well; full_over_keyboard shrinks the visual
+      one only, as an Android keyboard does, and fails with the old sizing.
     - The chat in the page, at 390 x 400 only. At 390 x 300 the page's sticky header (about 200 px on a
       phone) leaves the composer no room below it, and a header that scrolls away is a layout change
       beyond this card."""
@@ -4078,9 +4079,69 @@ def chat_keyboard_send(run: Run, browser) -> None:
                 assert m["sameRow"] is True, f"{where}: Send is not in Attach's row, or no Attach: {m}"
                 run.shot(page, f"fixtures-chat-keyboard-{mode}-{height}-{'group' if 'cnv-' in route else 'direct'}")
                 send.click(trial=True)
+            # Only the visual viewport shrinks, as an Android keyboard does (see the docstring).
+            full_over_keyboard(run, page, route)
         assert not errors, errors
     finally:
         context.close()
+
+
+# A stand-in for window.visualViewport that a test moves: the page's layout stays as it is.
+VV_STANDIN = """() => {
+  const vv = new EventTarget();
+  vv.height = window.innerHeight; vv.offsetTop = 0;
+  Object.defineProperty(window, "visualViewport", { configurable: true, get: () => vv });
+  if (window.visualViewport !== vv) throw new Error("visualViewport could not be replaced");
+  window.__vvMove = (height, top, kind) => { vv.height = height; vv.offsetTop = top; vv.dispatchEvent(new Event(kind)); };
+}"""
+
+FULL_IN_VV = """() => {
+  const pane = document.querySelector('.chat-pane.chat-full-pane');
+  const send = document.querySelector('.chat-layout.open .chat-pane .compose-actions button[type="submit"]');
+  const attach = document.querySelector('.chat-layout.open .chat-pane .compose-actions .attach-button');
+  if (!pane || !send) return { pane: !!pane, send: null };
+  const p = pane.getBoundingClientRect(), r = send.getBoundingClientRect(), a = attach ? attach.getBoundingClientRect() : null;
+  const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+  return { pane: { top: p.top, height: p.height }, send: { top: r.top, bottom: r.bottom, height: r.height },
+           vv: { top: window.visualViewport.offsetTop, height: window.visualViewport.height }, inner: window.innerHeight,
+           covered: !(hit && (hit === send || send.contains(hit))),
+           sameRow: a ? Math.abs((a.top + a.bottom) / 2 - (r.top + r.bottom) / 2) <= Math.max(a.height, r.height) / 2 : null };
+}"""
+
+
+def full_over_keyboard(run: Run, page, route: str) -> None:
+    """The reported case as Android makes it: the window (the layout viewport) stays 390 x 844 and only
+    the visual viewport shrinks to 400 above the keyboard, then is moved down by 200 (its scroll). The
+    full-screen pane must cover exactly that strip, Send inside it, uncovered, in Attach's row; with the
+    pane at 100dvh (the old sizing) Send stays near the window's bottom, under the keyboard, and this
+    fails. Headless Chromium has no on-screen keyboard: window.visualViewport is a stand-in moved by the
+    test, so this proves the pane follows the visual viewport, not that a phone reports it so."""
+    index = (WEB / "index.html").as_uri()
+    page.set_viewport_size({"width": 390, "height": 844})
+    page.goto("about:blank")
+    page.goto(f"{index}?lang=en{route}")
+    field = page.locator(".chat-layout.open .chat-pane .compose textarea")
+    field.wait_for()
+    page.evaluate("() => { const b = document.querySelector('main .signin-banner'); if (b) b.remove(); }")
+    page.evaluate(VV_STANDIN)
+    page.locator(".chat-layout.open .chat-pane .chat-full-toggle").click()
+    page.locator("html.chat-full .chat-pane.chat-full-pane").wait_for()
+    field.click()
+    field.fill("When is the deploy?")
+    kind_name = "group" if "cnv-" in route else "direct"
+    for height, top, kind in ((400, 0, "resize"), (400, 200, "scroll")):
+        page.evaluate(f"() => window.__vvMove({height}, {top}, '{kind}')")
+        page.wait_for_timeout(200)
+        m = page.evaluate(FULL_IN_VV)
+        where = f"{route} full, the visual viewport {height} high at {top} ({kind}) in a 844 window"
+        assert m["send"], f"{where}: no pane or no Send: {m}"
+        assert m["inner"] == 844, f"{where}: the window changed, the case needs it unchanged: {m}"
+        assert abs(m["pane"]["top"] - top) <= 1 and abs(m["pane"]["height"] - height) <= 1, f"{where}: the pane is not the visual viewport: {m}"
+        assert m["send"]["height"] >= 44 and m["send"]["top"] >= top - 0.5 and m["send"]["bottom"] <= top + height + 0.5, f"{where}: Send outside what is seen: {m}"
+        assert not m["covered"], f"{where}: something covers Send: {m}"
+        assert m["sameRow"] is True, f"{where}: Send is not in Attach's row, or no Attach: {m}"
+    run.shot(page, f"fixtures-chat-keyboard-vv-{kind_name}")
+    page.locator('.chat-layout.open .chat-pane .compose-actions button[type="submit"]').click(trial=True)
 
 
 def chat_phone_head(run: Run, browser) -> None:
