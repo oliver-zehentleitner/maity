@@ -321,17 +321,20 @@ class AsUser:
             listed.append((where, kind if kind in ("d", "l", "f") else "?"))
         return listed
 
-    def inode(self, path: Path) -> int:
-        """The inode of `path` itself on the agents' side, a link not followed: `ls -di`,
-        which BSD, macOS and GNU all print the same way (POSIX follows no link named as an
-        operand without -H or -L)."""
+    def dev_inode(self, path: Path) -> tuple[int, int]:
+        """The device and inode of `path` itself on the agents' side, a link not followed:
+        `stat`, which follows no link without -L, as GNU's `-c '%d %i'` and else as BSD's and
+        macOS's `-f '%d %i'` (on GNU `-f` takes no format, and its answer does not parse)."""
         if self.direct:
-            return os.lstat(path).st_ino
-        done = self.run(["ls", "-di", "--", str(path)])
-        number = done.stdout.split(maxsplit=1)[0] if done.stdout.strip() else ""
-        if done.returncode != 0 or not number.isdigit():
-            raise OSError(f"cannot read the inode of {path} on the agents' side")
-        return int(number)
+            found = os.lstat(path)
+            return found.st_dev, found.st_ino
+        for option in ("-c", "-f"):
+            done = self.run(["stat", option, "%d %i", "--", str(path)])
+            numbers = done.stdout.split()
+            digits = all(n.isascii() and n.isdigit() for n in numbers)
+            if done.returncode == 0 and len(numbers) == 2 and digits:
+                return int(numbers[0]), int(numbers[1])
+        raise OSError(f"cannot read the device and inode of {path} on the agents' side")
 
     def exists(self, path: Path, kind: str = "-e") -> bool:
         """`test -e` (or `-f`, `-d`, `-L`) on the agents' side, which may be closed to the

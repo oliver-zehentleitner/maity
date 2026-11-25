@@ -216,6 +216,7 @@ def test_a_stub_placement_starts_and_runs(world: Any) -> None:
     assert name == "maity_maity_agent-3"
     assert env == {
         "MAITY_PLACEMENT": "plc-0003", "GIT_COMMON_DIR": str(clone / ".git"),
+        clonecheck.GIT_DEVICE_ENV: str(os.lstat(clone / ".git").st_dev),
         clonecheck.GIT_INODE_ENV: str(os.lstat(clone / ".git").st_ino),
         clonecheck.GIT_PRIVATE_ENV: env[clonecheck.GIT_PRIVATE_ENV],
         "MAITY_SUPERVISOR": f"maity-runner/{__version__}",

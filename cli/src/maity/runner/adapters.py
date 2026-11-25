@@ -521,8 +521,11 @@ def launch(ctx: Context) -> Launch:
     ctx.as_user.mkdir(ctx.clone / ".git" / "maity")
     ctx.as_user.write(ctx.clone / clonecheck.MARKER_PATH, ctx.placement["id"] + "\n")
     # Which directory `.git` is: the sandbox does not keep the agent from renaming it, so
-    # maity outside the sandbox takes `.git` only as this one (clonecheck.opened_git).
-    env[clonecheck.GIT_INODE_ENV] = str(ctx.as_user.inode(ctx.clone / ".git"))
+    # maity outside the sandbox takes `.git` only as this one, by device and inode
+    # (clonecheck.opened_git).
+    device, inode = ctx.as_user.dev_inode(ctx.clone / ".git")
+    env[clonecheck.GIT_DEVICE_ENV] = str(device)
+    env[clonecheck.GIT_INODE_ENV] = str(inode)
     # git's own repository for each run maity starts, outside the clone, in the agent's
     # directory the sandbox hides (clonecheck._private_dir). Codex runs maity in its sandbox,
     # which cannot write there: named as the clone's `.git/maity`.
