@@ -157,9 +157,9 @@ in the header has none, and **Your account → Settings → Theme** (`/account/s
 picks it with three radio buttons, saying that the choice is kept in this
 browser only. A pick made signed out stays after signing in.
 
-The row is Chat, "+", the gear, the bell and the profile, in one row on
-a phone too; there the **Lead** button is hidden and stands on the Chats
-page instead. **Chat** leads
+The row is the Lead button where there is one, Chat, "+", the gear, the
+bell and the profile, in one row on a phone too; there the **Lead**
+button is hidden and stands on the Chats page instead. **Chat** leads
 to `/chats` with the hub's count of unread chat messages
 (`counts.chat`); the **bell** has the count of every kind but the open
 requests. A badge is a number only, hidden at zero; the words are the
