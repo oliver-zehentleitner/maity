@@ -217,8 +217,9 @@ def _rename(conn: Any, row: Any, roles: list[dict[str, Any]], new: str) -> None:
 
 def _canonical(value: Any) -> tuple[str, str]:
     """The JCS form of a stored value and its SHA-256, as `foreign_agent._hash` gives them:
-    the values here are strings, lists and objects of them, which `json.dumps` with sorted
-    keys and no spaces writes exactly as JCS does."""
+    the values here are strings, integers in JCS's range (`grace_minutes`, 0 to 1440),
+    booleans, null, and lists and objects of them, which `json.dumps` with sorted keys and no
+    spaces writes exactly as JCS does."""
     text = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
     return text, hashlib.sha256(text.encode("utf-8")).hexdigest()
 
@@ -240,8 +241,10 @@ def _rename_proposals(conn: Any, project_id: str, new: str) -> None:
     owner's consent for another owner's agent, an admin agent's and a line lead's proposal):
     `role`, `role_base` where it holds the project role's name, and the `role:` token in
     `availability_policy.substitutes`. A consent's stored canonical form and hash of a renamed
-    field are written again, so that what the owner is shown is what the go applies. A closed
-    request is history and keeps what it applied."""
+    field are written again, so that what the owner is shown is what the go applies. The
+    request's summary text is not rewritten and keeps the old name `steward`, while the shown
+    canonical form, its hash and the go use the new name. A closed request is history and keeps
+    what it applied."""
     rows = conn.execute(
         sa.select(_request.c.id, _request.c.proposal).where(
             _request.c.project_id == project_id,
