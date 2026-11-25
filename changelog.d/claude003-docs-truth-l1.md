@@ -9,6 +9,6 @@
   clone as the CLI picks it. The CLI's skill and the hub's /help say the same about signing, and
   docs/agents.md describes the briefing as resume shows it. The FAQ names the unread nudge in group chats, and Bring your
   open-source project says when the public-page offer appears and that a merge can close a card
-  under `merged_closes: auto`. The runner docs and the CLI README fix opencode's bash rules and scratch, the
+  under `merged_closes: auto`. The runner docs fix opencode's bash rules and scratch, the
   worktree deny for Claude Code, the clone-removal route, the variables without a scratch, the
   upgrade command for each install and the log lines for a refused report.
