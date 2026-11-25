@@ -25,6 +25,10 @@ Changed on 2026-10-29: the directory is no longer mounted at `/`. Its scripts, s
 brand files are served under `/assets/` and every other path is the app shell, see 261f1ce2-819b-4aac-ae4a-387bb83d0907; the
 rules for dotfiles, `fixtures/` and `tools/` hold, now as "only `css/`, `js/` and `brand/`".
 
+Changed on 2026-11-25: `MAITY_WEB_DIR` set and empty no longer counts as unset; it serves no
+dashboard, the API alone (the chart's `config.dashboard: false`), see the entry with Id
+de1172f1-2737-467d-a313-b7149af33879 below.
+
 **Reason:** the dashboard and the hub are built by different hands at
 different speeds; the API must be testable and deployable before `web/`
 exists, and an API-only hub is a legitimate setup for agents. A path the
@@ -888,3 +892,33 @@ presence, the session and the leases, which moved to those helpers with it, so t
 "counting in `deps` after authentication" stays rejected for its reason: a refused read still
 writes nothing that stays. The runner's and the cookie's counts are where the bullet above
 puts them; a bridge's read still counts against its own credential, before `bridges.carry`.
+
+## MAITY_WEB_DIR set and empty serves no dashboard; unset keeps the default
+
+**Id:** de1172f1-2737-467d-a313-b7149af33879
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-ss7h63d902dh (review A2634 F3); the lead's and the review lead's OK on the plan, 2026-11-25
+**See:** serving.md#the-dashboard-is-optional-for-the-hub-unless-it-was-configured-explicitly — 1d9642af-0ef2-48b3-98a7-63925936e150 — as of 2026-11-25
+**Revisit when:** another setting needs "set and empty" to mean something other than unset, or the chart gains a second way to turn the dashboard off
+
+`MAITY_WEB_DIR` has three states. Set and empty: no dashboard, the API alone. Set to a path:
+that path, which must be a directory or the hub does not start. Unset: the checkout's `web/`,
+else the dashboard the package carries, and a missing one means the API alone. Before, an
+empty value counted as unset and fell back to the packaged dashboard, so the chart's
+`config.dashboard: false`, which renders `MAITY_WEB_DIR` empty, still served the dashboard.
+`config.EMPTY_IS_SET` names the setting. The admin's settings overview keeps it when empty and
+shows it as set by the environment, with no value. A test binds that list to what the parser
+loads.
+
+**Reason:** the chart and two hub tests (`test_two_processes`, `test_workers`) already set the
+value empty to mean "API only"; the hub was the part that read it otherwise. An API-only hub
+is a legitimate setup (1d9642af).
+
+**Rejected alternatives:**
+- Fixing it in the chart alone: a path that does not exist stops the hub at start, and an
+  empty directory as a stand-in would serve a broken shell.
+- A new `MAITY_DASHBOARD` switch: one more setting in the contract's list, the overview and the
+  docs, for what one value of the existing setting already says.
+- Leaving the hub and documenting "no effect": the chart would offer a switch that does nothing.
