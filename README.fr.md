@@ -37,13 +37,19 @@ de deux douzaines d'agents, avec leurs fusions et leurs décisions, au grand jou
 
 <!-- Video slot (tsk-rbn4qzm908e0): the video embedded here as a GitHub user-attachments link (max 10 MB). The link comes separately from marketing. -->
 
-![Le tableau d'un projet : des cartes dans Proposed et Open, chacune avec son id, son domaine et le membre à qui elle est assignée, la plupart avec leur type ; à côté, le panneau de détail d'une carte avec sa prise en charge, sa réservation, son dernier point de contrôle, les cartes liées et sa description.](docs/img/board.png)
+![Le tableau d'un projet : recherche et filtres au-dessus des colonnes Proposed, Open, In progress et Blocked, chacune avec son nombre ; chaque carte montre son id, son étiquette ou son domaine, le membre à qui elle est assignée et son titre, et une carte en cours aussi qui l'a prise en charge, sa réservation, son dernier point de contrôle et ses sous-tâches.](docs/img/board.png)
 
-*Le tableau : chaque carte avec le membre à qui elle est assignée, et une carte ouverte montrant qui la détient et jusqu'à quand.*
+*Le tableau : chaque carte avec le membre à qui elle est assignée, et pour une carte en cours, qui la détient et jusqu'à quand.*
 
-![La boîte de réception de tous les projets : le responsable demande laquelle de deux cartes passe en premier après un déploiement ; sa question, ce qu'il a essayé et les options qu'il voit, avec un champ pour votre réponse et un bouton par option.](docs/img/inbox.png)
+![La boîte de réception d'un projet : le responsable demande si une version prête est déployée demain matin ; qui demande, quand et ce qui se passe entre-temps, l'état de la version, trois options (déployer à 07:00, déployer à 09:00, attendre après le lancement), un champ pour votre réponse et un bouton par option, à côté de Later et Talk.](docs/img/inbox.png)
 
 *La boîte de réception : tout ce dont vos agents ont besoin de vous, avec les options qu'ils voient.*
+
+| | |
+|---|---|
+| ![La page Team d'un projet sur son onglet Members : d'abord les personnes, puis les agents, chaque ligne avec confiance et rôle, présence, date d'arrivée et ses actions ; la ligne d'un agent nomme aussi son propriétaire et ses confirmations Keep the Why.](docs/img/team.png)<br>*Team : tout le monde dans le projet, les personnes d'abord, chacune avec un chat.* | ![L'onglet Organisation de la page Team, en vue Paths : les liens hiérarchiques en arbre, du propriétaire au responsable puis aux agents, les relecteurs regroupés dans une case, le trajet d'un résultat de relecture en pointillé, et sous l'arbre les trajets en bref, ce trajet en mots et une légende.](docs/img/organigram.png)<br>*Organisation : qui rend compte à qui, et où va un événement comme un résultat de relecture.* |
+| ![La page Agents d'un projet : vos propres agents dans un tableau, chacun avec confiance et rôle, présence, instances actives et un bouton Manage, sous les boutons New agent profile et Join an agent et les onglets Agents, Managed agents et Organisation.](docs/img/agents.png)<br>*Agents : vos propres agents dans le projet, avec leur rôle, leur présence et leurs instances.* | ![L'onglet Managed agents de la page Agents d'un projet : une carte par agent sur un runner, avec le runner, l'outil et le mode, le modèle quand il y en a un, ce qui est voulu et ce que le runner a signalé en dernier, les boutons Stop, Restart, Reset et Remove, et les commandes pour ouvrir sa session et ses journaux, chacune avec Copy.](docs/img/managed-agents.png)<br>*Managed agents : où tourne chaque agent, ce que son runner signale et ce que vous pouvez en faire.* |
+| ![Une entrée du Why d'un projet, lue depuis le Keep the Why de son dépôt : une décision avec son statut, sa preuve et sa source et quand la revoir, des liens vers l'entrée précédente et la suivante, et à côté les détails de l'entrée, son historique git, son historique de statut et ses rétroliens.](docs/img/why-entry.png)<br>*Why : les raisons derrière le code, chaque entrée avec quand la revoir.* | ![La page Runners : une carte par runner avec son état et sa version, les projets où il est autorisé, combien d'agents il fait tourner, ses outils avec version, sandbox et modèles, qui voit quoi, les agents qu'il porte avec Stop agent et Remove agent, son identifiant avec sa création et sa dernière utilisation, et Rename, Re-pair, Revoke et Remove.](docs/img/runners.png)<br>*Runners : chaque runner avec ses outils, les agents qu'il porte et son identifiant.* |
 
 ## Ce qu'est Maity
 

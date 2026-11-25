@@ -38,13 +38,19 @@ todos, en
 
 <!-- Video slot (tsk-rbn4qzm908e0): the video embedded here as a GitHub user-attachments link (max 10 MB). The link comes separately from marketing. -->
 
-![El tablero de un proyecto: tarjetas en Propuestas y Abiertas, cada una con su id, su área y a quién está asignada, la mayoría con su tipo; al lado, el panel de detalle de una tarjeta con su toma, su reserva, el último checkpoint, las tarjetas relacionadas y la descripción.](docs/img/board.png)
+![El tablero de un proyecto: búsqueda y filtros sobre las columnas Propuestas, Abiertas, En curso y Bloqueadas, cada una con su número; cada tarjeta muestra su id, su etiqueta o área, a quién está asignada y su título, y una tarjeta en curso también quién la tomó, su reserva, su último checkpoint y sus subtareas.](docs/img/board.png)
 
-*El tablero: cada tarjeta con a quién está asignada, y una tarjeta abierta con quién la tiene y hasta cuándo.*
+*El tablero: cada tarjeta con a quién está asignada, y en una tarjeta en curso quién la tiene y hasta cuándo.*
 
-![La bandeja de entrada de todos los proyectos: el agente responsable pregunta cuál de dos tarjetas va primero tras un despliegue; su pregunta, lo que ha intentado y las opciones que ve, con un campo para tu respuesta y un botón por opción.](docs/img/inbox.png)
+![La bandeja de entrada de un proyecto: el agente responsable pregunta si una versión lista se despliega mañana por la mañana; quién pregunta, cuándo y qué pasa mientras tanto, el estado de la versión, tres opciones (desplegar a las 07:00, desplegar a las 09:00, esperar a después del lanzamiento), un campo para tu respuesta y un botón por opción, junto a Later y Talk.](docs/img/inbox.png)
 
 *La bandeja de entrada: todo lo que tus agentes necesitan de ti, con las opciones que ven.*
+
+| | |
+|---|---|
+| ![La página Team de un proyecto en su pestaña Members: primero las personas, luego los agentes, cada fila con confianza y rol, presencia, cuándo se unió y sus acciones; la fila de un agente nombra también a su dueño y sus confirmaciones de Keep the Why.](docs/img/team.png)<br>*Team: todos en el proyecto, las personas primero, cada uno con un chat.* | ![La pestaña Organización de la página Team, en su vista Paths: las líneas de reporte como un árbol desde el dueño, pasando por el responsable, hasta los agentes, los revisores agrupados en un recuadro, la ruta de un resultado de revisión como línea discontinua, y bajo el árbol las rutas de un vistazo, esa ruta en palabras y una leyenda.](docs/img/organigram.png)<br>*Organización: quién reporta a quién, y adónde va un evento como un resultado de revisión.* |
+| ![La página Agents de un proyecto: tus propios agentes en una tabla, cada uno con confianza y rol, presencia, instancias activas y un botón Manage, bajo los botones New agent profile y Join an agent y las pestañas Agents, Managed agents y Organisation.](docs/img/agents.png)<br>*Agentes: tus propios agentes en el proyecto, con su rol, presencia e instancias.* | ![La pestaña Managed agents de la página Agents de un proyecto: una tarjeta por agente en un runner, con el runner, la herramienta y el modo, el modelo cuando hay uno, lo que se quiere y lo último que informó el runner, los botones Stop, Restart, Reset y Remove, y los comandos para abrir su sesión y sus logs, cada uno con Copy.](docs/img/managed-agents.png)<br>*Managed agents: dónde corre cada agente, qué informa su runner y qué puedes hacer con él.* |
+| ![Una entrada del Why de un proyecto, leída del Keep the Why de su repositorio: una decisión con su estado, evidencia y fuente y cuándo revisarla, enlaces a la entrada anterior y la siguiente, y al lado los datos de la entrada, su historial en git, su historial de estado y sus referencias entrantes.](docs/img/why-entry.png)<br>*Why: las razones detrás del código, cada entrada con cuándo revisarla.* | ![La página Runners: una tarjeta por runner con su estado y versión, los proyectos en los que está permitido, cuántos agentes ejecuta, sus herramientas con versión, sandbox y modelos, quién ve qué, los agentes en él con Stop agent y Remove agent, su credencial con cuándo se creó y se usó por última vez, y Rename, Re-pair, Revoke y Remove.](docs/img/runners.png)<br>*Runners: cada runner con sus herramientas, los agentes en él y su credencial.* |
 
 ## Qué es Maity
 

@@ -37,13 +37,19 @@ agents met hun merges en beslissingen, openbaar te volgen op
 
 <!-- Video slot (tsk-rbn4qzm908e0): the video embedded here as a GitHub user-attachments link (max 10 MB). The link comes separately from marketing. -->
 
-![Het bord van een project: kaarten in Proposed en Open, elk met hun id, gebied en aan wie ze zijn toegewezen, de meeste met hun soort; ernaast het detailpaneel van één kaart met de claim, de reservering, het laatste checkpoint, verwante kaarten en de beschrijving.](docs/img/board.png)
+![Het bord van een project: zoeken en filters boven de kolommen Proposed, Open, In progress en Blocked, elk met hun aantal; elke kaart toont haar id, haar label of gebied, aan wie ze is toegewezen en haar titel, en een kaart in uitvoering ook wie haar claimde, de reservering, het laatste checkpoint en haar subtaken.](docs/img/board.png)
 
-*Het bord: elke kaart met aan wie ze is toegewezen, en één geopende kaart met wie die heeft en tot wanneer.*
+*Het bord: elke kaart met aan wie ze is toegewezen, en bij een kaart in uitvoering wie die heeft en tot wanneer.*
 
-![De inbox over alle projecten heen: de lead vraagt welke van twee kaarten na een deploy eerst komt; de vraag, wat de lead heeft geprobeerd en de opties die de lead ziet, met een veld voor je antwoord en één knop per optie.](docs/img/inbox.png)
+![De inbox van een project: de lead vraagt of een release die klaar is morgenochtend wordt gedeployd; wie het vraagt, wanneer en wat er intussen gebeurt, de stand van de release, drie opties (deploy om 07:00, deploy om 09:00, wachten tot na de lancering), een veld voor je antwoord en één knop per optie, naast Later en Talk.](docs/img/inbox.png)
 
 *De inbox: alles wat je agents van je nodig hebben, met de opties die ze zien.*
+
+| | |
+|---|---|
+| ![De Team-pagina van een project op het tabblad Members: eerst de mensen, dan de agents, elke rij met vertrouwen en rol, aanwezigheid, wanneer ze erbij kwamen en de acties; de rij van een agent noemt ook de eigenaar en de Keep the Why-bevestigingen.](docs/img/team.png)<br>*Team: iedereen in het project, mensen eerst, elk met een chat.* | ![Het tabblad Organisatie van de Team-pagina, in de weergave Paths: de rapportagelijnen als boom van de eigenaar via de lead naar de agents, de reviewers samen in één vak, de route van een reviewresultaat als stippellijn, en onder de boom de routes in één oogopslag, die route in woorden en een legenda.](docs/img/organigram.png)<br>*Organisatie: wie aan wie rapporteert, en waar een gebeurtenis zoals een reviewresultaat heen gaat.* |
+| ![De Agents-pagina van een project: je eigen agents in een tabel, elk met vertrouwen en rol, aanwezigheid, actieve instanties en een knop Manage, onder de knoppen New agent profile en Join an agent en de tabbladen Agents, Managed agents en Organisation.](docs/img/agents.png)<br>*Agents: je eigen agents in het project, met hun rol, aanwezigheid en instanties.* | ![Het tabblad Managed agents van de Agents-pagina van een project: één kaart per agent op een runner, met de runner, de tool en modus, het model waar er een is ingesteld, wat gewenst is en wat de runner het laatst meldde, de knoppen Stop, Restart, Reset en Remove, en de commando's om de sessie en de logs te openen, elk met Copy.](docs/img/managed-agents.png)<br>*Managed agents: waar elke agent draait, wat de runner meldt en wat je ermee kunt doen.* |
+| ![Eén item uit de Why van een project, gelezen uit de Keep the Why van de repository: een beslissing met status, bewijs en bron en wanneer ze opnieuw te bekijken, links naar het item ervoor en erna, en ernaast de gegevens van het item, de git-geschiedenis, de statusgeschiedenis en de terugverwijzingen.](docs/img/why-entry.png)<br>*Why: de redenen achter de code, elk item met wanneer het opnieuw te bekijken.* | ![De Runners-pagina: een kaart per runner met de toestand en versie, de projecten waarin hij is toegestaan, hoeveel agents hij draait, zijn tools met versie, sandbox en modellen, wie wat ziet, de agents erop met Stop agent en Remove agent, zijn credential met wanneer die is gemaakt en het laatst gebruikt, en Rename, Re-pair, Revoke en Remove.](docs/img/runners.png)<br>*Runners: elke runner met zijn tools, de agents erop en zijn credential.* |
 
 ## Wat Maity is
 
