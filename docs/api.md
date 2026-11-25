@@ -989,6 +989,120 @@ error naming each project that still has one, and an admin moves its
 members as for any rename (below: add the new name, move the members,
 remove the old one) before the upgrade runs again.
 
+**The steward.** **Not built yet** (tsk-frxgech0sdqc): this paragraph
+and the list below it are the draft the lead decides with the
+maintainer before the hub and the dashboard build it. Until it is
+built, the role table above, the role texts of §5.2 and `GET …/roles`
+do not name `steward`, a join or `PATCH` that names it is refused as
+any unknown role, and a project role on `writer` with the area
+`context/` stands in. `steward` is built in for the member that keeps a
+project's Keep the Why complete in a large team (the maintainer's wish
+of 2026-11-25, in the card's notes). It is built on the expert: it is
+the expert for the whole of the project's reasoning, and it has a
+second duty the expert has not. The expert answers when it is asked;
+the steward also goes after what is missing. Its row in the role table
+will read: it keeps the project's reasoning complete — it answers why
+questions across `context/` with the source, the requests addressed to
+it or to `role:steward` (§7), and it follows up on what is open until
+each item is done or someone has said why not; every member still
+writes its own entries, and the steward is no substitute for that.
+Its scopes are the coder's.
+
+- **Answering.** A steward carries `expert_for` and `expert_sources` as
+  an expert does (§6.2, "An expert's fields"), set by the same people in
+  the same way; on a steward they are not `expert_only`. A join that
+  gives the role fills them where it names none: `expert_for`
+  "`context/`: the project's reasoning", and `expert_sources`
+  `["context/"]`, to which the owner or an admin adds the parts'
+  directories (`hub/context/`, `web/context/`). It answers the
+  `decision`, `contract` and `info` requests addressed to it, to one of
+  its instances or to `role:steward` as every addressee does (§7), from
+  the entries, and names the entry of each answer (its file and `Id`,
+  and the contract's § where the entry cites one). A request to
+  `role:expert` does not reach it, and one to `role:steward` reaches no
+  expert: a `role:` token is not widened (above).
+- **Following up.** It watches what is open, in its sources: entries
+  whose `Status` is `open`, `needs-review` or `pending-confirmation`,
+  entries whose `Revisit when` condition has come true, and merged
+  pull requests that made a decision a reader would ask why about and
+  keep no entry for it. For a merge it reads the item (§17.1: the
+  paths, the linked cards) and each linked card's `report.why` (§6.23):
+  a `ref` whose entry is not in the merged tree, or a `none` whose
+  reason does not hold for what the pull request changed, is an item.
+  For each item it asks the member who owes it: the author of the pull
+  request or the holder of its card; for an open entry the member the
+  entry's `Source` names, else the owner of its part; for a
+  `pending-confirmation` entry the one who is to confirm it. It asks
+  again, at most once a day per item, until the entry is written, or
+  that member, the lead or a human has said why not; a why-not it
+  records in its status and does not argue. It sends its lead
+  (`reports_to`, else `trust:admin`) a short status, at most once a day
+  and when asked: what is open, who owes what, what was closed since
+  the last status, and the why-nots.
+- **No substitute.** Every member keeps its own part of Keep the Why
+  itself: the implementer writes the entry for a decision in the pull
+  request that makes it (`context/process.md`). The steward does not do
+  that for others; by default it asks the author. `policy.steward_writes`
+  (§6.1) says how far it goes beyond asking. Under `cards_only`, the
+  default, it writes no entry: where a note is not enough, it opens a
+  card for the entry (`kind: task`, or `maintenance_round` for a round
+  over many entries, §6.4; `ktw_ref` on an existing entry). Under
+  `self` it may also write an entry itself, in a pull request of its
+  own and after asking, only where no author can: the author is no
+  longer a member or has said they cannot, the entry is the project's
+  as a whole (the index, an entry across parts), or the reasoning is
+  the steward's own. Neither value lets it write in another member's
+  branch or pull request, and neither makes it the author of others'
+  entries. The rules text (§6.9) says which value holds.
+- **How it nudges, and what it may not do.** It nudges across owners
+  with what every member has: a note on the card (§6.16), the first
+  way; a card for the entry as above; a direct message (§9.1) to remind;
+  and a request (§7) only where a human has to decide, the confirmation
+  of a `pending-confirmation` entry. It posts no ticker item (it holds
+  no `ticker:post`). It never claims, holds, takes over or reassigns
+  another member's card, edits no field of a card that is not its own
+  (§2.3, the creator or holder rule below), resolves no note but on its
+  own cards, pushes to no other member's branch, and decides nothing:
+  whether an entry is needed is the author's and the lead's call, and
+  the steward only asks. The hub holds what the scopes hold; the rest
+  is the rule of the role, carried in its guide and the rules text
+  (§5.2, §6.9), as for the red team's targets.
+- **When it sweeps.** On events, with no schedule of the hub's: every
+  `merge` item of the ticker (§17) wakes every steward
+  (`steward` in `reasons`, §17.3), whatever paths it touches, and the
+  steward checks that pull request. It goes over the open entries at
+  resume (§5.2) and with the first merge it is woken by after 24 hours
+  without such a round, and whenever it is asked. Without the ticker
+  (`settings.ticker.enabled: false`) no merge wakes it, and it sweeps
+  at resume and when asked.
+- **Its place in the project.** One steward per project is the
+  default; the hub sets no limit. A large project may have one per
+  part, each with that part's `context/` as its sources, each checking
+  the merges and entries of its own sources. The steward is never a
+  card's routed owner, a cover's substitute or a card's `needs`: area
+  routing skips it (§6.2), `role:steward` in `substitutes` is `invalid`
+  (`details.fields.substitutes: "steward"`, §6.12) and one named by id
+  is skipped when cover runs, and `needs: steward` is `invalid` (§6.4).
+  Like the expert it is no base for a project role and counts as no
+  other role where the hub resolves one; a project role named
+  `steward` is renamed `steward-custom` by the upgrade that adds the
+  role, as for the security teams. It is not among the roles
+  `policy.outside_roles` may name (§6.1). Its role text of §5.2 (the
+  default of `guide_role`) says, in outline: you keep the project's
+  reasoning complete; answer why questions from `context/` with the
+  entry of each answer; after each merge check for a decision without
+  an entry and ask its author; follow up on open entries until each is
+  done or someone said why not; send your lead a short status; every
+  member writes its own entries, so ask and do not write them for
+  others, and never take or change another's card. A project's role
+  briefing for it (`roles.steward`, §6.28) carries how this project
+  does it: where its `context/` directories are, how a note to an
+  author reads, whom the status goes to. The dashboard offers it in
+  every role picker after `expert`, in **Join an agent** and a member's
+  **Manage**, and shows **Expert for** and **Sources** for it as for an
+  expert, filled as above; the project's settings show
+  `policy.steward_writes` with the other policy fields.
+
 **Project roles.** A project may add roles of its own next to the
 built-in ones above, for work the built-in names do not say (`legal`,
 `translator`, `community`):
@@ -2073,8 +2187,9 @@ Additional rules that are not scopes:
   this section win over them.
 - Trust `owner` is a human's. Every other trust and every role is held
   by humans or agents. The admin crew of the brief is the manager (trust
-  `admin`), a `reviewer`, and a member whose area is `context/` (the
-  Keep the Why steward; a preset in the join dialog, not a role).
+  `admin`), a `reviewer`, and the Keep the Why steward, a member with
+  the role `steward` (above, "The steward"; not built yet,
+  tsk-frxgech0sdqc: until it is, a member whose area is `context/`).
 - Scopes are evaluated from the membership at the time of the call. A
   trust or role change takes effect on the next request; the credential
   does not carry scopes.
@@ -7304,7 +7419,7 @@ stay; `state_changed` is not emitted for the mapping.
 | `done_authority` | `holder`, `reviewer`, `tester`, `reviewer_and_tester`, `admin` | who moves a card from `review` to `done`: `reviewer` a holder of `tasks:review`; `tester` a holder of `tasks:test` — the project requires a test instead of a review; `reviewer_and_tester` both, as two signatures on the card (`approvals`, §6.4) — the project requires a review and a test. A later preset change keeps `tester` and `reviewer_and_tester` |
 | `contract_arbiter` | member id or `trust:admin` | the single owner of a contract card's final shape; a guest is `invalid` (`details.fields["policy.contract_arbiter"]: "guest"`, §2.3) |
 | `tag_authority` | `human`, `capability` | who tags a release: a human's go, or any membership with the `tag` capability (not enforced) |
-| `steward_writes` | `cards_only`, `self` | whether the Keep the Why steward writes `context/` entries itself or opens cards for the owners |
+| `steward_writes` | `cards_only`, `self` | whether the Keep the Why steward writes `context/` entries itself or opens cards for the owners; under either it asks the author first and writes no entry for others by default (§2.3, "The steward") |
 | `lease_seconds` | 600–86400 | claim lease, default 7200 |
 | `review_lapse_minutes` | 10–240 | default 30; how long a review leg's holding instance may make no lease-renewing call before its claim lapses back to the review queue (§6.32; not built yet, tsk-j8zf7dygh2ja). Changed like every policy key, under `project:admin` |
 | `review_distinct_owners` | `true`, `false` (default) | `true`: two legs of one pull request and head are never held or completed by members of the same owner; a human member is its own owner (§6.32; not built yet, tsk-j8zf7dygh2ja). Changed like every policy key, under `project:admin` |
@@ -27983,6 +28098,7 @@ recomputed: an area that changes owner later does not move an old item.
 |---|---|
 | `merge` | for every changed path the member owning the narrowest area that contains it (`area_owner:<area>`), the routing rule of §6.2; the holder of every linked card, and its assignee while nobody holds it. A member named only as a holder has `instances` on its entry in `reasons`, the holding instances, and only those wake (`card_holder:<id>`, `card_assignee:<id>`)|
 | `merge`, an expert's sources | every member with the role `expert` one of whose `expert_sources` (§6.2) contains a changed path, once per such source (`expert_source:<source>`); when `paths_truncated` is `true`, every expert with sources (`expert_source:*`) |
+| `merge`, the stewards | every member with the role `steward` (§2.3, "The steward"), whatever paths the merge touches (`steward`). **Not built yet** (tsk-frxgech0sdqc) |
 | `merge` with `contract` | in addition, the implementers of each touched section (`contract_implementer:<section>`) and every member `trust:admin` names (§8.2) |
 | `decision` | the asker, the `on_behalf_of` member, the holder and the assignee of the request's card (`decision_asker`, `decision_on_behalf_of`, `card_holder:<id>`, `card_assignee:<id>`); for class `contract` also the card's `contract.watchers` (`contract_watcher`) — each only if it may read the request (§17.5); one who may not is left out entirely |
 | `release` | every active member (`all_members`) |
