@@ -16,7 +16,6 @@ does the owner's person page), and when a session in one of its public projects 
 
 from __future__ import annotations
 
-import hashlib
 from collections.abc import Collection
 from datetime import timedelta
 from typing import Any
@@ -25,20 +24,23 @@ from sqlalchemy import Connection, select
 
 from maity_hub import (
     avatars,
-    clock,
     moderation,
     namespace,
     public_design,
     public_pages,
     public_people,
     public_projects,
-    render,
     swarm,
 )
 from maity_hub import tables as t
 from maity_hub.config import Settings
 
 KIND = "agent"
+
+
+def path_of(owner_handle: str, agent_handle: str) -> str:
+    """The address of an agent's page, under its owner's (§16.9)."""
+    return f"/{owner_handle}/agents/{agent_handle}"
 
 
 def memberships(conn: Connection, agent_id: str) -> list[tuple[Any, int]]:
@@ -151,7 +153,7 @@ def render_agent(conn: Connection, hub: Settings, agent_id: str) -> list[public_
     # The owner's picture as their own page shows it: only while their `public_profile` is on.
     pictures = avatars.public_urls(conn, [agent.id, *([owner.id] if owner.public_profile else [])])
     picture = pictures[agent.id]
-    path = f"/{owner.handle}/agents/{agent.handle}"
+    path = path_of(owner.handle, agent.handle)
     data = {
         "name": agent.display_name,
         "handle": agent.handle,
@@ -173,22 +175,15 @@ def render_agent(conn: Connection, hub: Settings, agent_id: str) -> list[public_
     }
     # The HTML in the dashboard's design as a pure function of `data` (`public_design.profile`).
     content = public_design.profile(KIND, data, path)
-    body = render.page_document(
-        lang="en",
-        title=f"{agent.display_name} ({agent.handle})",
-        canonical=f"{hub.public_url.rstrip('/')}{path}",
-        content=content,
-        styled=False,
-    )
-    digest = hashlib.sha256("\x00".join((path, agent.display_name, content)).encode())
     return [
-        public_pages.Page(
-            path=path,
-            body=body,
-            inputs=digest.hexdigest(),
-            lastmod=clock.now(),
-            view=KIND,
-            data=data,
+        public_pages.page(
+            hub,
+            path,
+            f"{agent.display_name} ({agent.handle})",
+            content,
+            (agent.display_name,),
+            KIND,
+            data,
         )
     ]
 

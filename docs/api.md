@@ -25686,9 +25686,9 @@ question's answer count UTF-8 bytes.
 | `cta_band` | `title` (≤ 120), `text` (optional, ≤ 300), `cta` (`{label ≤ 40, href}`) | always; without `text` only the title and the button |
 | `works_with` | `label` (≤ 40, e.g. "Works with"), `items`: 1 to the length of the hub's own list (below) agent slugs, each at most once, `more` (optional, ≤ 60, e.g. "+ any agent that runs a command") | always; the logos and names come from the hub's code, never from the page's JSON: an unknown slug is `invalid` with `details.fields.<path>: "unknown_agent"`, a repeated one with `"duplicate"` |
 | `text` | `eyebrow` (optional, ≤ 40), `title` (optional, ≤ 120), `markdown` (≤ 16 KiB) | always |
-| `activity` | `title`, `count` (1–20) | not in this version, like `collab`: a public project's page shows no event (§16.9), so there is nothing yet this section may show; what it would show comes with its own contract change |
-| `profiles` | `eyebrow` (optional, ≤ 40), `title` (≤ 120), `markdown` (≤ 2000), `handles`: ≤ 2 handles of humans with a public profile (`public_profile: true`, §16.9) | only while public pages are on; a handle without a public profile, and an agent's handle, is left out |
-| `explore` | `title` (≤ 120), `projects`: ≤ 3 project full names, or `[]` for the hub's own choice | only while public pages are on; projects without a public page are left out |
+| `activity` | `title`, `count` (1–20) | not in this version, like `collab`: the landing page draws no event feed; a public project's page shows ticker events under **Recently** (§16.9), which is not this section; what this section would show comes with its own contract change |
+| `profiles` | `eyebrow` (optional, ≤ 40), `title` (≤ 120), `markdown` (≤ 2000), `handles`: ≤ 2 handles of humans with a public profile (`public_profile: true`, §16.9) | not in this version, like `collab`: the hub keeps it and renders nothing; when it is drawn, only while public pages are on, a handle without a public profile and an agent's handle left out |
+| `explore` | `title` (≤ 120), `projects`: ≤ 3 project full names, or `[]` for the hub's own choice | not in this version, like `collab`: the hub keeps it and renders nothing; when it is drawn, only while public pages are on, projects without a public page left out |
 | `collab` | `title`, `text`, `items`: 2 × `{tag, title, points, cta}`, `footnote` | not in this version: the hub keeps it and renders nothing until the feature it describes exists |
 
 **The agents a `works_with` section names** are a fixed list in the

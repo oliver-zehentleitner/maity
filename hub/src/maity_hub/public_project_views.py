@@ -1,4 +1,4 @@
-"""The public views of a project (docs/api.md §16.9): Board, Team and Organisation, each a
+"""The public views of a project (docs/api.md §16.9): Board, Team, Organisation and Why, each a
 page of its own at `/{owner}/{slug}/<view>` while the project's page is served.
 
 Who is named follows the project page: every active member and every agent that is not
@@ -9,7 +9,6 @@ Whatever changes one of these inputs calls `public_pages.touch` for the kind `pr
 
 from __future__ import annotations
 
-import hashlib
 from collections.abc import Collection
 from datetime import timedelta
 from typing import Any
@@ -24,14 +23,14 @@ from maity_hub import (
     ktw,
     moderation,
     namespace,
+    public_agents,
     public_design,
     public_pages,
     public_people,
-    render,
 )
 from maity_hub import tables as t
 from maity_hub.config import Settings
-from maity_hub.public_projects import member_pictures, served
+from maity_hub.public_projects import member_pictures, served, targets
 
 KIND = "project_views"
 # Apart from the members' cache, which may have read with an owner's grant: what the public
@@ -131,7 +130,7 @@ def members(
                 agent.handle if ok else None,
                 agent.display_name,
                 False,
-                f"/{owner.handle}/agents/{agent.handle}" if ok else None,
+                public_agents.path_of(owner.handle, agent.handle) if ok else None,
             )
     return found
 
@@ -392,34 +391,19 @@ def render_views(conn: Connection, hub: Settings, project_id: str) -> list[publi
         path = f"/{full}/{view}"
         # The HTML in the dashboard's design, from `data` alone (`public_design.page`).
         content = public_design.page(view, data, path)
-        digest = hashlib.sha256("\x00".join((path, project.name, content)).encode())
         pages.append(
-            public_pages.Page(
-                path=path,
-                body=render.page_document(
-                    lang="en",
-                    title=f"{heading} of {project.name} ({full})",
-                    canonical=f"{hub.public_url.rstrip('/')}{path}",
-                    content=content,
-                    styled=False,
-                ),
-                inputs=digest.hexdigest(),
-                lastmod=clock.now(),
-                view=view,
-                data=data,
+            public_pages.page(
+                hub,
+                path,
+                f"{heading} of {project.name} ({full})",
+                content,
+                (project.name,),
+                view,
+                data,
             )
         )
     return pages
 
 
-def targets(conn: Connection, among: Collection[str] | None = None) -> list[str]:
-    return list(
-        conn.execute(
-            select(t.project.c.id)
-            .where(t.project.c.public_page == "on", *public_pages.only(t.project.c.id, among))
-            .order_by(t.project.c.id)
-        ).scalars()
-    )
-
-
+# The views follow their project's page: the same targets (§16.9).
 public_pages.register(public_pages.Kind(KIND, render_views, targets, prepare=prepare_why))
