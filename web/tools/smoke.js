@@ -19069,9 +19069,10 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && !pvLinks().some((a) => text(a) === "wolfgang_01"),
     "person: the links as the hub sends them, built from the names, rel me; Discord as text");
   expect(pvProjects().length === 2 && pvProjects()[0].querySelector("a").getAttribute("href") === "#/maintainer/maity/overview" && text(pvProjects()[0]).includes("yours too")
-    && pvProjects()[1].querySelector("a").getAttribute("href") === "#/wolfgang/traderjoe?as=public" && text(pvProjects()[1]).includes("public page")
+    && pvProjects()[1].querySelector("a").getAttribute("href") === "#/wolfgang/traderjoe" && !pvProjects()[1].querySelector("a").getAttribute("target")
+    && text(pvProjects()[1]).includes("public page")
     && text(pvView()).includes("2 of 3 shown."),
-    "person: a shared project to its overview, a public one to its page, a cut list said with its total");
+    "person: a shared project to its overview, any other to its address in the dashboard (the outsider's tab, never ?as=public), a cut list said with its total");
   expect(text(header).includes("People") && document.title.includes("@wolfgang"), "person: the header and the title name the view");
   const pvAgents = () => pvView().querySelectorAll("ul.person-agents li");
   // A person's agents stand on the one view, under the projects, as on the public page (§16.9, tsk-2t7efzj1p8zt): no tabs.
