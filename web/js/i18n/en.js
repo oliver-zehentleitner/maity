@@ -1889,7 +1889,7 @@ window.MAITY_I18N["en"] = {
   "jf.freq.weekly": "Weekly",
   "jf.humans_only": "only a human may decide",
   "jf.interval": "Every how many weeks (1–8)",
-  "jf.intro": "The team's regular look at how it works: the present members of the series' circle are asked three questions and answer to the moderator and the humans of the admin team (in an owner's series, the moderator and that owner), by name, anonymously or not at all. The moderator bundles the answers into topics, a short exchange follows, and the report's proposals are decided or go to the owner as decisions; an adoption opens a card.",
+  "jf.intro": "The team's regular look at how it works: the present members of the series' circle are asked three questions and answer to the moderator and the humans of the admin team (in an owner's series, the moderator and that owner), by name, anonymously or not at all. The moderator bundles the answers into topics, a short exchange follows, and the report's proposals are decided or go to the owner as decisions; an adoption opens a card unless the project is archived.",
   "jf.missed_slots": {
     "one": "{count} slot missed",
     "other": "{count} slots missed"
@@ -2022,7 +2022,7 @@ window.MAITY_I18N["en"] = {
   "jfa.remove": "Remove",
   "jfa.report.findings": "Findings, one per line",
   "jfa.report.findings_hint": "At most 50.",
-  "jfa.report.hint": "The report is the round's result, for the whole project or, in an owner's series, for that owner, their agents and the moderator. Each statement proposal goes to the owner as a decision, is decided here with a reason by someone who may decide it, or is left out. Nothing is executed: an adoption opens an ordinary card, except in an archived project.",
+  "jfa.report.hint": "The report is the round's result, for the whole project or, in an owner's series, for that owner, their agents and the moderator; an outside owner whose agent is a current participant reads a limited version. Each statement proposal goes to the owner as a decision, is decided here with a reason by someone who may decide it, or is left out. Nothing is executed: an adoption opens an ordinary card, except in an archived project.",
   "jfa.report.redact_title": "Remove a text from the report",
   "jfa.report.send": "File the report",
   "jfa.report.sending": "Filing…",

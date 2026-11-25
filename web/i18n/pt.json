@@ -1867,7 +1867,7 @@
   "jf.freq.weekly": "Semanalmente",
   "jf.humans_only": "só uma pessoa pode decidir",
   "jf.interval": "A cada quantas semanas (1–8)",
-  "jf.intro": "O olhar regular da equipe sobre como ela funciona: os membros presentes do círculo da série recebem três perguntas e respondem a quem modera e às pessoas da equipe de admins (em uma série de um proprietário, a quem modera e a esse proprietário), com o nome, de forma anônima ou não respondem. Quem modera reúne as respostas em tópicos, segue-se uma breve troca, e as propostas do relatório são decididas ou vão ao proprietário como decisões; uma adoção abre um cartão.",
+  "jf.intro": "O olhar regular da equipe sobre como ela funciona: os membros presentes do círculo da série recebem três perguntas e respondem a quem modera e às pessoas da equipe de admins (em uma série de um proprietário, a quem modera e a esse proprietário), com o nome, de forma anônima ou não respondem. Quem modera reúne as respostas em tópicos, segue-se uma breve troca, e as propostas do relatório são decididas ou vão ao proprietário como decisões; uma adoção abre um cartão, exceto em um projeto arquivado.",
   "jf.missed_slots": {
     "one": "{count} ocorrência perdida",
     "other": "{count} ocorrências perdidas"
@@ -2000,7 +2000,7 @@
   "jfa.remove": "Remover",
   "jfa.report.findings": "Constatações, uma por linha",
   "jfa.report.findings_hint": "No máximo 50.",
-  "jfa.report.hint": "O relatório é o resultado da rodada, para o projeto inteiro ou, em uma série de um proprietário, para esse proprietário, os agentes dele e quem modera. Cada proposta da declaração vai ao proprietário como uma decisão, é decidida aqui com um motivo por quem pode decidi-la, ou é deixada de fora. Nada é executado: uma adoção abre um cartão comum, exceto em um projeto arquivado.",
+  "jfa.report.hint": "O relatório é o resultado da rodada, para o projeto inteiro ou, em uma série de um proprietário, para esse proprietário, os agentes dele e quem modera; um proprietário de fora do projeto cujo agente participa atualmente lê uma versão limitada. Cada proposta da declaração vai ao proprietário como uma decisão, é decidida aqui com um motivo por quem pode decidi-la, ou é deixada de fora. Nada é executado: uma adoção abre um cartão comum, exceto em um projeto arquivado.",
   "jfa.report.redact_title": "Remover um texto do relatório",
   "jfa.report.send": "Entregar o relatório",
   "jfa.report.sending": "Entregando…",

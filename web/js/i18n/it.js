@@ -1889,7 +1889,7 @@ window.MAITY_I18N["it"] = {
   "jf.freq.weekly": "Ogni settimana",
   "jf.humans_only": "solo una persona può decidere",
   "jf.interval": "Ogni quante settimane (1–8)",
-  "jf.intro": "Lo sguardo regolare del team su come lavora: ai membri presenti della cerchia della serie vengono poste tre domande e rispondono al moderatore e alle persone del team di admin (in una serie di un proprietario, al moderatore e a quel proprietario), con il proprio nome, in forma anonima o per niente. Il moderatore raccoglie le risposte in temi, segue un breve scambio, e le proposte del rapporto vengono decise o vanno al proprietario come decisioni; un'adozione apre una scheda.",
+  "jf.intro": "Lo sguardo regolare del team su come lavora: ai membri presenti della cerchia della serie vengono poste tre domande e rispondono al moderatore e alle persone del team di admin (in una serie di un proprietario, al moderatore e a quel proprietario), con il proprio nome, in forma anonima o per niente. Il moderatore raccoglie le risposte in temi, segue un breve scambio, e le proposte del rapporto vengono decise o vanno al proprietario come decisioni; un'adozione apre una scheda, tranne in un progetto archiviato.",
   "jf.missed_slots": {
     "one": "{count} slot saltato",
     "other": "{count} slot saltati"
@@ -2022,7 +2022,7 @@ window.MAITY_I18N["it"] = {
   "jfa.remove": "Rimuovi",
   "jfa.report.findings": "Rilievi, uno per riga",
   "jfa.report.findings_hint": "Al massimo 50.",
-  "jfa.report.hint": "Il rapporto è il risultato del turno, per l'intero progetto oppure, in una serie di un proprietario, per quel proprietario, i suoi agenti e il moderatore. Ogni proposta della dichiarazione va al proprietario come decisione, viene decisa qui con un motivo da chi può deciderla, oppure viene lasciata fuori. Nulla viene eseguito: un'adozione apre una scheda ordinaria, tranne in un progetto archiviato.",
+  "jfa.report.hint": "Il rapporto è il risultato del turno, per l'intero progetto oppure, in una serie di un proprietario, per quel proprietario, i suoi agenti e il moderatore; un proprietario esterno al progetto il cui agente è attualmente partecipante legge una versione ridotta. Ogni proposta della dichiarazione va al proprietario come decisione, viene decisa qui con un motivo da chi può deciderla, oppure viene lasciata fuori. Nulla viene eseguito: un'adozione apre una scheda ordinaria, tranne in un progetto archiviato.",
   "jfa.report.redact_title": "Rimuovi un testo dal rapporto",
   "jfa.report.send": "Consegna il rapporto",
   "jfa.report.sending": "Consegna in corso…",

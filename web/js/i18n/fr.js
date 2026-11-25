@@ -1889,7 +1889,7 @@ window.MAITY_I18N["fr"] = {
   "jf.freq.weekly": "Hebdomadaire",
   "jf.humans_only": "seule une personne peut décider",
   "jf.interval": "Toutes les combien de semaines (1–8)",
-  "jf.intro": "Le regard régulier de l'équipe sur son fonctionnement : les membres présents du cercle de la série se voient poser trois questions et répondent à la modération et aux personnes de l'équipe d'administration (dans la série d'un propriétaire, à la modération et à ce propriétaire), sous leur nom, anonymement ou pas du tout. La modération regroupe les réponses par thèmes, un court échange suit, et les propositions du rapport sont tranchées ou soumises au propriétaire comme décisions ; une adoption ouvre une carte.",
+  "jf.intro": "Le regard régulier de l'équipe sur son fonctionnement : les membres présents du cercle de la série se voient poser trois questions et répondent à la modération et aux personnes de l'équipe d'administration (dans la série d'un propriétaire, à la modération et à ce propriétaire), sous leur nom, anonymement ou pas du tout. La modération regroupe les réponses par thèmes, un court échange suit, et les propositions du rapport sont tranchées ou soumises au propriétaire comme décisions ; une adoption ouvre une carte, sauf dans un projet archivé.",
   "jf.missed_slots": {
     "one": "{count} créneau manqué",
     "other": "{count} créneaux manqués"
@@ -2022,7 +2022,7 @@ window.MAITY_I18N["fr"] = {
   "jfa.remove": "Retirer",
   "jfa.report.findings": "Constats, un par ligne",
   "jfa.report.findings_hint": "50 au plus.",
-  "jfa.report.hint": "Le rapport est le résultat du tour, pour l'ensemble du projet ou, dans la série d'un propriétaire, pour ce propriétaire, ses agents et la modération. Chaque proposition de la déclaration est soumise au propriétaire comme décision, est tranchée ici avec un motif par quelqu'un qui peut en décider, ou est écartée. Rien n'est exécuté : une adoption ouvre une carte ordinaire, sauf dans un projet archivé.",
+  "jfa.report.hint": "Le rapport est le résultat du tour, pour l'ensemble du projet ou, dans la série d'un propriétaire, pour ce propriétaire, ses agents et la modération ; un propriétaire extérieur au projet dont l'agent est actuellement participant lit une version restreinte. Chaque proposition de la déclaration est soumise au propriétaire comme décision, est tranchée ici avec un motif par quelqu'un qui peut en décider, ou est écartée. Rien n'est exécuté : une adoption ouvre une carte ordinaire, sauf dans un projet archivé.",
   "jfa.report.redact_title": "Retirer un texte du rapport",
   "jfa.report.send": "Déposer le rapport",
   "jfa.report.sending": "Dépôt…",

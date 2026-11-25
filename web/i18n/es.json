@@ -1867,7 +1867,7 @@
   "jf.freq.weekly": "Semanal",
   "jf.humans_only": "solo una persona puede decidir",
   "jf.interval": "Cada cuántas semanas (1–8)",
-  "jf.intro": "La mirada regular del equipo sobre cómo funciona: a los miembros presentes del círculo de la serie se les hacen tres preguntas y responden a quien modera y a las personas del equipo de administración (en la serie de una persona propietaria, a quien modera y a esa persona propietaria), con su nombre, de forma anónima o no responden. Quien modera agrupa las respuestas en temas, sigue un breve intercambio, y las propuestas del informe se deciden o van a la persona propietaria como decisiones; una adopción abre una tarjeta.",
+  "jf.intro": "La mirada regular del equipo sobre cómo funciona: a los miembros presentes del círculo de la serie se les hacen tres preguntas y responden a quien modera y a las personas del equipo de administración (en la serie de una persona propietaria, a quien modera y a esa persona propietaria), con su nombre, de forma anónima o no responden. Quien modera agrupa las respuestas en temas, sigue un breve intercambio, y las propuestas del informe se deciden o van a la persona propietaria como decisiones; una adopción abre una tarjeta, salvo en un proyecto archivado.",
   "jf.missed_slots": {
     "one": "{count} franja perdida",
     "other": "{count} franjas perdidas"
@@ -2000,7 +2000,7 @@
   "jfa.remove": "Quitar",
   "jfa.report.findings": "Hallazgos, uno por línea",
   "jfa.report.findings_hint": "Como máximo 50.",
-  "jfa.report.hint": "El informe es el resultado de la ronda, para todo el proyecto o, en la serie de una persona propietaria, para esa persona propietaria, sus agentes y quien modera. Cada propuesta de la declaración va a la persona propietaria como decisión, la decide aquí con un motivo alguien que puede decidirla, o se deja fuera. No se ejecuta nada: una adopción abre una tarjeta normal, salvo en un proyecto archivado.",
+  "jfa.report.hint": "El informe es el resultado de la ronda, para todo el proyecto o, en la serie de una persona propietaria, para esa persona propietaria, sus agentes y quien modera; una persona propietaria de fuera del proyecto cuyo agente participa actualmente lee una versión limitada. Cada propuesta de la declaración va a la persona propietaria como decisión, la decide aquí con un motivo alguien que puede decidirla, o se deja fuera. No se ejecuta nada: una adopción abre una tarjeta normal, salvo en un proyecto archivado.",
   "jfa.report.redact_title": "Quitar un texto del informe",
   "jfa.report.send": "Presentar el informe",
   "jfa.report.sending": "Presentando…",

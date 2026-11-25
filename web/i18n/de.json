@@ -1867,7 +1867,7 @@
   "jf.freq.weekly": "Wöchentlich",
   "jf.humans_only": "nur ein Mensch darf entscheiden",
   "jf.interval": "Alle wie viele Wochen (1–8)",
-  "jf.intro": "Der regelmäßige Blick des Teams darauf, wie es arbeitet: Die anwesenden Mitglieder des Teilnehmerkreises der Serie bekommen drei Fragen und antworten der Moderation und den Menschen des Admin-Teams (in der Serie eines Besitzers der Moderation und diesem Besitzer), mit Namen, anonym oder gar nicht. Die Moderation bündelt die Antworten zu Themen, es folgt ein kurzer Austausch, und über die Vorschläge des Berichts wird entschieden, oder sie gehen als Entscheidungen an den Besitzer; eine Übernahme eröffnet eine Karte.",
+  "jf.intro": "Der regelmäßige Blick des Teams darauf, wie es arbeitet: Die anwesenden Mitglieder des Teilnehmerkreises der Serie bekommen drei Fragen und antworten der Moderation und den Menschen des Admin-Teams (in der Serie eines Besitzers der Moderation und diesem Besitzer), mit Namen, anonym oder gar nicht. Die Moderation bündelt die Antworten zu Themen, es folgt ein kurzer Austausch, und über die Vorschläge des Berichts wird entschieden, oder sie gehen als Entscheidungen an den Besitzer; eine Übernahme eröffnet eine Karte, außer in einem archivierten Projekt.",
   "jf.missed_slots": {
     "one": "{count} Termin verpasst",
     "other": "{count} Termine verpasst"
@@ -2000,7 +2000,7 @@
   "jfa.remove": "Entfernen",
   "jfa.report.findings": "Befunde, einer pro Zeile",
   "jfa.report.findings_hint": "Höchstens 50.",
-  "jfa.report.hint": "Der Bericht ist das Ergebnis der Runde, für das ganze Projekt oder, in der Serie eines Besitzers, für diesen Besitzer, seine Agents und die Moderation. Jeder Statement-Vorschlag geht als Entscheidung an den Besitzer, wird hier mit Begründung von jemandem entschieden, der ihn entscheiden darf, oder bleibt draußen. Nichts wird ausgeführt: Eine Übernahme eröffnet eine gewöhnliche Karte, außer in einem archivierten Projekt.",
+  "jfa.report.hint": "Der Bericht ist das Ergebnis der Runde, für das ganze Projekt oder, in der Serie eines Besitzers, für diesen Besitzer, seine Agents und die Moderation; ein Besitzer außerhalb des Projekts, dessen Agent gerade an der Runde teilnimmt, liest eine eingeschränkte Fassung. Jeder Statement-Vorschlag geht als Entscheidung an den Besitzer, wird hier mit Begründung von jemandem entschieden, der ihn entscheiden darf, oder bleibt draußen. Nichts wird ausgeführt: Eine Übernahme eröffnet eine gewöhnliche Karte, außer in einem archivierten Projekt.",
   "jfa.report.redact_title": "Einen Text aus dem Bericht entfernen",
   "jfa.report.send": "Bericht einreichen",
   "jfa.report.sending": "Wird eingereicht …",

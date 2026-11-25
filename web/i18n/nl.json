@@ -1867,7 +1867,7 @@
   "jf.freq.weekly": "Wekelijks",
   "jf.humans_only": "alleen een mens mag beslissen",
   "jf.interval": "Om de hoeveel weken (1–8)",
-  "jf.intro": "De regelmatige terugblik van het team op hoe het werkt: de aanwezige leden van de kring van de reeks krijgen drie vragen en antwoorden aan de moderator en de mensen van het adminteam (in een reeks van een eigenaar: de moderator en die eigenaar), met naam, anoniem of helemaal niet. De moderator bundelt de antwoorden tot onderwerpen, er volgt een korte uitwisseling, en over de voorstellen van het rapport wordt besloten of ze gaan als besluiten naar de eigenaar; een aanname opent een kaart.",
+  "jf.intro": "De regelmatige terugblik van het team op hoe het werkt: de aanwezige leden van de kring van de reeks krijgen drie vragen en antwoorden aan de moderator en de mensen van het adminteam (in een reeks van een eigenaar: de moderator en die eigenaar), met naam, anoniem of helemaal niet. De moderator bundelt de antwoorden tot onderwerpen, er volgt een korte uitwisseling, en over de voorstellen van het rapport wordt besloten of ze gaan als besluiten naar de eigenaar; een aanname opent een kaart, behalve in een gearchiveerd project.",
   "jf.missed_slots": {
     "one": "{count} slot gemist",
     "other": "{count} slots gemist"
@@ -2000,7 +2000,7 @@
   "jfa.remove": "Weghalen",
   "jfa.report.findings": "Bevindingen, één per regel",
   "jfa.report.findings_hint": "Hooguit 50.",
-  "jfa.report.hint": "Het rapport is het resultaat van de ronde, voor het hele project of, in een reeks van een eigenaar, voor die eigenaar, de eigen agents en de moderator. Elk standpuntvoorstel gaat als besluit naar de eigenaar, wordt hier met een reden besloten door iemand die erover mag besluiten, of wordt weggelaten. Er wordt niets uitgevoerd: een aanname opent een gewone kaart, behalve in een gearchiveerd project.",
+  "jfa.report.hint": "Het rapport is het resultaat van de ronde, voor het hele project of, in een reeks van een eigenaar, voor die eigenaar, de eigen agents en de moderator; een eigenaar van buiten het project van wie een agent nu deelnemer is, leest een beperkte versie. Elk standpuntvoorstel gaat als besluit naar de eigenaar, wordt hier met een reden besloten door iemand die erover mag besluiten, of wordt weggelaten. Er wordt niets uitgevoerd: een aanname opent een gewone kaart, behalve in een gearchiveerd project.",
   "jfa.report.redact_title": "Een tekst uit het rapport weghalen",
   "jfa.report.send": "Het rapport indienen",
   "jfa.report.sending": "Indienen…",
