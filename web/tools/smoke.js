@@ -5067,7 +5067,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(byId("join-trust") && byId("join-trust").querySelectorAll("option").map((o) => o.getAttribute("value")).join() === "member,guest"
     && byId("join-role").querySelectorAll("option").map((o) => o.getAttribute("value")).join() === "coder,reviewer,tester,designer,writer,manager,red-team,blue-team,purple-team,expert"
     && byId("join-reports") && byId("join-reports").querySelectorAll("option").map((o) => o.getAttribute("value")).join() === "hum-maintainer"
-    && byId("join-reports").value === "hum-maintainer" && !byId("join-areas") && text(main.querySelector(".join-panel")).includes("Join my agent"),
+    && byId("join-reports").value === "hum-maintainer" && byId("join-areas").parentNode.hidden && text(main.querySelector(".join-panel")).includes("Join my agent"),
     "own agents: the panel offers only member or guest, every role but ops and proxy, reports to oneself or one's own managers (§3.1), no areas");
   // The project's own roles follow there, only those on a base a member join may give: not one on ops,
   // which the hub's member limits refuse (§3.1, tsk-0e7mrvccjttn).
@@ -5167,9 +5167,12 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     const mrRefusedOwn = [mrSent.length, mrSaid()];
     byId("join-agent").value = ""; byId("join-agent").dispatch("change");
     const mrNewOff = [!mrHidden(byId("join-handle")), byId("join-handle").disabled, byId("join-display").disabled, !byId("join-new-runner").hidden];
+    // An agent already here shows its membership read-only, its areas too, in one's own form as well.
+    byId("join-agent").value = "agt-a"; byId("join-agent").dispatch("change");
+    const mrMemberAreas = [!mrHidden(byId("join-areas")), byId("join-areas").disabled];
     byId("join-agent").value = "agt-s1"; byId("join-agent").dispatch("change");
     const mrOn = { runners: mrValues("placement-new-runner"), chosen: byId("join-agent").value,
-      trusts: mrValues("join-trust"), bosses: mrValues("join-reports"), areas: !!byId("join-areas"),
+      trusts: mrValues("join-trust"), bosses: mrValues("join-reports"), areas: !mrHidden(byId("join-areas")),
       kept: [!mrHidden(byId("join-ttl")) && byId("join-ttl").disabled, !mrHidden(main.querySelector(".join-panel .join-subagents")) && !byId("join-subagents").disabled],
       shown: [!mrHidden(byId("join-trust")), !mrHidden(byId("join-role")), !mrHidden(byId("join-reports")), !mrHidden(byId("join-briefing"))],
       submit: text(mrForm().querySelectorAll("button").find((b) => b.getAttribute("type") === "submit")),
@@ -5178,7 +5181,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     expect(mrOff.includes("agt-a") && mrOff.includes("") && ["agt-a", ""].includes(mrOffChosen)
       && JSON.stringify(mrKept.agents) === JSON.stringify(mrOff) && JSON.stringify(mrKept.off) === JSON.stringify(["agt-a", ""]) && mrKept.chosen === mrOffChosen
       && mrKept.why === mrOwnWhy && mrRefusedOwn[0] === 0 && mrRefusedOwn[1] === "Not placed on the runner: " + mrOwnWhy
-      && mrNewOff.every(Boolean)
+      && mrNewOff.every(Boolean) && mrMemberAreas.every(Boolean)
       && JSON.stringify(mrOn.runners) === JSON.stringify(["rnr-m1"]) && mrOn.chosen === "agt-s1"
       && mrOn.trusts.join() === "member,guest" && mrOn.bosses.join() === "hum-maintainer" && !mrOn.areas
       && mrOn.kept.every(Boolean) && mrOn.shown.every(Boolean) && mrOn.submit === "Start on the runner" && mrOn.why,

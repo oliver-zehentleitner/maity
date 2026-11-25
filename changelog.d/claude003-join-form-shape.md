@@ -6,9 +6,9 @@
   switched off with a one-line reason, **Replace instance** is off with its reason (a start
   makes another instance), and a member's agents that a start cannot take stay listed, off,
   with the reason. Every field keeps its value when the part is turned on and off.
-- web: an agent already in the project shows its membership (trust, role, subagents, briefing,
-  and its areas where the form has that field) read-only where those fields stand, with a link
-  to its Manage; its boss is still changed here, saved before the start on a runner too, and a
+- web: an agent already in the project shows its membership (trust, role, areas, subagents,
+  briefing) read-only where those fields stand, also in a member's own join, with a link to
+  its Manage; its boss is still changed here, saved before the start on a runner too, and a
   refused start says a saved change stays saved, or that one across owners waits for consent.
   The form's fields follow the members' Manage in order and words.
 

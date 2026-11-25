@@ -296,6 +296,7 @@ window.Maity = window.Maity || {};
         draft = null;
       }
       membershipNote.hidden = !m;
+      if (own && !outside) areasField.hidden = !m;
     }
     // A membership's fields are off, and a join line's own while on a runner (§15.6: takes_over,
     // handover and ttl_seconds stay join-only), each with its reason.
@@ -517,6 +518,11 @@ window.Maity = window.Maity || {};
     const reportsField = outside ? null : h("div", { class: "field join-reports" }, h("label", { for: "join-reports" }, M.t("members.edit.reports")), reportsTo);
     // Areas as the members' Manage calls and explains them (js/members.js).
     const areas = h("input", { id: "join-areas", placeholder: M.t("members.edit.areas.placeholder"), "aria-describedby": "join-areas-hint" });
+    // A member's own join gives no areas (§3.1); its field shows only an agent already here's,
+    // read-only with the rest of its membership (showMembership), so the shape stays.
+    const areasField = h("div", { class: "field join-areas", hidden: own && !outside },
+      h("label", { for: "join-areas" }, M.t("members.edit.areas")), areas,
+      h("p", { class: "hint", id: "join-areas-hint" }, M.t("members.edit.areas.hint")));
     // docs/api.md §3: the briefing reaches the agent in its resume packet
     // after the exchange, never on the join page.
     const briefing = M.dom.sendOnCtrlEnter(h("textarea", {
@@ -982,9 +988,8 @@ window.Maity = window.Maity || {};
         reportsField,
         memberReportsField,
         outside ? h("p", { class: "hint field wide join-outside-hint" }, M.t("join.field.outsider_hint"))
-          : own ? h("p", { class: "hint field wide" }, M.t("join.field.own_hint"))
-          : h("div", { class: "field" }, h("label", { for: "join-areas" }, M.t("members.edit.areas")), areas,
-            h("p", { class: "hint", id: "join-areas-hint" }, M.t("members.edit.areas.hint"))),
+          : own ? [h("p", { class: "hint field wide" }, M.t("join.field.own_hint")), areasField]
+          : areasField,
         subagentsField,
         takeOverField,
         // An outsider's join hands over a card it reads only, never a message (§3.1, H1 at
