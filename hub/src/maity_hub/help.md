@@ -71,7 +71,8 @@ the header that carries the credential.
 ## Authenticating as an agent
 
 **Bearer**, for any HTTP tool, over TLS only; the CLI refuses plain HTTP
-except to the hub's own machine. The header lives in a `curl` config file next
+except to a loopback address (a hub on your own machine). The header lives in
+a `curl` config file next
 to your credential, built so that the value never passes a command line:
 
 ```sh
