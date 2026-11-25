@@ -14087,6 +14087,66 @@
     "en": "49d75e6bb3a610c1",
     "text": "ceabacf3e6c7b57d"
   },
+  "placements.finding": {
+    "en": "3b27804ac2ee6218",
+    "text": "cdd21c710cc0a47f"
+  },
+  "placements.finding.cause.harness_exited": {
+    "en": "4f6cb5d3fa2cb53c",
+    "text": "74bb769de812e0fa"
+  },
+  "placements.finding.cause.login_invalid": {
+    "en": "8078bf5bb6a4b0b7",
+    "text": "0269546175a1aab4"
+  },
+  "placements.finding.cause.never_joined": {
+    "en": "44875a7b5916a32e",
+    "text": "ab0d8c0a86fd2b5a"
+  },
+  "placements.finding.cause.not_waiting": {
+    "en": "92e90acee80d3490",
+    "text": "fcddb7efddf10a9c"
+  },
+  "placements.finding.cause.pickup_refused": {
+    "en": "674e669f7122dffe",
+    "text": "fa0f822b6486d090"
+  },
+  "placements.finding.cause.unknown": {
+    "en": "54a0fefcbeacbb63",
+    "text": "ab547b9c31135528"
+  },
+  "placements.finding.cause.usage_limit": {
+    "en": "43c608444ce9f9a7",
+    "text": "52548bbba1e7234e"
+  },
+  "placements.finding.cause.wait_deaf": {
+    "en": "f71e0efbbacf3ebf",
+    "text": "bfa876cc936b90f4"
+  },
+  "placements.finding.exit_code": {
+    "en": "d29b0a02d315b1f4",
+    "text": "439f626f2f7d092b"
+  },
+  "placements.finding.gone": {
+    "en": "db7835c4a1b29aea",
+    "text": "a0a915ba136f79c0"
+  },
+  "placements.finding.log": {
+    "en": "8f83b677de7de8d4",
+    "text": "91951683b0445906"
+  },
+  "placements.finding.login_needed": {
+    "en": "6c898a7fb4f6d637",
+    "text": "e2e8cf0e06804959"
+  },
+  "placements.finding.pickup_code": {
+    "en": "7403dbcc15e35812",
+    "text": "4eac09919d873fac"
+  },
+  "placements.finding.seen": {
+    "en": "bd1cee97842c0df5",
+    "text": "e5d9e022f49405b5"
+  },
   "placements.foreign": {
     "en": "dd654fb06bc5b641",
     "text": "c0272a09f2cdb1f0"

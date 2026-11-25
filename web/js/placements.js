@@ -50,7 +50,47 @@ window.Maity = window.Maity || {};
     adopted: () => M.t("placements.reason.adopted"),
     orphaned: () => M.t("placements.reason.orphaned"),
   };
+  // The causes of a runner's finding (§15.7); a code the web has no words for is shown as it comes.
+  const CAUSES = {
+    harness_exited: () => M.t("placements.finding.cause.harness_exited"),
+    not_waiting: () => M.t("placements.finding.cause.not_waiting"),
+    wait_deaf: () => M.t("placements.finding.cause.wait_deaf"),
+    never_joined: () => M.t("placements.finding.cause.never_joined"),
+    usage_limit: () => M.t("placements.finding.cause.usage_limit"),
+    login_invalid: () => M.t("placements.finding.cause.login_invalid"),
+    pickup_refused: () => M.t("placements.finding.cause.pickup_refused"),
+    unknown: () => M.t("placements.finding.cause.unknown"),
+  };
   const EVENTS = /^placement_(created|updated|reported)$/;
+
+  // Why the runner acted (§15.7, `reported.finding`): the cause in words, when it was seen and the
+  // signals that say something, then the runner's own log lines under a closed disclosure, only
+  // when the hub sent them (the runner's owner, the profile's owner, project owner and admin).
+  // Nothing for a placement without a finding. The lines are shown as text, never as markup.
+  function finding(p) {
+    const f = p.reported_current && p.reported ? p.reported.finding : null;
+    if (!f || typeof f !== "object") return null;
+    const s = f.signals || {};
+    const cause = typeof f.cause === "string" && f.cause
+      ? (Object.hasOwn(CAUSES, f.cause) ? CAUSES[f.cause]() : f.cause) : M.t("placements.finding.cause.unknown");
+    const said = [];
+    if (typeof s.pickup_code === "string" && s.pickup_code) said.push(M.t("placements.finding.pickup_code", { code: s.pickup_code }));
+    // A refused pickup never ran the harness, so "gone" says nothing there.
+    if (Number.isInteger(s.exit_code)) said.push(M.t("placements.finding.exit_code", { code: String(s.exit_code) }));
+    else if (s.process === "gone" && !s.pickup_code) said.push(M.t("placements.finding.gone"));
+    if (s.login === "needed") said.push(M.t("placements.finding.login_needed"));
+    const lines = Array.isArray(f.log) ? f.log.filter((l) => l && typeof l.line === "string") : [];
+    return [
+      h("dt", null, M.t("placements.finding")),
+      h("dd", { class: "placement-finding" },
+        h("span", { class: "placement-finding-cause" }, cause),
+        f.seen_at ? h("span", { class: "muted" }, " · ", M.t("placements.finding.seen", { ago: formatAgo(f.seen_at, M.api.now()) })) : null,
+        said.map((x) => [" · ", x]),
+        lines.length ? h("details", { class: "placement-log" },
+          h("summary", null, M.t("placements.finding.log")),
+          h("pre", null, lines.map((l) => (l.at ? formatTime(l.at) + "  " : "") + l.line).join("\n"))) : null),
+    ];
+  }
 
   // What the runner says, or that it has not acted on this generation yet.
   function stateLine(ctx, p) {
@@ -254,7 +294,8 @@ window.Maity = window.Maity || {};
           h("dt", null, M.t("placements.reported")), h("dd", null, stateLine(ctx, p),
             h("span", { class: "muted placement-generation" }, " · ", M.t("placements.generation", { generation: String(p.generation) }),
               p.fresh_session ? [" · ", M.t("placements.fresh_session")] : null,
-              p.reported && p.reported.reported_at ? [" · ", M.t("placements.last_report", { ago: formatAgo(p.reported.reported_at, M.api.now()) })] : null))),
+              p.reported && p.reported.reported_at ? [" · ", M.t("placements.last_report", { ago: formatAgo(p.reported.reported_at, M.api.now()) })] : null)),
+          finding(p)),
         actions(p),
         // The runner's owner sees how to look at it (§15.5: theirs only),
         // each command in a box of its own that scrolls, with Copy.
