@@ -220,7 +220,7 @@ always encodes.
 | 401 | `timestamp_skew` | `Maity-Timestamp` outside the window; `details.server_time` |
 | 401 | `nonce_reused` | nonce seen before within the window |
 | 401 | `webhook_signature` | a forge webhook delivery whose signature is missing or wrong, or for a project without a webhook secret (§17.4); `details` is `{}` |
-| 403 | `forbidden` | authenticated, but the membership's trust and role lack the scope; `details.scope`. Also a runner caller on any route outside `/runner/*` and `/projects/*`, and a human or agent on `/runner/*` (§15.1). `details.reason: humans_only` when the call is one no agent may make (§2.3), `handle` in an agent's `PATCH /me` among them (§6.24), an agent's claim with `holder`, or its `assign`, that would give a card to an agent with trust `outside` (§6.5, "Only a human, or a confirmation, puts an outsider to work"), and an agent's answer to the lapse request of an outsider's claim request where only a human's answer acts (§6.5, "The lapse"; not built yet, tsk-5q5emh2nm61k); `details.reason: agents_only` when a human makes a call only an agent makes, `GET /me/events` (§8.3.1; not built yet) and a pull request watch (§11.6; not built yet); `details.reason: observer` when a human who reads a group chat along posts in it or manages it (setting its own agent's `wake` excepted, §9.2), and on a post, chat change or redaction of an owner outside the project, its own agent's `wake` again excepted (§9.2); `not_a_participant` when someone who can read a group-chat message but is not in the chat now redacts it, an observer included, unless the chat has closed and it was a human participant (§8.5); `details.reason: method_disabled` for a sign-in method the instance turned off (§2.6.6); `details.reason: session_too_new` for a call the calling session is too young for: ending older sessions from a session younger than 1 hour that is not in good standing (§2.6.5), approving a change of the verified address from a session younger than 24 hours (§2.6.3); `details.reason: not_in_good_standing` for a call only a session in good standing may make (§2.6.5): ending a session in good standing, confirming a sign-in, approving, rejecting or replacing a held address change (§2.6.3), a human's call on a card's restricted text (§6.4), and accepting an invitation (§3.4); `details.reason: not_earlier` for confirming a sign-in from the session it reports on or from one created after it (§2.6.5); `details.reason: objection_open` for an agent call that would move or end anything on a card under an objection hold (§6.19) — `assign`, `release` (the holder's own included), `claim`, `PATCH assigned_to`, a status change to `done` or `cancelled`, a new takeover, or the withdrawal of the objected one; other reasons are named where they apply (`role_mismatch`, `not_eligible` and `vendor_mismatch` on a review leg's change of holder, §6.32, not built yet; `runner_owner_only` §15.6, `owner_sets_wake` §9.2, `same_agent_review` §6.18, `party_to_takeover`, `admin_team_only` and `cross_owner` §6.19, the last for every takeover between two owners' sides while those are not built); `details.reason: isolated` for every call of an isolated agent's credentials into its project except `GET /me` and the resume packet (§6.2, "Isolation"), for an instance in several projects also a project-less write naming the isolated project (§6.2), and `GET /me/events` while every attached membership is isolated (§8.3.1; not built yet); `details.reason: pending_consent` when an agent other than the asker withdraws a pending cross-owner `reports_to` request or supersedes it with a `PATCH` (§6.2); `details.reason: proxy_relays_only` when a proxy answers a request of any class without `on_behalf_of` an owner, `proxy_needs_decision` when a proxy calls under a governance scope without `Maity-On-Request` naming its own request answered `go` directly by a human owner for exactly this call (method, path, query and body hash, §7), unused and within 24 hours, with `details.on_request` one of `missing`, `not_bound`, `unanswered`, `declined`, `not_owner`, `used`, `expired`, `mismatch` (§2.3), and `owner_only` when a caller without trust `owner` grants trust `owner` or `admin` or the role `proxy`, or removes or demotes a member with trust `owner` (§2.3), or sets `policy.outside_claims` to `agent` or `direct` or sets `policy.own_agents` (§6.1), or removes an outsider (`DELETE …/outsiders/{handle}`) one of whose agents it could not remove alone, and then nothing of that call takes effect (§3.1, "The outsiders of a project"); `action_needs_owner` when anyone but a human with trust `owner` answering directly — a proxy relaying with `on_behalf_of` included — answers a request carrying `action` (§2.3, §7); `details.reason: may_not_propose` when an agent that is neither an admin agent of the project nor the human's proxy proposes a human's preferences (§19.4); `details.reason: registration_closed` for `POST /auth/register` while mail is incomplete or disabled (§2.7.1; mode `closed` alone answers `202` with mail and drops the request in the background, so that an invited address is not told apart); `details.reason: account_pending` for every call of an account that waits for approval, except the few §2.7.5 lists; `details.reason: second_factor_required` for every call of a session that has not given the second factor yet, except the few §2.8.2 lists, and for turning the second factor off while the policy requires it (§2.8.1); `second_factor_enrolment_required` for every call of a session that must enrol first (§2.8.5); `step_up_required` for a sensitive call without the second factor in the last minutes (§2.8.4); `member_join_limit` (with `details.field`) and `member_agents_max` (with `details.max`) for a member's join beyond the limits of "Bringing your own agent" (§3.1), `member_join_limit` also for an owner's role change to a role a member join may not give and for a change of an outsider's agent's `areas`, `capabilities` or `reports_to` beyond what it keeps (§2.3, "Outside"), and `join_rule` for an owner's change of `role`, `subagents` or `subagents_language` while they could not create a join for the agent now (§3.1, "Who changes it", "The owner changes the role"); `project_not_allowed` for a join of an agent into a project its owner's `allowed_projects` does not name (§6.3); `not_in_line` for a `line:lead` call on a member or card outside the caller's reach (§2.3, "The manager"); `not_your_bridge` and `bridge_no_governance` for a bridge's `Maity-For` call on an agent it has no connection to, or under a governance scope or `line:lead` (§2.3, "The bridge"), `bridge_observer` for a `chat` into a direct conversation with `Maity-For` (§8.4, §9.1), `agent_owner` for a human who does not own the served agent connecting a bridge (§2.3); `own_account` for an instance admin resetting their own second factor (§2.8.3); `reauthentication_required` for a change of the second factor of a password account without the password in the last 10 minutes (§2.8.1); `installation_not_yours`, `not_organisation_admin`, `organisation_installation` and `link_state` when linking a forge installation fails its checks (§11.4); `org_role` when the caller's role in an organisation does not allow the call (§6.26); `restricted` for a caller outside the restricted-access set on a card's restricted text, and `bridge_no_restricted` for a `Maity-For` call there (§6.1, §6.4); `not_open_to_outsiders` for a claim by an outsider's agent (trust `outside`) on a card `policy.looking_for_coders` does not open to it, or in a project that is not public for outsiders (§6.5, "An outsider's claim"), and for every takeover that would leave such an agent holding the card, whoever starts it (an agent's claim with `holder`, or its `assign`, that gives it a card is `humans_only` instead; §6.5, "Only a human, or a confirmation, puts an outsider to work"); until the claim request is built (not built yet, tsk-5q5emh2nm61k), also for every claim of its own (§6.5, "Until the claim request is built"), `outside_trust` when a caller with trust `outside` names a card's `open_to_outsiders` on `POST …/tasks` or `PATCH …/tasks/{id}`, whatever the value (§2.3, "Outside"; §6.4), or writes or deletes an entry of a role's memory (§19.2), and `outside_claims_max` (with `details.max`) for a claim beyond `policy.outside_claims_max` (§6.1; §6.5, "An outsider's claim"), `own_approvals` (with `details.needed` and `details.counted`) for a move to `done` of outsiders' work that has fewer own approvals than `policy.own_approvals` (§2.3, "Own approvals"; §6.4), `blocked` for a join an outsider the project's admins blocked creates (§3.1, "The outsiders of a project"), and `not_a_confirmer` for `…/claim/confirm` or `…/claim/decline` by a project reader who is not among the claim's confirmers now, the human who owns the requesting agent and every agent of that owner included, checked before the `request_id` is looked up, for an `assign` or a claim with `holder` that would confirm a waiting request by such a caller, and for an answer to the lapse request by one (§6.5, "Who confirms"; not built yet, tsk-5q5emh2nm61k) |
+| 403 | `forbidden` | authenticated, but the membership's trust and role lack the scope; `details.scope`. Also a runner caller on any route outside `/runner/*` and `/projects/*`, and a human or agent on `/runner/*` (§15.1). `details.reason: humans_only` when the call is one no agent may make (§2.3), `handle` in an agent's `PATCH /me` among them (§6.24), an agent's claim with `holder`, or its `assign`, that would give a card to an agent with trust `outside` (§6.5, "Only a human, or a confirmation, puts an outsider to work"), and an agent's answer to the lapse request of an outsider's claim request where only a human's answer acts (§6.5, "The lapse"; not built yet, tsk-5q5emh2nm61k); `details.reason: agents_only` when a human makes a call only an agent makes, `GET /me/events` (§8.3.1; not built yet) and a pull request watch (§11.6; not built yet); `details.reason: observer` when a human who reads a group chat along posts in it or manages it (setting its own agent's `wake` excepted, §9.2), and on a post, chat change or redaction of an owner outside the project, its own agent's `wake` again excepted (§9.2); `not_a_participant` when someone who can read a group-chat message but is not in the chat now redacts it, an observer included, unless the chat has closed and it was a human participant (§8.5); `details.reason: method_disabled` for a sign-in method the instance turned off (§2.6.6); `details.reason: session_too_new` for a call the calling session is too young for: ending older sessions from a session younger than 1 hour that is not in good standing (§2.6.5), approving a change of the verified address from a session younger than 24 hours (§2.6.3); `details.reason: not_in_good_standing` for a call only a session in good standing may make (§2.6.5): ending a session in good standing, confirming a sign-in, approving, rejecting or replacing a held address change (§2.6.3), a human's call on a card's restricted text (§6.4), and accepting an invitation (§3.4); `details.reason: not_earlier` for confirming a sign-in from the session it reports on or from one created after it (§2.6.5); `details.reason: objection_open` for an agent call that would move or end anything on a card under an objection hold (§6.19) — `assign`, `release` (the holder's own included), `claim`, `PATCH assigned_to`, a status change to `done` or `cancelled`, a new takeover, or the withdrawal of the objected one; other reasons are named where they apply (`role_mismatch`, `not_eligible` and `vendor_mismatch` on a review leg's change of holder, §6.32, not built yet; `runner_owner_only` §15.6, `owner_sets_wake` §9.2, `same_agent_review` §6.18, `party_to_takeover`, `admin_team_only` and `cross_owner` §6.19, the last for every takeover between two owners' sides while those are not built); `details.reason: isolated` for every call of an isolated agent's credentials into its project except `GET /me` and the resume packet (§6.2, "Isolation"), for an instance in several projects also a project-less write naming the isolated project (§6.2), and `GET /me/events` while every attached membership is isolated (§8.3.1; not built yet); `details.reason: pending_consent` when an agent other than the asker withdraws a pending cross-owner `reports_to` request or supersedes it with a `PATCH` (§6.2); `details.reason: proxy_relays_only` when a proxy answers a request of any class without `on_behalf_of` an owner, `proxy_needs_decision` when a proxy calls under a governance scope without `Maity-On-Request` naming its own request answered `go` directly by a human owner for exactly this call (method, path, query and body hash, §7), unused and within 24 hours, with `details.on_request` one of `missing`, `not_bound`, `unanswered`, `declined`, `not_owner`, `used`, `expired`, `mismatch` (§2.3), and `owner_only` when a caller without trust `owner` grants trust `owner` or `admin` or the role `proxy`, or removes or demotes a member with trust `owner` (§2.3), or sets `policy.outside_claims` to `agent` or `direct` or sets `policy.own_agents` (§6.1), or removes an outsider (`DELETE …/outsiders/{handle}`) one of whose agents it could not remove alone, and then nothing of that call takes effect (§3.1, "The outsiders of a project"); `action_needs_owner` when anyone but a human with trust `owner` answering directly — a proxy relaying with `on_behalf_of` included — answers a request carrying `action` (§2.3, §7); `details.reason: may_not_propose` when an agent that is neither an admin agent of the project nor the human's proxy proposes a human's preferences (§19.4); `details.reason: registration_closed` for `POST /auth/register` while mail is incomplete or disabled (§2.7.1; mode `closed` alone answers `202` with mail and drops the request in the background, so that an invited address is not told apart); `details.reason: account_pending` for every call of an account that waits for approval, except the few §2.7.5 lists; `details.reason: second_factor_required` for every call of a session that has not given the second factor yet, except the few §2.8.2 lists, and for turning the second factor off while the policy requires it (§2.8.1); `second_factor_enrolment_required` for every call of a session that must enrol first (§2.8.5); `step_up_required` for a sensitive call without the second factor in the last minutes (§2.8.4); `member_join_limit` (with `details.field`) and `member_agents_max` (with `details.max`) for a member's join beyond the limits of "Bringing your own agent" (§3.1), `member_join_limit` also for an owner's role change to a role a member join may not give and for a change of an outsider's agent's `areas`, `capabilities` or `reports_to` beyond what it keeps (§2.3, "Outside"), and `join_rule` for an owner's change of `role`, `subagents` or `subagents_language` while they could not create a join for the agent now (§3.1, "Who changes it", "The owner changes the role"); `project_not_allowed` for a join of an agent into a project its owner's `allowed_projects` does not name (§6.3); `not_in_line` for a `line:lead` call on a member or card outside the caller's reach (§2.3, "The manager"); `not_your_bridge` and `bridge_no_governance` for a bridge's `Maity-For` call on an agent it has no connection to, or under a governance scope or `line:lead` (§2.3, "The bridge"), `bridge_observer` for a `chat` into a direct conversation with `Maity-For` (§8.4, §9.1), `agent_owner` for a human who does not own the served agent connecting a bridge (§2.3); `own_account` for an instance admin resetting their own second factor (§2.8.3); `reauthentication_required` for a change of the second factor of a password account without the password in the last 10 minutes (§2.8.1); `installation_not_yours`, `not_organisation_admin`, `organisation_installation` and `link_state` when linking a forge installation fails its checks (§11.4); `org_role` when the caller's role in an organisation does not allow the call (§6.26); `restricted` for a caller outside the restricted-access set on a card's restricted text, and `bridge_no_restricted` for a `Maity-For` call there (§6.1, §6.4); `not_open_to_outsiders` for a claim by an outsider's agent (trust `outside`) on a card `policy.looking_for_coders` does not open to it, or in a project that is not public for outsiders (§6.5, "An outsider's claim"), and for every takeover that would leave such an agent holding the card, whoever starts it (an agent's claim with `holder`, or its `assign`, that gives it a card is `humans_only` instead; §6.5, "Only a human, or a confirmation, puts an outsider to work"); until the claim request is built (not built yet, tsk-5q5emh2nm61k), also for every claim of its own (§6.5, "Until the claim request is built"), `outside_trust` when a caller with trust `outside` names a card's `open_to_outsiders` on `POST …/tasks` or `PATCH …/tasks/{id}`, whatever the value (§2.3, "Outside"; §6.4), or writes or deletes an entry of a role's memory (§19.2), and `outside_claims_max` (with `details.max`) for a claim beyond `policy.outside_claims_max` (§6.1; §6.5, "An outsider's claim"), `own_approvals` (with `details.needed` and `details.counted`) for a move to `done` of outsiders' work that has fewer own approvals than `policy.own_approvals` (§2.3, "Own approvals"; §6.4), `blocked` for a join an outsider the project's admins blocked creates (§3.1, "The outsiders of a project"), and `not_a_confirmer` for `…/claim/confirm` or `…/claim/decline` by a project reader who is not among the claim's confirmers now, the human who owns the requesting agent and every agent of that owner included, checked before the `request_id` is looked up, for an `assign` or a claim with `holder` that would confirm a waiting request by such a caller, for an `assign` naming an outsider's agent as the assignee, or a claim with `holder` naming it, by the human who owns that agent, whether or not a request waits (the lead's ruling of 2026-11-25; §6.5, "Only a human, or a confirmation, puts an outsider to work"), and for an answer to the lapse request by one (§6.5, "Who confirms"; not built yet, tsk-5q5emh2nm61k) |
 | 403 | `signature_required` | a valid agent credential presented as `Bearer` in a project whose policy has `signing: required` (§2.2), and on every call of a credential attached to any such project, an isolated attachment included and a detached one not (§2.2, §6.17); `details: {"cli": <the install line, §3.2>, "then": "maity resume"}`. A valid runner credential presented as `Bearer`, always, whatever any project's policy says (§15.1); `details` is `{}` |
 | 403 | `insecure_transport` | a bearer credential, a login, a cookie call, the join exchange or the pairing exchange over plain HTTP from a non-loopback address without `MAITY_ALLOW_PLAIN_HTTP` (§2.5) |
 | 403 | `csrf_mismatch` | cookie session without a matching `X-CSRF-Token` |
@@ -1288,9 +1288,11 @@ contract names for it, and never more:
   (not built yet, tsk-5q5emh2nm61k) it claims nothing itself, `direct`
   included (§6.5, "Until the claim request is built");
 - a card reaches it otherwise only from a human of the project with
-  `tasks:admin`, never from an agent's claim with `holder`, an agent's
-  `assign`, a takeover or cover (§6.5, "Only a human, or a
-  confirmation, puts an outsider to work");
+  `tasks:admin` who does not own it, never from an agent's claim with
+  `holder`, an agent's `assign`, a takeover or cover, and never by its
+  own owner's `assign` or claim with `holder` (`not_a_confirmer`, the
+  lead's ruling of 2026-11-25; not built yet, tsk-5q5emh2nm61k) (§6.5,
+  "Only a human, or a confirmation, puts an outsider to work");
 - it never sets a card's `open_to_outsiders`, on a card it created or
   holds either (`forbidden`, `details.reason: outside_trust`, §6.4), so
   no outsider opens cards to outsiders;
@@ -4773,8 +4775,8 @@ other settings say (`agent_owners` included):
   `[{id, handle, trust, role, isolated}]`, each field as the member view
   gives it (§6.2), `open_joins` the ids of the
   open joins they created (§3.1), `claims` the cards their agents hold
-  or wait for as `[{task_id, member_id, pending}]` (`pending: true` for
-  a claim request, §6.5), `agents_max` the own quota or `null`, and
+  or wait for as `[{task_id, member_id, pending, request_id}]`
+  (`pending: true` for a claim request, §6.5), `agents_max` the own quota or `null`, and
   `blocked` `null` or `{since, by}` (`by` the id of the human who
   blocked). The item carries no `contributions` yet: the outsider's
   record (§6.30, C.1) joins it with part C.
@@ -4792,8 +4794,8 @@ other settings say (`agent_owners` included):
       "agents": [ { "id": "agt-x", "handle": "rita-coder", "trust": "outside", "role": "coder", "isolated": false } ],
       "open_joins": [],
       "claims": [
-        { "task_id": "tsk-0004", "member_id": "agt-x", "pending": true },
-        { "task_id": "tsk-0007", "member_id": "agt-x", "pending": false }
+        { "task_id": "tsk-0004", "member_id": "agt-x", "pending": true, "request_id": "clr-7k2m9q4w1x3z" },
+        { "task_id": "tsk-0007", "member_id": "agt-x", "pending": false, "request_id": null }
       ],
       "agents_max": null,
       "blocked": null }
@@ -4802,14 +4804,16 @@ other settings say (`agent_owners` included):
 }
 ```
 
-- A `claims` item is exactly `{task_id, member_id, pending}`: `task_id`
-  the card, `member_id` the agent that holds it or waits for it,
-  `pending` `false` for a card the agent holds (an expired lease
-  included) and `true` for its waiting claim request. The list is
-  ordered by `task_id`, then `member_id`, and is `[]` when there is
-  none. A waiting request's `id` is not in the item; a confirmer reads
-  it from the card's `claim_requests` (§6.4). `agents` is ordered by
-  `handle`.
+- A `claims` item is exactly `{task_id, member_id, pending,
+  request_id}`: `task_id` the card, `member_id` the agent that holds it
+  or waits for it, `pending` `false` for a card the agent holds (an
+  expired lease included) and `true` for its waiting claim request, and
+  `request_id` the `clr-` id of that waiting request while `pending` is
+  `true` (the `id` of the card's `claim_requests` item, §6.4, which
+  `…/claim/confirm` and `…/claim/decline` take) and `null` otherwise
+  (the lead's ruling of 2026-11-25). The list is ordered by `task_id`,
+  then `member_id`, and is `[]` when there is none. `agents` is ordered
+  by `handle`.
 - A member who may not read it is `forbidden` (`details.scope:
   members:admin`), and anyone who is no member, an outsider included,
   gets `not_found`.
@@ -8933,7 +8937,7 @@ not `done` or `cancelled`, for every kind and every caller.
 | `POST /projects/{owner}/{slug}/tasks/{id}/claim` | `tasks:write` | §6.5; by an agent on a card under an objection hold `forbidden` (`objection_open`, §6.19); by an outsider's agent under `policy.outside_claims` `human` or `agent`, `202` with the task and `claim_request` (§6.5, "The claim request"; not built yet, tsk-5q5emh2nm61k) |
 | `POST /projects/{owner}/{slug}/tasks/{id}/release` | the holding instance, or `tasks:admin` after expiry, or `line:lead` after expiry when the holder is in the caller's reach (§2.3) | gives the card back: status `open`, claim `null`; an agent releasing another's claim is `takeover_required` while its lease is active, and recorded as a `lease_expired` takeover after expiry (§6.19) unless a takeover of the card is open (`takeover_open`); on a card under an objection hold every agent's release, the holding instance's own included, is `forbidden` (`objection_open`, §6.19); an agent releasing a claim a human holds is `forbidden` (`humans_only`), expired or not |
 | `POST /projects/{owner}/{slug}/claims/renew` (not built, §6.5) | any member; renews only the caller's own claims, or with `Maity-For` the served agent's (§2.3) | `200 {"claims": [{task_id, title, lease_until}]}` (§6.5, "Before a lease runs out") |
-| `POST /projects/{owner}/{slug}/tasks/{id}/assign` | `tasks:admin`; the lead instance, for its own agent (§6.18); `line:lead` when the assignee, the current assignee and the current claim holder, each where there is one, are the caller or in its reach (§2.3) | `{assignee, instance?}`; sets `assigned_to` and `assigned_instance`; if the card is held with an expired lease, the claim moves to the assignee — by an agent recorded as a `lease_expired` takeover (§6.19), unless a takeover of the card is open (`takeover_open`); on a card under an objection hold an agent's assign is `forbidden` (`objection_open`, §6.19); with an active lease a human gets `lease_active` and an agent `takeover_required`; an agent moving a card a human holds is `forbidden` (`humans_only`), expired or not; an `assignee` with trust `guest` is `invalid` (`details.fields.assignee: "guest"`, §2.3), as is `assigned_to` naming one on `POST` and `PATCH` (`details.fields.assigned_to: "guest"`); an expired claim moves to an assignee with trust `outside` only by a human with `tasks:admin` (§6.5, "Only a human, or a confirmation, puts an outsider to work", which gives the refusals and their order); on a card where an outsider's claim request waits (§6.5, "Settled by another call"; not built yet, tsk-5q5emh2nm61k), an assign to another member declines it with `taken`, and an assign to the requesting agent is its confirmation, by a human confirmer only |
+| `POST /projects/{owner}/{slug}/tasks/{id}/assign` | `tasks:admin`; the lead instance, for its own agent (§6.18); `line:lead` when the assignee, the current assignee and the current claim holder, each where there is one, are the caller or in its reach (§2.3) | `{assignee, instance?}`; sets `assigned_to` and `assigned_instance`; if the card is held with an expired lease, the claim moves to the assignee — by an agent recorded as a `lease_expired` takeover (§6.19), unless a takeover of the card is open (`takeover_open`); on a card under an objection hold an agent's assign is `forbidden` (`objection_open`, §6.19); with an active lease a human gets `lease_active` and an agent `takeover_required`; an agent moving a card a human holds is `forbidden` (`humans_only`), expired or not; an `assignee` with trust `guest` is `invalid` (`details.fields.assignee: "guest"`, §2.3), as is `assigned_to` naming one on `POST` and `PATCH` (`details.fields.assigned_to: "guest"`); an expired claim moves to an assignee with trust `outside` only by a human with `tasks:admin` (§6.5, "Only a human, or a confirmation, puts an outsider to work", which gives the refusals and their order), and the human who owns such an assignee assigns it nothing, `forbidden` with `not_a_confirmer` whether or not a request waits (the lead's ruling of 2026-11-25; not built yet, tsk-5q5emh2nm61k); on a card where an outsider's claim request waits (§6.5, "Settled by another call"; not built yet, tsk-5q5emh2nm61k), an assign to another member declines it with `taken`, and an assign to the requesting agent is its confirmation, by a human confirmer only |
 | `POST /projects/{owner}/{slug}/tasks/{id}/takeover` | `tasks:write` | §6.19; by an agent on a card under an objection hold `forbidden` (`objection_open`) |
 | `DELETE /projects/{owner}/{slug}/tasks/{id}/objection-hold` (not built, §6.19) | the human who objected (member or not), or a human with `tasks:admin` | lifts the objection hold (§6.19); `200` with the card for a member, `204` with no body for an owner who is not a member of the project (who may not read the card); agents `forbidden` (`humans_only`) |
 | `POST /projects/{owner}/{slug}/tasks/{id}/checkpoint` | the holding instance, with `tasks:write` (§2.3 "The expert") | `{last_step, next_step, branch?, head?}`; the CLI fills `branch` and `head` from git; over bearer they are typed, and `checkpoint.verification` says which |
@@ -9571,9 +9575,16 @@ body is the task as the `200` of a claim has it (§6.4), plus one key
   card, kept by the database.
 - A replay with the same `Idempotency-Key` (§1.5) answers the same
   `202` and files nothing.
-- Filing a request, and settling it, emits no `task_updated`: the
-  card's readers learn of them from `claim_requested`, `task_claimed` and
-  `claim_declined` (§8.2).
+- Filing a request emits no `task_updated`: `claim_requested` (§8.2)
+  tells of it. Settling it, by a confirmation or a decline, the hub's
+  declines and those of "The re-check" and "Settled by another call"
+  (below) included, emits a `task_updated` whose `fields` name
+  `claim_requests`, with its new value, so the confirmers' boards drop
+  the request (the lead's ruling of 2026-11-25). Its audience is the
+  card's readers, as for every `task_updated` (§8.2), and the outsider
+  rules of tsk-n0ef3c9j4s6f still apply to it: an outsider reads no
+  project event (§2.3). `claim_declined` still reaches the requesting
+  instance alone. A lapse settles nothing and emits none.
 
 **Who confirms.** The confirmers are, at the moment of each call (the
 lead's ruling of 2026-11-25, Q6):
@@ -9597,7 +9608,14 @@ whatever else holds: the human who owns the requesting agent, a member
 of the project or not, and every agent of that owner, so nobody
 confirms their own agent's claim (the lead's ruling of 2026-11-25, Q6;
 §2.3 "Outside": an outsider's agent keeps trust `outside` when its
-owner later joins). The confirmers read `GET …/outsiders` (§3.1, "The
+owner later joins). By the same rule and with the same error, the human
+who owns an outsider's agent does not place it either: their `assign`
+naming it as the assignee, or their claim with `holder` naming it, is
+`forbidden` with `details.reason: not_a_confirmer`, whether or not a
+request of that agent waits, `tasks:admin` and trust `owner`
+notwithstanding, and nothing of the call takes effect (the lead's ruling
+of 2026-11-25; "Only a human, or a confirmation, puts an outsider to
+work", below). The confirmers read `GET …/outsiders` (§3.1, "The
 outsiders of a project"), as `members:admin` does; under `direct`,
 those `agent` would name read it, humans and agents.
 
@@ -9640,12 +9658,15 @@ rulings of 2026-11-25, Q4, Q5):
   moves it to its session (as for a claim with `holder`, above), the
   lease starting now (`lease_until = now + policy.lease_seconds`), and
   `claim_requests: []`. The hub emits `task_claimed` with `confirmed_by`
-  (§8.2), then the `task_updated` of the status change (§6.4). The
-  `200` body is the task view.
+  (§8.2), then one `task_updated` of the status change (§6.4) whose
+  `fields` name `claim_requests` as well (above, "The claim request").
+  The `200` body is the task view.
 - `decline` settles the request with the given `reason`, `declined`
   when none is given, and leaves the card `open` with
-  `claim_requests: []`. The hub emits `claim_declined` (§8.2) and files
-  the owner's notice (below). The `200` body is the task view.
+  `claim_requests: []`. The hub emits `claim_declined` (§8.2) and a
+  `task_updated` with `fields: ["claim_requests"]` (above, "The claim
+  request"), and files the owner's notice (below). The `200` body is the
+  task view.
 - A second `confirm` or `decline` of a settled request is `not_found`
   (step 4), so of two confirmers at once one acts and the other gets
   `not_found`. A replay with the same `Idempotency-Key` answers what
@@ -9672,8 +9693,9 @@ the first that applies is the reason:
 On one of these, the call answers `409 conflict` with that
 `details.reason` (`details.max` with `outside_claims_max`). The request
 is declined with that reason, `decided_by` the caller, and
-`claim_declined` and the owner's notice follow as for a decline. The
-decline stands although the call answers `409`.
+`claim_declined`, the `task_updated` of `claim_requests` and the owner's
+notice follow as for a decline. The decline stands although the call
+answers `409`.
 
 When none of them applies, two refusals leave the request pending,
 answered as they are today without declining it:
@@ -9746,8 +9768,11 @@ waiting. It is never confirmed by itself (the lead's ruling of
 
 **Settled by another call.** These decline a pending request with the
 reason given, `decided_by` the member whose call it was, or `null` for
-the hub, and each emits `claim_declined` and files the owner's notice
-(the lead's rulings of 2026-11-25, Q10, Q11):
+the hub, and each emits `claim_declined` and a `task_updated` whose
+`fields` name `claim_requests` (in the `task_updated` the call makes
+anyway when it makes one, else one of its own; "The claim request"
+above), and files the owner's notice (the lead's rulings of 2026-11-25,
+Q10, Q11):
 
 - a member's own claim that takes the card, or an admin's claim with
   `holder` naming another member: `taken`;
@@ -9778,19 +9803,27 @@ An admin's `assign` to an outsider's agent, or a human admin's claim
 with `holder` naming it, on a card where no request of that agent
 waits, needs no confirmation. Such a call is a placement, whatever
 `outside_claims` and `looking_for_coders` say, and `outside_claims_max`
-does not refuse it (§6.1). Only a human makes it (below).
+does not refuse it (§6.1). Only a human makes it, and never the human
+who owns the agent (`not_a_confirmer`, "Who confirms" above; below).
 
 **Only a human, or a confirmation, puts an outsider to work.** The lead's
 ruling of 2026-11-25 (Q15, Q16), which keeps as the rule what the
 maintainer's interim of 2026-11-23 (req-yzt08c2qgx6g, option o1)
 refused. Besides its own confirmed claim (above), a card reaches an
-agent with trust `outside` only from a human member with `tasks:admin`:
-`POST …/tasks/{id}/claim` with `holder` naming the agent, which takes the
-card for it at once, or an `assign` (§6.4). The same call from an agent
-is `forbidden` with `details.reason: humans_only`, an admin agent and
-the coordinator's agent included. From a human without `tasks:admin`, a
-manager moving a card within its line (§2.3, "The manager") included,
-it is `forbidden` with `details.scope: tasks:admin`. Further:
+agent with trust `outside` only from a human member with `tasks:admin`
+who does not own it: `POST …/tasks/{id}/claim` with `holder` naming the
+agent, which takes the card for it at once, or an `assign` (§6.4). The
+same call from an agent is `forbidden` with `details.reason:
+humans_only`, an admin agent and the coordinator's agent included. From
+a human without `tasks:admin`, a manager moving a card within its line
+(§2.3, "The manager") included, it is `forbidden` with `details.scope:
+tasks:admin`. From the human who owns the agent, it is `forbidden` with
+`details.reason: not_a_confirmer`, whether or not a request of that
+agent waits: the rule of self-confirmation ("Who confirms" above), the
+lead's ruling of 2026-11-25 (not built yet, tsk-5q5emh2nm61k). For that
+human this covers every `assign` naming the agent as the assignee, one
+that moves no claim included, so the owner neither places the agent
+nor confirms its claim by an assignment. Further:
 
 - a takeover (§6.19) that would leave such an agent holding the card is
   `forbidden` with `details.reason: not_open_to_outsiders`, whoever
@@ -9813,7 +9846,13 @@ caller learns a card's state from a call it may not make anyway:
   coordinator gate (`coordinator_unavailable`, §6.12) and the holder's
   resolution to a member (`invalid` for a non-member or a guest); before
   the holder's instance (`instance_required`), `paused`,
-  `already_claimed`, `invalid_transition` and `assign_only`;
+  `already_claimed`, `invalid_transition` and `assign_only`. The owner's
+  `not_a_confirmer` stands at the same place as `humans_only`;
+- **the owner's `assign` naming its own outsider's agent:** after the
+  caller's right to assign, the coordinator gate and the assignee's
+  resolution to a member (`invalid` for a guest), before every other
+  check of §6.4 and §6.19 for that call, so it is refused the same way
+  whatever the card's claim and requests;
 - **a takeover:** where its receiver is resolved, after `not_claimed`,
   the coordinator gate, `humans_only` for a card a human holds,
   `takeover_open` and, for a named receiver, its resolution to a member
@@ -9854,6 +9893,9 @@ notice to the outside owner:
   A card reaches such an agent only as "Only a human, or a
   confirmation, puts an outsider to work" says: a human's claim with
   `holder`, or a human's `assign` that moves an expired claim to it.
+  The owner's refusal there (`not_a_confirmer`) is not built yet
+  either: until it is, the human who owns the agent places it as any
+  human with `tasks:admin` does.
 
 The reason codes, one list for `claim_declined` and the notice below:
 `declined`, `not_a_fit`, `duplicate` (a confirmer's decline), `taken`,
@@ -15630,14 +15672,14 @@ learns its content.
 | `chat_verdict` (§9.7) | the chat's participants at write time, a waiting agent not (§9.6); a direct conversation's two parties | `{conversation: {id, kind, title}, message_seq, author, value, previous, sentence}`: `author` the message's author, `value` `agree`, `disagree` or `null` (taken back), `previous` the caller's value before; actor the human who gave it. Wakes the message's author when it is an agent, by its `wake` rule (§6.18), nobody else |
 | `attachment_deleted` | the audience of the attachment's message, for a group chat its current participants but a waiting agent (§9.6) (read along by their observers, §9.2), as for `event_redacted` (§8.5); readable as that message is, so a conversation's stays out of the admin see-all (below); wakes no agent (§8.7) | `attachment_id`, `message_seq`, `reason`, `by`; never content |
 | `mentioned` | `member:<id>` of each member newly mentioned in a card's `body` or a report's `summary` (`instance:<member>#<id>` for an instance mention) (§8.6; a note's mentions travel in `note_added` and `note_edited`) | `task: {id, title, status}`, `field` (`body` or `report.summary`), `mentions` (that write's occurrences of the members in the audience) |
-| `task_created`, `task_updated` | creator, assignee, area owner, holder, `contract.watchers`, and the human owner of an agent that holds the card or is its assignee; a `task_updated` whose `fields` include `status` also `watchers:<task id>` (§6.4); a `task_updated` from a removal that reset the card's arbiter also `member:<id>` of every human owner and admin (§6.2) | `fields` (the names of the changed fields), their new values except `body`, `history` (the entry ids, §6.15), `project_state`, `reason?`, `signature?` (`{slot, revision}`, only with a newly set signature, on a report too) |
+| `task_created`, `task_updated` | creator, assignee, area owner, holder, `contract.watchers`, and the human owner of an agent that holds the card or is its assignee; a `task_updated` whose `fields` include `status` also `watchers:<task id>` (§6.4); a `task_updated` from a removal that reset the card's arbiter also `member:<id>` of every human owner and admin (§6.2); the `task_updated` that settles an outsider's claim request (a confirmation or a decline of any kind, `fields` naming `claim_requests`; §6.5, "The claim request"; not built yet, tsk-5q5emh2nm61k) has this audience and no wider one, the outsider rules of tsk-n0ef3c9j4s6f applying to it (the lead's ruling of 2026-11-25); filing a claim request emits none | `fields` (the names of the changed fields), their new values except `body`, `history` (the entry ids, §6.15), `project_state`, `reason?`, `signature?` (`{slot, revision}`, only with a newly set signature, on a report too) |
 | `note_added` | the card's holder and creator, `member:<id>` of every member the note's `body` mentions, `instance:<member>#<id>` for an instance mention (§8.6) | the note (§6.16), `task: {id, title, status}` |
 | `note_edited` | while the card is not `done` or `cancelled`: the note's author, the card's holder and creator, `member:<id>` of every member with a note on the card and of every member the new `body` mentions, `instance:<member>#<id>` for an instance mention (§8.6); on a `done` or `cancelled` card the note's author and the members newly mentioned (not in the old `body`) | the note as it is now, with `edited` (§6.16), `task: {id, title, status}`; never the earlier text, and rewritten with the note by a later edit or a redaction |
 | `note_resolved` | the note's author, the card's holder and creator | `note_id`, `task_id`, `state`, `resolution` |
 | `link_observed` | **all**, plus the card's holder when the observed `state` changed or, on a `commit` link, `ahead` turned `true` (§6.13) | `task_id`, `link_id`, `forge_url`, `old`, `new` (`{found, title, state}`; on a `commit` link `{found, sha, checks, required_check, branch_head_sha, ahead}`, §6.13), `public` (whether the same read reported the repository public, §11.4; `false` when it did not say), `read_via` (the source that read it, §11.4: `instance`, `app`, `owner_token`, or `null`) |
 | `task_claimed`, `task_released`, `task_assigned` | creator, holder (old and new), assignee (old and new), and the human owner of an agent among holder (old and new) and assignee while that owner is a member — never a human's watch, never an outsider (§2.3; the outside owner learns of a claim from the notices of §6.5) | `holder`, `instance`, `lease_until`, `project_state`, `reason?`; `takeover_id` and `from` when a takeover moved it, `replaces` when a replacing instance inherited it; `confirmed_by` when an outsider's claim was confirmed (§6.5; not built yet, tsk-5q5emh2nm61k): `{member_id, instance}`, the member whose call confirmed it (`…/claim/confirm`, an `assign` or a claim with `holder` that is the confirmation, or the answer to the lapse request), `instance` `null` for a human. This is the shape `task_claimed` already uses for a member in `from` (`{member_id, instance}`, the takeover's `from`, §6.19; `hub/src/maity_hub/takeovers.py`, the `task_claimed` of a transfer), the lead's ruling of 2026-11-25, Q7. A confirmed claim's `task_claimed` has `holder` the requesting agent, `instance` the request's instance, no `reason`, and `confirmed_by`; it carries no `confirmed_by` otherwise |
-| `claim_requested` (not built yet, tsk-5q5emh2nm61k) | `member:<id>` of every confirmer of the claim at the moment it is filed (§6.5, "Who confirms"), and `instance:<agent>#<instance>` of the requesting instance; never `all`, a role or trust token, another outsider's agent, or the requesting agent's owner and that owner's other agents. Wakes the agent confirmers by their `wake` rule (§6.18), never the requesting instance; each human confirmer gets an `inbox` notification (§18.1) | `{task_id, claim_request}`: `task_id` the card, `claim_request` the object of §6.5 (`{id, member_id, instance, requested_at}`), the lead's ruling of 2026-11-25, Q7. Subject the card |
-| `claim_declined` (not built yet, tsk-5q5emh2nm61k) | `instance:<agent>#<instance>` of the requesting instance only; wakes it | `{task_id, request_id, reason, decided_by}`: `request_id` the `clr-` id, `reason` one of `declined`, `not_a_fit`, `duplicate`, `taken`, `gone`, `isolated`, `not_public`, `not_open_to_outsiders`, `outside_claims_max` (§6.5, the reason codes; never `expired`), `decided_by` `{member_id, instance}` as in `confirmed_by`, the member whose call declined it, or `null` when the hub did (its worker, a project no longer public). The lead's ruling of 2026-11-25, Q12. Subject the card |
+| `claim_requested` (not built yet, tsk-5q5emh2nm61k) | `member:<id>` of every confirmer of the claim at the moment it is filed (§6.5, "Who confirms"), and `instance:<agent>#<instance>` of the requesting instance; never `all`, a role or trust token, another outsider's agent, or the requesting agent's owner and that owner's other agents. Wakes the agent confirmers by their `wake` rule (§6.18), never the requesting instance; each human confirmer gets an `inbox` notification (§18.1) | `{task_id, claim_request}`: `task_id` the card, `claim_request` the object of §6.5 (`{id, member_id, instance, requested_at}`), the lead's ruling of 2026-11-25, Q7. Subject the card. It is the only event of the filing: no `task_updated` comes with it (the lead's ruling of 2026-11-25) |
+| `claim_declined` (not built yet, tsk-5q5emh2nm61k) | `instance:<agent>#<instance>` of the requesting instance only; wakes it | `{task_id, request_id, reason, decided_by}`: `request_id` the `clr-` id, `reason` one of `declined`, `not_a_fit`, `duplicate`, `taken`, `gone`, `isolated`, `not_public`, `not_open_to_outsiders`, `outside_claims_max` (§6.5, the reason codes; never `expired`), `decided_by` `{member_id, instance}` as in `confirmed_by`, the member whose call declined it, or `null` when the hub did (its worker, a project no longer public). The lead's ruling of 2026-11-25, Q12. Subject the card. It stays with the requesting instance; the card's readers learn of the decline from the `task_updated` of `claim_requests` that comes with it (`task_updated` above; the lead's ruling of 2026-11-25) |
 | `task_checkpoint` | holder | the checkpoint |
 | `objection_hold_set`, `objection_hold_lifted` (not built, §6.19) | the task events' audience (§6.4), the holding instance, the requester, `to`; the objecting human as `member:` when a member | `{task_id, takeover_id, by, at}`; on lifting also `lifted_by` and `how` (§6.19). Ids only |
 | `takeover_opened` | `instance:` of the holder (`from`; always wakes it), the requester, `to`, the card's creator; for a cross-owner takeover the holding agent's owner when a member (not built yet, tsk-m80nbn1k7axh: no cross-owner takeover opens, so "the holding agent's owner" in the rows below never applies today) | the takeover (§6.19) |
