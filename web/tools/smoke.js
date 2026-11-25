@@ -2411,6 +2411,20 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       && fsSaid.endsWith("The change of whom it reports to was already saved and stays: Agent C now reports to Agent D."),
     "join form: the boss of an agent already here is PATCHed before its placement; a refused placement says the change stays saved "
       + JSON.stringify([fsCalls, fsSaid]));
+    // A boss across owners waits for the other side's consent (202): nothing is saved yet, so a
+    // refused placement says it waits, never that it stays saved.
+    await srTurn(true);
+    const fcCalls = [];
+    win.Maity.api.patch = (p, b) => { fcCalls.push(["patch", p, b]); return Promise.resolve({ id: "req-c901", class: "consent" }); };
+    win.Maity.api.post = (p, b) => { fcCalls.push(["post", p, b]); return Promise.reject(new win.Maity.api.ApiError("the hub is busy", 503, p, "unavailable")); };
+    byId("join-member-reports").value = "";
+    await srSubmit();
+    const fcSaid = srSaid();
+    win.Maity.api.patch = fsPatch; win.Maity.api.post = fsPost;
+    expect(fcCalls.length === 2 && fcCalls[0][0] === "patch" && fcCalls[1][0] === "post"
+      && fcSaid.startsWith("Not placed on the runner: ") && fcSaid.endsWith("once the consent is given (req-c901).")
+      && !fcSaid.includes("already saved"),
+    "join form: a boss waiting for consent before a refused placement is said as waiting, not as saved " + JSON.stringify([fcCalls, fcSaid]));
   }
   // Review A1746 of #2058: the form counts and picks clones as the hub does. Two active placements
   // of Agent C whose credentials made instances that are no longer live (revoked, waiting to

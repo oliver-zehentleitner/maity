@@ -654,9 +654,9 @@ window.Maity = window.Maity || {};
       if (unnamed) { status.fail(M.t("placements.new.failed"), { message: unnamed }); viaRunner.model().focus(); return true; }
       return false;
     }
-    // bossSaid: a boss of the agent already here saved by its PATCH just before; a refused start
-    // says that it stays saved.
-    async function place(agent, member, text, mine, bossSaid) {
+    // bossSaid: what the boss PATCH just before did for the agent already here. A refused start
+    // says a completed change stays saved; one waiting for consent (bossWaits) is said as it is.
+    async function place(agent, member, text, mine, bossSaid, bossWaits) {
       // A profile of one's own not in the project yet: the placement admits it with the fields of
       // a first join, as the join would carry them (§15.6, §3.1). A member's (`admitting`): trust,
       // role, oneself or one's own manager as the boss, the briefing, subagents; no areas or
@@ -694,8 +694,9 @@ window.Maity = window.Maity || {};
           const limit = own ? memberRefusal(err) : null;
           if (limit) status.fail(M.t("placements.new.failed"), limit);
           else viaRunner.refuse(status, err);
-          // The boss changed just before stays changed: said plainly, not undone.
-          if (bossSaid) append(status.el, " ", h("span", { class: "flag join-reports-said" }, M.t("join.reports.kept", { said: bossSaid })));
+          // The boss changed just before stays changed: said plainly, not undone. One that waits
+          // for the other side's consent changed nothing yet, and is said as it waits.
+          if (bossSaid) append(status.el, " ", h("span", { class: "flag join-reports-said" }, bossWaits ? bossSaid : M.t("join.reports.kept", { said: bossSaid })));
         };
         say();
         const fields = (err.code === "invalid" && err.details && err.details.fields) || {};
@@ -839,6 +840,7 @@ window.Maity = window.Maity || {};
         // (close() counts on) ends it, so neither the PATCH's outcome nor a join follows.
         const mine = ++submission;
         let bossSaid = null;
+        let bossWaits = false; // 202: asked of the other side, the membership unchanged
         if (member && memberReports.value !== bossNow(member)) {
           const to = memberReports.value || null;
           status.busy(M.t("join.reports.saving"));
@@ -859,6 +861,7 @@ window.Maity = window.Maity || {};
           // 202: the edge waits for the other side's consent (§6.2), the membership as it was.
           if (answer && answer.class === "consent" && /^req-/.test(answer.id || "")) {
             asked.set(member.id, to || "");
+            bossWaits = true;
             bossSaid = M.t("join.reports.waiting", { name, boss: ctx.nameOf(to), id: answer.id });
           } else {
             asked.delete(member.id);
@@ -868,7 +871,7 @@ window.Maity = window.Maity || {};
           // Taken, the boss stays (kept above for the next submission); closed meanwhile, no join.
           if (mine !== submission) return;
         }
-        if (placing) { await place(agent, member, text, mine, bossSaid); return; }
+        if (placing) { await place(agent, member, text, mine, bossSaid, bossWaits); return; }
         const sayBoss = () => { if (bossSaid) append(status.el, " ", h("span", { class: "flag join-reports-said" }, bossSaid)); };
         status.busy(M.t("join.creating"));
         create.disabled = true;
