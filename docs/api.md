@@ -5471,8 +5471,8 @@ carries `details.hidden`, the number of hidden entries. When the bound
 is lowered below what a human holds, the stars stay: a `PATCH` that
 adds no project is accepted at any length, one that adds a project
 beyond the bound is `too_many`. A browser with no tabs of its own opens the
-starred projects, dashed, after `start_tabs`. Explore opens such a
-tab too (§16.9, "Explore, signed in"); the star is in the tab, not on
+starred projects, dashed, after `start_tabs`. Explore opens a project
+the reader is no member of as such a tab too (§16.9, "Explore, signed in"); the star is in the tab, not on
 Explore's list. An unstarred tab belongs
 to the browser session that opened it: it goes when the reader closes
 it, or when the browser starts the dashboard afresh, and it is never
@@ -27336,8 +27336,9 @@ sitemap parts are `not_found`.
 
 **What visitors read in the dashboard.** The maintainer's decision of
 2026-11-01: a public project looks to a visitor as to a member, read-only,
-as on a forge. The dashboard draws its public views from one route and from
-no other:
+as on a forge. The dashboard draws its public views from one route, and
+Explore's list from `GET /public/explore` ("Explore, signed in", below), and
+from no other:
 
 ```
 GET /public/pages/{path}
@@ -27358,8 +27359,8 @@ A path with no stored page is `not_found`, whatever the reason ("What is never
 served"), and so is every path while `MAITY_PUBLIC_PAGES` is off. It answers
 with `Content-Type: application/json`, `Cache-Control: public, max-age=60` and
 an `ETag`, without `Vary: Cookie`, since a cookie changes nothing, and spends the
-page's rate limit bucket. It has no write, no list, no stream and no search,
-and the dashboard does not poll it.
+page's rate limit bucket. `GET /public/pages/{path}` has no write, no list,
+no stream and no search, and the dashboard does not poll it.
 
 `data` holds exactly these keys. A field not named here is not public, and a
 new field needs a change of this table. Who is named follows the page's rule:
