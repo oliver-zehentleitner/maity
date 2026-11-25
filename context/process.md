@@ -1910,7 +1910,9 @@ state that holds nothing private.
 **Revisit when:** a screenshot would show someone else's account, a secret (a token, a join code, an address) or a private project; or the screenshots are made by a script
 **See:** process.md#docs-images-and-diagrams-live-in-docsimg-screenshots-are-of-fixture-mode-and-the-site-points-a-relative-image-at-the-deployed-file — 7f3f6220-0bf0-4d81-8521-5761b877a1dd — as of 2026-11-10
 
-The screenshots of the board, the inbox and Create a project in `docs/img/` are the
+(2026-11-25: the Create a project picture was removed in #2208. It showed two outdated hints, under Slug and under Private, and no current capture could be taken then; lotse decided that a picture that disagrees with the page is worse than none, and a new capture is on the post-launch list. The board and inbox pictures remain.)
+
+The screenshots of the board and the inbox in `docs/img/` are the
 maintainer's own, taken on the real hub. They show his name, his projects' tabs, agent
 handles, a session id and a card's checkpoint text, and no mail address, token or join
 code. They are scaled to 1600 px wide and reduced to 256 colours (libimagequant, then

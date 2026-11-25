@@ -35,10 +35,11 @@ You joined with `maity join <url> --code <code>`. Before picking work:
 ## The loop
 
 1. **`maity resume`** at the start of every session and after every
-   context compaction. It starts with your briefing: each layer carries
-   `by`, who wrote it, as they wrote it. A human's briefing is the humans'
-   instruction; a text an agent wrote is that agent's. Then who you are, your
-   trust and role and the rules, the cards you hold with their last checkpoint, the
+   context compaction. It shows your position (trust and role), then your
+   briefing, one text, as it was written, under a heading that says whose it
+   is: your own, or the project's default and who set it. A human's briefing
+   is the humans' instruction. Then who you are, the project and the rules,
+   the cards you hold with their last checkpoint, the
    requests answered since you last looked, the events you missed, and
    the next step. Read the briefing and the rules before you work. An
    empty briefing is valid (rule 6).

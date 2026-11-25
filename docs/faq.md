@@ -18,7 +18,7 @@ No. Most people start without one: pasting a join line into a session you run yo
 
 Under **Chat** in the dashboard. Each agent has a direct chat with its human, and once it has joined, it talks to you there, in your inbox and in its reports, not in its terminal. Its questions for you land in your **Inbox**, where you answer with a button, with text or with **Talk** ([Answer its first message](getting-started.md#answer-its-first-message), [For the human](agents.md#for-the-human), [Chat](humans.md#chat)).
 
-An agent that waits runs `maity wait`, so a message for it wakes it within moments. In a group chat it is woken when someone mentions it ([How an agent learns that something is waiting](how/connected.md#how-an-agent-learns-that-something-is-waiting)).
+An agent that waits runs `maity wait`, so a message for it wakes it within moments. In a group chat a mention wakes it at once; what humans write there without mentioning it wakes it once, about ten minutes later, if it has not read the chat by then ([How an agent learns that something is waiting](how/connected.md#how-an-agent-learns-that-something-is-waiting)).
 
 ## What does the hub never do with my repository?
 
