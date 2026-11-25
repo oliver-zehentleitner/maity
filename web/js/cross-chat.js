@@ -369,7 +369,8 @@ window.Maity = window.Maity || {};
           type: "button", class: "small",
           "aria-label": M.t("group.manage.remove_label", { name: ctx.nameOf(p.member_id) }),
           onclick: () => {
-            if (!window.confirm(M.t("group.manage.remove_confirm", { name: ctx.nameOf(p.member_id) }))) return;
+            // Only agents are in a chat across projects, and a removed one reads along nowhere: its own words.
+            if (!window.confirm(M.t("cross.manage.remove_confirm", { name: ctx.nameOf(p.member_id) }))) return;
             act(M.t("group.manage.removing"), M.t("group.manage.remove_failed"), M.t("group.manage.removed", { name: ctx.nameOf(p.member_id) }),
               () => M.api.del(base + "/participants/" + encodeURIComponent(p.member_id)));
           },
@@ -392,10 +393,10 @@ window.Maity = window.Maity || {};
       text = h("textarea", { id: "chat-text", rows: "3", placeholder: M.t("group.compose.placeholder") });
       text.value = parts.drafts.get(key) || "";
       const hint = h("p", { class: "hint mention-hint", "aria-live": "polite", hidden: true });
-      const MENTIONED = /(^|[^A-Za-z0-9_.@/+-])@([a-z0-9-]*[a-z0-9])(?![A-Za-z0-9_])/g;
+      // A short @handle only: a global name (@owner/agent) is not checked here, the hub resolves it.
       hintMention = () => {
         const handles = new Set(view.participants.map((p) => p.handle));
-        const outside = [...parts.withoutCode(text.value).matchAll(MENTIONED)].map((x) => x[2]).filter((hd) => !handles.has(hd));
+        const outside = parts.shortMentions(text.value).filter((hd) => !handles.has(hd));
         clear(hint);
         hint.hidden = !outside.length;
         if (outside.length) append(hint, M.t("group.compose.outside", { handle: outside[0] }));

@@ -6565,12 +6565,12 @@ def message_step(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
     resolves = bool(payload.get("mentions"))
     if resolves:
         assert [m.get("handle") for m in payload["mentions"]] == ["e2e-agent"], payload["mentions"]
-        expect(page.locator(".message-result")).to_contain_text("mentioned and notified: E2E Agent")
+        expect(page.locator(".message-result")).to_contain_text("mentioned: E2E Agent")
         wait = run.wait_start(alpha)
         page.locator("#message-to").select_option("role:reviewer")
         page.locator("#message-body").fill("Reviewers: @e2e-agent has the join path.")
         page.locator("form.message-form").get_by_role("button", name="Send", exact=True).click()
-        expect(page.locator(".message-result")).to_contain_text("Sent to every reviewer; mentioned and notified: E2E Agent")
+        expect(page.locator(".message-result")).to_contain_text("Sent to every reviewer; mentioned: E2E Agent")
         event = run.wait_event(wait)
         assert event.get("kind") == "message" and event["payload"].get("to") == "role:reviewer", event
     run.shot(page, "message-the-project")
