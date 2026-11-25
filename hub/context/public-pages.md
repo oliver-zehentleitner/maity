@@ -1565,3 +1565,44 @@ digest hashes, so each would be rewritten and dated again; the second needs five
 
 A mechanical change: the stored pages, their `data` and the public routes' answers on one world (people, agents, an
 organisation, a second project, cards, an online agent, a profile switched off) are the same before and after.
+
+## Who a public page names lives in one module; `team` is the shown members of that read
+
+**Id:** cc4685d4-6489-4858-bd5e-cb0f490e853f
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the clean-up audit of the rendering and stored public pages (card tsk-hgnbapyw7hnh, items 7, 9 and 11) and the card tsk-mtyyaqj39c22 that carries it out; the lead's scope on that card; the diff of every stored page, its `data` and the answers of the public routes on one world before and after
+**See:** public-pages.md#the-public-pages-name-their-members-by-one-rule-pictures-one-read-of-the-members-per-render-one-link-one-card-one-monogram-one-figure-list — 5fc710f7-f9c3-4622-91bb-146baab12f57 — as of 2026-11-25
+
+Who a page names, and how it writes their name, lives in `public_members`: `Person`, `members`,
+`person_data`, `shown_data`, `holder_data`, `pictured` and `shown_pictures`, under the public
+names they already had. The snapshot, the card pages, the outsider's members view and the
+project page import them from there. A module for them was left out of the earlier clean-up
+because `Person` stayed in `public_project_views`; they move together now.
+
+`team` is those `members` shows, split by human, each list in handle order. Hidden members
+(a hold, an account not served) stay in `members` unnamed; `team` drops them. An isolated
+agent is in neither. `render_project` reads the members once and hands that read to `team`,
+to the pictures and to who is online, so the names, the Members figure and the snapshot
+cannot come from two reads.
+
+The audit's item 7, a set-based `served` over lists, is already on `main` as `served_of` /
+`served_among` / `standing_of` (since #2077). The landing page's count, the organisation
+page, a person's listed projects and an agent's memberships already pass their rows to
+`served_of` and read the full names once. `/explore` already does the same; it is left as it
+is, because #2227 and #2233 rewrite it, and a follow-up after they merge is smaller.
+
+**Reason:** the rule for who is named changes in one place, and `team` cannot drift from the
+members the views use. The set-based served rule already had one function; renaming it would
+add a second name for the same thing.
+
+**Rejected alternative:** rewrite `/explore` in the same change, or introduce `served_projects`
+beside `served_of`. The first collides with #2227 and #2233; the second is a new name for a
+function that already exists. Reintroducing the old private names (`_shown`, `_holder`) when
+moving the helpers was left out: they are already public, and a move should not rename them
+back.
+
+A mechanical change: the stored pages, their `data` and the public routes' answers on one
+world (people, agents, an organisation, a second project, cards, an online agent, a profile
+switched off) are the same before and after.
