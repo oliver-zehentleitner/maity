@@ -14,7 +14,7 @@ every page of a list, used by the conversations, memory, takeover, card, note an
 reads), `_printable_cursor` and `_more_line` (the next cursor and the `more:` line of
 `messages` and `ticker`), `_linked_prs` (the pull requests a card links, for the probe, the
 belongs-to-the-card guess and the mismatch refusal), `_json_file` (JSON from a file or stdin,
-for statements, answers and `--review-file`), `Session.path_in` (a project path from the full
+for statements, reports, answers and `--review-file`), `Session.path_in` (a project path from the full
 name a resume packet gives), `_round_path` (every jour fixe rounds path) and `_members` (also for
 the handle map). `hub.USER_AGENT` and `MESSAGE_TYPES` were aliases of `CLIENT` and `SAY_TYPES`
 with one meaning each, and are gone.
@@ -32,12 +32,21 @@ the coming split of `cli.py` smaller, which is why it lands before it.
   page size would each still spell the `("limit", …)` pair and its position.
 
 **Known differences from the old code:** the page query now always puts `limit` after the
-caller's own parameters (its position never mattered to the hub); a JSON file that is not JSON
-says so with the parser's full message in all three readers, and a file for `jourfixe answer`
-that is not a JSON object says "the body is one JSON object" before the keys are checked;
-a card whose pull request link has a forge URL that names no pull request, checked against a
-pull request whose own URL names none either, no longer counts as the card's by that
-coincidence: the card id in the title, body or branch decides, and `--yes` confirms it.
+caller's own parameters (its position never mattered to the hub); a JSON file that the decoder
+rejects (any `ValueError`, including `JSONDecodeError` and the integer conversion limit) says
+so with the parser's full message: that is new for `jourfixe statement --file`, `jourfixe
+report --file` and `jourfixe answer --file` (`{exc}` instead of `{exc.msg}`), while
+`--review-file` already used the full message and still maps any decoder `ValueError`; a file
+for `jourfixe answer` that is not a JSON object says "the body is one JSON object" before
+the keys are checked, and its invalid-JSON prefix is `--file: not JSON:` instead of
+`--file is not JSON:`;
+`_belongs` still decides in this order: the found pull request is among the card's linked
+pull requests, else the last report's pull request, else the card id in the title, body or
+branch, and `--yes` confirms it. Only the first of those changed: a pr link whose forge URL
+names no pull request, checked against a found pull request whose own URL names none either,
+no longer counts as the card's by that coincidence (`_linked_prs` keeps only a recognised
+key). The last-report comparison is unchanged and still treats two unrecognised PR URLs as
+the same.
 
 ## The dict helpers `get` and `obj` live in `onboarding`, and `cli.py` calls them there
 
@@ -48,8 +57,8 @@ coincidence: the card id in the title, body or branch decides, and `--yes` confi
 **Source:** card tsk-sgaz43qazfzx; the clean-up audit, card tsk-hgnbapyw7hnh, finding 3
 **Revisit when:** the structure card moves them into a leaf module
 
-`cli._field` was `onboarding.get` and `cli._obj` was `onboarding._dict`. Both pairs are gone
-from `cli.py`: it calls `onboarding.get` and `onboarding.obj` (the second renamed from `_dict`
+`cli._field` was `onboarding.get` and `cli._obj` was `onboarding._dict`. The pair in `cli.py`
+is gone: it calls `onboarding.get` and `onboarding.obj` (the second renamed from `_dict`
 so that another module may call it). The card asked to keep one pair and left its place to the
 structure card, to be decided there if that card went first. It had not landed, so the place
 is the module that already was the lower one. The choice of `onboarding` is this change's own;
