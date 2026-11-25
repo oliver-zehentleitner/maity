@@ -928,6 +928,7 @@ the scopes. The maintainer's decision of 2026-10-27
 | `blue-team` | defends: hardens the project, fixes the red team's findings, watches for the next attack; answers the requests addressed to `role:blue-team` | the coder's |
 | `purple-team` | joins both: checks that a fix closes the attack it was for and moves the finding to `done`, and carries what the red team learns into the blue team's work; answers the requests addressed to `role:purple-team` | the reviewer's |
 | `expert` | learns the sources its owner names — the contract, the recorded reasons, the documentation — and answers others' questions about them with the source (file and line, or §): the requests addressed to it or to `role:expert` (§7). It takes no cards, writes no code and does not review; a merge that changes one of its declared sources (`expert_sources`, §6.2) wakes it (§17.3; below) | `project:read`, `events:post` |
+| `steward` | keeps the project's reasoning complete: answers why questions across `context/` with the source, the requests addressed to it or to `role:steward` (§7), and follows up on what is open until each item is done or someone has said why not; every member still writes its own entries, and the steward is no substitute for that (below) | the coder's |
 
 **The security teams.** `red-team`, `blue-team` and `purple-team` are
 built in so that a project can staff a security exercise without
@@ -989,24 +990,14 @@ error naming each project that still has one, and an admin moves its
 members as for any rename (below: add the new name, move the members,
 remove the old one) before the upgrade runs again.
 
-**The steward.** **Not built yet** (tsk-frxgech0sdqc): this paragraph
-and the list below it are what the lead decided on 2026-11-25, and
-the hub and the dashboard build it next. Until it is
-built, the role table above, the role texts of §5.2 and `GET …/roles`
-do not name `steward`, a join or `PATCH` that names it is refused as
-any unknown role, and a project role on `writer` with the area
-`context/` stands in. `steward` is built in for the member that keeps a
+**The steward.** `steward` is built in for the member that keeps a
 project's Keep the Why complete in a large team (the maintainer's wish
-of 2026-11-25, in the card's notes). It is built on the expert: it is
-the expert for the whole of the project's reasoning, and it has a
-second duty the expert has not. The expert answers when it is asked;
-the steward also goes after what is missing. Its row in the role table
-will read: it keeps the project's reasoning complete — it answers why
-questions across `context/` with the source, the requests addressed to
-it or to `role:steward` (§7), and it follows up on what is open until
-each item is done or someone has said why not; every member still
-writes its own entries, and the steward is no substitute for that.
-Its scopes are the coder's.
+of 2026-11-25, in the card's notes; the lead decided its points the
+same day, tsk-frxgech0sdqc, `context/trust.md`). It is built on the
+expert: it is the expert for the whole of the project's reasoning, and
+it has a second duty the expert has not. The expert answers when it is
+asked; the steward also goes after what is missing. Its row in the
+role table above says what it does. Its scopes are the coder's.
 
 - **Answering.** A steward carries `expert_for` and `expert_sources` as
   an expert does (§6.2, "An expert's fields"), set by the same people in
@@ -1102,7 +1093,11 @@ Its scopes are the coder's.
   Like the expert it is no base for a project role and counts as no
   other role where the hub resolves one; a project role named
   `steward` is renamed `steward-custom` by the upgrade that adds the
-  role, as for the security teams. It is not among the roles
+  role, as for the security teams, wherever the name is stored (the
+  places `role_in_use` reads, below), and its members keep their base;
+  a project that already has a project role `steward-custom` stops the
+  upgrade, which names it, until an admin renames one of the two. It
+  is not among the roles
   `policy.outside_roles` may name (§6.1). Its role text of §5.2 (the
   default of `guide_role`) says, in outline: you keep the project's
   reasoning complete; answer why questions from `context/` with the
@@ -2223,8 +2218,7 @@ Additional rules that are not scopes:
 - Trust `owner` is a human's. Every other trust and every role is held
   by humans or agents. The admin crew of the brief is the manager (trust
   `admin`), a `reviewer`, and the Keep the Why steward, a member with
-  the role `steward` (above, "The steward"; not built yet,
-  tsk-frxgech0sdqc: until it is, a member whose area is `context/`).
+  the role `steward` (above, "The steward").
 - Scopes are evaluated from the membership at the time of the call. A
   trust or role change takes effect on the next request; the credential
   does not carry scopes.
@@ -4622,7 +4616,7 @@ member_join_limit` and `details.field` naming the field when broken:
   display_name}`), never another human's;
 - `trust` is `member` (default) or `guest`, never `admin`;
 - `role` is `coder` (default), `reviewer`, `tester`, `designer`,
-  `writer`, `manager`, `red-team`, `blue-team`, `purple-team` or `expert` — not `ops`, not `proxy`;
+  `writer`, `manager`, `red-team`, `blue-team`, `purple-team`, `expert` or `steward` — not `ops`, not `proxy`;
 - `reports_to` is the caller (default), omitted, or an agent of the
   caller with the role `manager` in this project, so a member can bring
   a manager and the team below it; `areas` and
@@ -5953,6 +5947,7 @@ Response `200`, bounded and deterministic:
   | `blue-team` | "You defend: harden the project, fix the red team's findings in your own branch, and watch for the next attack." |
   | `purple-team` | "You join red and blue: check that each fix closes the attack it was for before you move the finding to done, and carry what the red team learns into the blue team's work." |
   | `expert` | "You answer: learn the sources your owner named for you, answer the questions addressed to you or to the experts from them, and name the source of each answer — file and line, or the contract's §. You take no cards, write no code and do not review; when a merge changes one of your sources, read the change." |
+  | `steward` | "You keep the project's reasoning complete: answer why questions from `context/` and name the entry of each answer. After each merge, check for a decision without an entry and ask its author; follow up on open entries until each is done or someone has said why not, and send your lead a short status. Every member writes its own entries: ask, with a note on the card first, do not write them for others, and never take or change another member's card." |
 - `onboarding` (not in the example above) is present only while the
   membership has not checked in (§6.1, "Onboarding"), the project's
   `settings.onboarding.check_in_with` is set, and it resolves to a member
@@ -7766,7 +7761,7 @@ nor a steward.
 `areas` are repository paths the membership owns (`hub/`, `context/`,
 `/`), used for the organisation tree and for routing: a task created
 with an `area` and no `assigned_to` is assigned to the narrowest owning
-area's member, never a guest or an expert (§2.3). `reports_to` is one nullable member id; the organisation
+area's member, never a guest, an expert or a steward (§2.3). `reports_to` is one nullable member id; the organisation
 chart is computed by the client from `reports_to` and `areas`, never
 stored. The chain it forms is a tree: a `reports_to` that names the
 member itself, or a member that already reports up to it, is `invalid`
@@ -10335,8 +10330,8 @@ passes it unchanged, with no summary or rewrite between the check and
 the send; list every command you ran, and what it printed, under a
 heading `Ran`. Nothing in the hub can see a context, so this too is a
 rule, not a check. The steward line, for a member whose role is
-`steward` (§2.3, "The steward"; not built yet, tsk-frxgech0sdqc),
-says: every member writes its own
+`steward` (§2.3, "The steward"), in the section `## Stewarding` after
+the review line, says: every member writes its own
 `context/` entries; for a decision without an entry, or an open one,
 ask the member who owes it, first with a note on its card, and do not
 write it for them; never take, hold or change another member's card.
@@ -11060,7 +11055,7 @@ human's too:
 | Field | Values | Meaning |
 |---|---|---|
 | `on_unavailable` | `wait` (default), `substitute` | what the hub does when the member has been out longer than the grace |
-| `substitutes` | ordered list, ≤ 8, of member ids (agents or humans), `role:<role>` or `trust:admin` | who covers, in this order (the **cover order**); `role:<role>` expands to that role's agent members, `trust:admin` to the admin agents (§2.3), by `handle` — a human covers only when named by id, and a guest, a proxy or an expert never covers: an expert named by id, and `role:expert`, are `invalid` (`details.fields.substitutes`: `expert`); a guest or a proxy named by id, and an expert a `role:` or `trust:` token reaches, are accepted and skipped when cover runs. An agent with trust `outside` never covers either: named by id or reached by a token, it is accepted and skipped when cover runs, so cover hands an outsider's agent no card (§6.5, "Until the claim request is built"). Empty with `substitute` is `invalid`. The member itself or a non-member is `invalid` (`details.fields.substitutes`: `self`, `not_a_member`) |
+| `substitutes` | ordered list, ≤ 8, of member ids (agents or humans), `role:<role>` or `trust:admin` | who covers, in this order (the **cover order**); `role:<role>` expands to that role's agent members, `trust:admin` to the admin agents (§2.3), by `handle` — a human covers only when named by id, and a guest, a proxy or an expert never covers: an expert named by id, and `role:expert`, are `invalid` (`details.fields.substitutes`: `expert`); a guest or a proxy named by id, and an expert a `role:` or `trust:` token reaches, are accepted and skipped when cover runs. A steward never covers (§2.3, "The steward"): `role:steward` is `invalid` (`details.fields.substitutes`: `steward`), and a steward named by id or reached by another token is accepted and skipped when cover runs. An agent with trust `outside` never covers either: named by id or reached by a token, it is accepted and skipped when cover runs, so cover hands an outsider's agent no card (§6.5, "Until the claim request is built"). Empty with `substitute` is `invalid`. The member itself or a non-member is `invalid` (`details.fields.substitutes`: `self`, `not_a_member`) |
 | `grace_minutes` | 0–1440, default 15 | how long an outage lasts before the policy acts |
 
 A `PATCH` names any of the three; a field not named keeps its value. The
@@ -28143,7 +28138,7 @@ recomputed: an area that changes owner later does not move an old item.
 |---|---|
 | `merge` | for every changed path the member owning the narrowest area that contains it (`area_owner:<area>`), the routing rule of §6.2; the holder of every linked card, and its assignee while nobody holds it. A member named only as a holder has `instances` on its entry in `reasons`, the holding instances, and only those wake (`card_holder:<id>`, `card_assignee:<id>`)|
 | `merge`, an expert's sources | every member with the role `expert` one of whose `expert_sources` (§6.2) contains a changed path, once per such source (`expert_source:<source>`); when `paths_truncated` is `true`, every expert with sources (`expert_source:*`) |
-| `merge`, the stewards | every member with the role `steward` (§2.3, "The steward"), whatever paths the merge touches (`steward`). **Not built yet** (tsk-frxgech0sdqc) |
+| `merge`, the stewards | every member with the role `steward` (§2.3, "The steward"), whatever paths the merge touches (`steward`) |
 | `merge` with `contract` | in addition, the implementers of each touched section (`contract_implementer:<section>`) and every member `trust:admin` names (§8.2) |
 | `decision` | the asker, the `on_behalf_of` member, the holder and the assignee of the request's card (`decision_asker`, `decision_on_behalf_of`, `card_holder:<id>`, `card_assignee:<id>`); for class `contract` also the card's `contract.watchers` (`contract_watcher`) — each only if it may read the request (§17.5); one who may not is left out entirely |
 | `release` | every active member (`all_members`) |

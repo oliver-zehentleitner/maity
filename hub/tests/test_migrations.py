@@ -1518,6 +1518,89 @@ def test_the_expert_migration_stops_on_a_project_role_named_expert(engine: Engin
     assert current_revision(engine) == head_revision(engine)
 
 
+def test_the_steward_migration_renames_a_project_role_named_steward(engine: Engine) -> None:
+    """20261125120000: the built-in role `steward` takes the name (§2.3 "The steward"); a
+    project role `steward` becomes `steward-custom` wherever the name is stored, with its
+    members' base unchanged, and another project's roles are left alone."""
+    from sqlalchemy import select, update
+
+    from maity_hub import tables as t
+    from tests import factory
+
+    rev = "20261125120000_steward_role"
+    migrate(engine)
+    human = factory.human(engine, "a")
+    helper = factory.human(engine, "b")
+    shop = factory.project(engine, "shop", owner_id=human)
+    docs = factory.project(engine, "docs", owner_id=human)
+    downgrade(engine, _before(engine, rev))
+    role = {"name": "steward", "base": "writer", "description": "", "guide": "", "guide_by": None}
+    legal = {**role, "name": "legal"}
+    with engine.begin() as conn:
+        conn.execute(
+            update(t.project)
+            .where(t.project.c.id == shop)
+            .values(
+                roles=[role, legal],
+                outside_roles=["coder", "steward"],
+                settings={"onboarding": {"check_in_with": "role:steward"}},
+            )
+        )
+        conn.execute(update(t.project).where(t.project.c.id == docs).values(roles=[legal]))
+        conn.execute(
+            insert_membership(shop, helper, factory.at("2026-11-20T10:00:00Z"), True).values(
+                trust="member",
+                role="steward",
+                role_base="writer",
+                availability_policy={"substitutes": ["role:steward", "role:legal"]},
+            )
+        )
+    migrate(engine)
+    assert current_revision(engine) == head_revision(engine)
+    with engine.connect() as conn:
+        stored = conn.execute(
+            select(t.project.c.roles, t.project.c.outside_roles, t.project.c.settings).where(
+                t.project.c.id == shop
+            )
+        ).one()
+        member = conn.execute(
+            select(
+                t.membership.c.role, t.membership.c.role_base, t.membership.c.availability_policy
+            ).where(t.membership.c.human_id == helper)
+        ).one()
+        other = conn.execute(select(t.project.c.roles).where(t.project.c.id == docs)).scalar_one()
+    assert [r["name"] for r in stored.roles] == ["steward-custom", "legal"]
+    assert stored.outside_roles == ["coder", "steward-custom"]
+    assert stored.settings["onboarding"]["check_in_with"] == "role:steward-custom"
+    assert (member.role, member.role_base) == ("steward-custom", "writer")
+    assert member.availability_policy["substitutes"] == ["role:steward-custom", "role:legal"]
+    assert other == [legal]
+
+
+def test_the_steward_migration_stops_where_steward_custom_is_taken(engine: Engine) -> None:
+    """20261125120000: no rename by halves; the upgrade names the project and stops."""
+    from sqlalchemy import update
+
+    from maity_hub import tables as t
+    from tests import factory
+
+    migrate(engine)
+    human = factory.human(engine, "a")
+    shop = factory.project(engine, "shop", owner_id=human)
+    before = _before(engine, "20261125120000_steward_role")
+    downgrade(engine, before)
+    role = {"name": "steward", "base": "coder", "description": "", "guide": "", "guide_by": None}
+    with engine.begin() as conn:
+        conn.execute(
+            update(t.project)
+            .where(t.project.c.id == shop)
+            .values(roles=[role, {**role, "name": "steward-custom"}])
+        )
+    with pytest.raises(Exception, match=f"named `steward-custom`: {human}/shop\\. Rename"):
+        migrate(engine)
+    assert current_revision(engine) == before
+
+
 def test_the_invite_by_handle_downgrade_revokes_what_an_older_hub_would_show_as_open(
     engine: Engine,
 ) -> None:

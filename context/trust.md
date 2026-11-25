@@ -691,10 +691,10 @@ to `role:reviewer` never lands with the purple team.
 
 **Id:** dacf0267-548d-4620-8ee9-e87e5b721d23
 **Type:** decision
-**Status:** needs-review
+**Status:** active
 **Evidence:** confirmed
 **Source:** the maintainer's wish in the team chat, 2026-11-08, and the plan he approved in the inbox the same day ("Passt so, bauen"); the details settled with the team lead on the card; who sets the fields, the maintainer's inbox answer of 2026-11-11; contract `docs/api.md` §2.3, §6.2, §7, §17.3
-**Revisit when:** an expert needs to ask back or keep notes, or the hub starts checking that answers cite their sources. The first fired on 2026-11-25: the steward, a role built on the expert, asks back and follows up with the coder's scopes, and the expert itself is unchanged; whether that settles this entry is to be re-checked
+**Revisit when:** an expert itself needs to ask back or keep notes beyond what the steward does, or the hub starts checking that answers cite their sources. Re-checked on 2026-11-25, on the lead's instruction: the need to ask back and follow up went to the steward, a separate role built on the expert with the coder's scopes, and the expert itself is unchanged
 **See:** trust.md#the-security-teams-are-built-in-roles-red-blue-and-purple — 015bc7eb-2943-4f2d-8582-2c2cc13b40f0 — as of 2026-11-08
 **See:** trust.md#the-steward-role-keeps-the-reasoning-complete-built-on-the-expert-and-writes-nobodys-entries — ce22ba6d-ff2b-4196-808d-81baf9d6a3e9 — as of 2026-11-25
 
@@ -789,9 +789,14 @@ can).
   the dashboard is enough, and a refusal would break a project that
   switches the provider later.
 
-**Workarounds:** until the role is built, a project role on `writer`
-with the area `context/` stands in. Without the ticker no merge wakes
-the steward, so it sweeps at resume and when asked.
+The upgrade that added the role renames an existing project role
+`steward` to `steward-custom` in every place that stores the name,
+rather than stopping as the expert's upgrade did: the lead chose the
+security teams' rename for it, and the members keep their base, so a
+project loses nothing it had. It stops only where `steward-custom` is
+taken too, since a rename into a taken name would merge two roles; that
+stop is the build's own choice for a case the decision did not name,
+put to the lead in the build's pull request.
 
 ## A redaction notice reaches the event's audience, its reason only humans who may see it
 

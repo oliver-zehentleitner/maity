@@ -895,8 +895,7 @@ What the hub knows (§6.21, §6.23, §11.3, §11.5):
 - **References.** Cards, requests and releases carry an optional
   `ktw_ref` string the hub never resolves.
 - **The steward.** The steward is a member with the role `steward`
-  (`docs/api.md` §2.3, "The steward"; not built yet, tsk-frxgech0sdqc:
-  until it is, a member whose area is `context/`). A
+  (`docs/api.md` §2.3, "The steward"), built on the expert. A
   card kind `maintenance_round` is opened at
   milestones, not per release. Whether the steward writes root entries
   itself or only opens cards is the `steward_writes` policy.

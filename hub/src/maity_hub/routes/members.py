@@ -53,7 +53,14 @@ from maity_hub.errors import ApiError, forbidden, humans_only, invalid, not_foun
 from maity_hub.events import Actor, emit, lock_project
 from maity_hub.models import Strict, markdown
 from maity_hub.namespace import ProjectRoute
-from maity_hub.scopes import MEMBER_RULE_ROLES, OUTSIDE, ROLES, TRUSTS, in_admin_team
+from maity_hub.scopes import (
+    EXPERT_FIELD_ROLES,
+    MEMBER_RULE_ROLES,
+    OUTSIDE,
+    ROLES,
+    TRUSTS,
+    in_admin_team,
+)
 from maity_hub.views import (
     credential_view,
     human_paused,
@@ -838,8 +845,9 @@ def apply_patch(
     # Again as the change is written, after any consent: an outsider's agent keeps no areas or
     # capabilities and reports to its owner or nobody (§2.3 "Outside").
     agent_owners.check_outside_fields(conn, target, values)
-    if values.get("role", "expert") != "expert":
-        # The fields belong to the role: any other role has none (§6.2).
+    if values.get("role", "expert") not in EXPERT_FIELD_ROLES:
+        # The fields belong to the expert and the steward: a change between the two keeps
+        # them, any other role has none (§6.2).
         values = {**values, "expert_for": None, "expert_sources": None}
     changed = {k: v for k, v in values.items() if getattr(target, k) != v}
     if line_consent and "reports_to" in values and not target.line_consent:
@@ -1340,8 +1348,9 @@ def _expert_fields(
 ) -> idempotency.Outcome:
     """An expert's `expert_for` and `expert_sources` (§2.3 "The expert", §6.2): set on their
     own, by a human member who owns the agent profile or holds `members:admin`, or by an
-    admin agent within ᵃ, and only on a member whose role is `expert`. They name what the
-    expert answers about; no consent waits for them, as they give the member no right."""
+    admin agent within ᵃ, and only on a member whose role is `expert` or `steward` (§2.3
+    "The steward"). They name what the expert answers about; no consent waits for them, as
+    they give the member no right."""
     if not given <= EXPERT_FIELDS:
         raise invalid({key: "alone" for key in sorted(given & EXPERT_FIELDS)}, "set them alone")
     mine = membership(conn, caller, slug)
@@ -1356,9 +1365,10 @@ def _expert_fields(
     target = member_row(conn, mine.project.id, member_id)
     if agent_admin:
         admin_agents.check_target(mine, target)  # an agent member, not itself (ᵃ)
-    if target.role != "expert":
+    if target.role not in EXPERT_FIELD_ROLES:  # the expert's and the steward's (§6.2)
         raise invalid(
-            {key: "expert_only" for key in sorted(given)}, "only an expert has these fields"
+            {key: "expert_only" for key in sorted(given)},
+            "only an expert or a steward has these fields",
         )
     values: dict[str, Any] = {}
     if "expert_for" in given:

@@ -785,3 +785,25 @@ def test_a_merge_the_hub_cannot_see_in_full_reaches_every_expert_with_sources(
     [item] = items(owner)
     assert reasons(item)[expert.id] == ["expert_source:*"]
     assert without.id not in reasons(item)
+
+
+def test_every_merge_wakes_every_steward_whatever_it_touches(
+    owner: flow.Human,
+    team: dict[str, flow.Agent],
+    github: FakeGitHub,
+    migrated: Engine,
+    make_client: ClientFactory,
+) -> None:
+    """§2.3 "The steward", §17.3: a merge that touches no `context/` path still wakes each
+    steward (`steward`), and an expert whose sources it misses stays out."""
+    enable(owner, contract_files=[])
+    stewards = [flow.agent(make_client, owner, role="steward") for _ in range(2)]
+    expert = _expert(make_client, owner, ["context/"])
+    merged(github, 32, [{"filename": "hub/x.py", "patch": ""}])
+    assert probe.announce_merges(migrated, READER, project_id(migrated)) == 1
+    [item] = items(owner)
+    for steward in stewards:
+        assert reasons(item)[steward.id] == ["steward"]
+        [entry] = [r for r in item["payload"]["reasons"] if r["member_id"] == steward.id]
+        assert entry["wake"] is True
+    assert expert.id not in reasons(item)

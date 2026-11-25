@@ -96,7 +96,8 @@ def cover_order(conn: Connection, project: Any, row: Any) -> list[Any]:
             # An outsider's agent takes no card it is not handed by a human (§6.5, "Until the
             # claim request is built"; §6.12 `substitutes`): it never covers.
             or outsiders.handed_only_by_a_human(member)
-            or member.role in ("proxy", "expert")  # an expert takes no cards (§2.3)
+            # An expert takes no cards, and a steward is no cover's substitute (§2.3).
+            or member.role in ("proxy", "expert", "steward")
             or member.isolated_since is not None
         ):
             continue  # never a substitute, whatever the policy said when it was set

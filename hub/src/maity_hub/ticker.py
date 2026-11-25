@@ -933,6 +933,9 @@ def write_merge(
         for source in m.expert_sources:
             if any(contains(source, path) for path in merge.paths):
                 audience.add(m.principal, f"expert_source:{source}")
+    for m in people:  # every steward, whatever the merge touches (§2.3 "The steward", §17.3)
+        if m.role == "steward":
+            audience.add(m.principal, "steward")
     linked = linked_cards(conn, project.id, merge.number, merge.head)
     for card in linked:
         holder = _principal_of(conn, card.claim_holder)
