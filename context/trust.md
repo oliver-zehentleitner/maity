@@ -691,11 +691,12 @@ to `role:reviewer` never lands with the purple team.
 
 **Id:** dacf0267-548d-4620-8ee9-e87e5b721d23
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** confirmed
 **Source:** the maintainer's wish in the team chat, 2026-11-08, and the plan he approved in the inbox the same day ("Passt so, bauen"); the details settled with the team lead on the card; who sets the fields, the maintainer's inbox answer of 2026-11-11; contract `docs/api.md` §2.3, §6.2, §7, §17.3
-**Revisit when:** an expert needs to ask back or keep notes, or the hub starts checking that answers cite their sources
+**Revisit when:** an expert needs to ask back or keep notes, or the hub starts checking that answers cite their sources. The first fired on 2026-11-25: the steward, a role built on the expert, asks back and follows up with the coder's scopes, and the expert itself is unchanged; whether that settles this entry is to be re-checked
 **See:** trust.md#the-security-teams-are-built-in-roles-red-blue-and-purple — 015bc7eb-2943-4f2d-8582-2c2cc13b40f0 — as of 2026-11-08
+**See:** trust.md#the-steward-role-keeps-the-reasoning-complete-built-on-the-expert-and-writes-nobodys-entries — ce22ba6d-ff2b-4196-808d-81baf9d6a3e9 — as of 2026-11-25
 
 `expert` is a built-in role with the scopes `project:read` and
 `events:post` only. The sources it learns are named for it, and it
@@ -730,6 +731,67 @@ answering and posting, and no new review or merge rights.
 - `requests:ask` for the expert: the approved plan lists only reading,
   answering and posting, and the team lead kept it at that when asked.
   An expert can still ask back by message.
+
+## The steward role keeps the reasoning complete, built on the expert, and writes nobody's entries
+
+**Id:** ce22ba6d-ff2b-4196-808d-81baf9d6a3e9
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's notes on card tsk-frxgech0sdqc, 2026-11-25; the team lead's decision on the eleven open points of pull request #2221, the same day; contract `docs/api.md` §2.3 "The steward", §6.1, §6.2, §6.9, §17.3
+**Revisit when:** a steward needs to assign the cards it opens, a project needs stewards beyond one per part, or the hub gets a scheduler
+**See:** trust.md#an-expert-role-answers-from-declared-sources-and-only-answers — dacf0267-548d-4620-8ee9-e87e5b721d23 — as of 2026-11-25
+
+`steward` is a built-in role with the coder's scopes and the expert's
+fields `expert_for` and `expert_sources`, filled with `context/` by a
+join that names none. It answers why questions from the entries with
+the entry of each answer. Every ticker merge wakes every steward; it
+also sweeps at resume and when asked, with no scheduler in the hub. For
+a decision without an entry, or an open, `needs-review` or
+`pending-confirmation` entry, it asks the member who owes it, a note on
+the card first, and sends its lead a short status. It opens cards with
+the entry's `area` so routing reaches the owner, or leaves them open
+with a note and a message. The hub keeps it out of area routing,
+substitutes and `needs`, makes it no base for a project role, renames
+an existing project role `steward` to `steward-custom`, and does not
+offer it to outsiders; one per project is the default, with no limit.
+The dashboard hides it when the memory provider is `none`; the hub does
+not refuse it there.
+
+**Reason:** the maintainer's three points. It builds on the expert and
+knows all of `context/`, so one member can answer every why question
+and see what is missing across the parts. It chases what is open: the
+expert only answers when asked, and a missing entry stays missing until
+someone asks for it. Every agent still writes its own entries: the
+author knows the reasoning, the steward only knows it is missing, so
+the steward is no substitute and by default asks the author
+(`steward_writes: cards_only`; `self` lets it write only where no author
+can).
+
+**Rejected alternatives:**
+- The old join-dialog preset, a coder with the area `context/`: it
+  cannot answer as an expert, carries no guide for the follow-up and is
+  not woken by merges.
+- The expert's scopes plus a notes-only right: new machinery for one
+  role; the coder's scopes already post notes, open cards and file
+  requests.
+- Trust `admin`: far broader than asking needs.
+- A right to assign the cards it opens to the author: area routing, or
+  an open card with a note and a message, reaches the author without it.
+- The steward following merges itself through its ticker subscription:
+  it would depend on each agent setting it up; the hub's wake costs
+  little and matches the expert's.
+- A daily round timed by the hub or the agent: merges, resume and asks
+  are enough, and the hub has no scheduler.
+- Ticker posts to nudge: they would need `ticker:post`, and a card note
+  reaches the one who owes the entry.
+- The hub refusing the role under memory provider `none`: hiding it in
+  the dashboard is enough, and a refusal would break a project that
+  switches the provider later.
+
+**Workarounds:** until the role is built, a project role on `writer`
+with the area `context/` stands in. Without the ticker no merge wakes
+the steward, so it sweeps at resume and when asked.
 
 ## A redaction notice reaches the event's audience, its reason only humans who may see it
 
