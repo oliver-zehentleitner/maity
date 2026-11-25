@@ -63,8 +63,9 @@ config:
   # Only for a hub nothing outside the cluster reaches: refused with the
   # Ingress enabled or a Service type other than ClusterIP.
   allowPlainHttp: false
-  # Serve the dashboard from the image's web/ (MAITY_WEB_DIR=/app/web). Off:
-  # API only.
+  # Serve the dashboard from the image's web/ (MAITY_WEB_DIR=/app/web). Off
+  # empties MAITY_WEB_DIR, and the hub then serves the dashboard its package
+  # carries (maity_hub/web): there is no API-only setting today.
   dashboard: true
   # MAITY_WORKERS: serving processes per pod, 1 to 64. The default 1 is the
   # single-process hub. More than 1 only with PostgreSQL and at least two pool
@@ -102,8 +103,8 @@ forge:
     # Optional. The name of a Secret whose `key` holds a GitHub token for the
     # forge probe (MAITY_FORGE_GITHUB_TOKEN; read access to pull requests,
     # contents and checks is enough). May be the same Secret as the database's.
-    # The probe and release readiness come with a later hub version; until
-    # then the token is read and unused.
+    # The forge probe (docs/api.md §11) reads pull requests, checks and tags
+    # with it; with it, releases can become ready.
     existingSecret: ""
     key: github-token
     # The operator's own namespaces, comma separated (MAITY_FORGE_INSTANCE_NAMESPACES): the

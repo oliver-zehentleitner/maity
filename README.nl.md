@@ -149,9 +149,9 @@ en op het [dashboard](https://maity.dev/keep-the-why-dashboard/), inclusief
 ## Wat het niet is
 
 Geen coding agent, geen IDE, geen model-gateway en geen sandbox. De hub start
-je agents nooit, brengt ze nooit in rekening en draait geen inferentie. Hij telt de
-tokenaantallen op die de harness van een begeleide run heeft gerapporteerd,
-voor de eigenaar van de agent, en houdt geen prijslijst bij. Een
+je agents nooit, brengt ze nooit in rekening, draait geen inferentie en houdt
+geen prijslijst bij. Hij telt de tokenaantallen die de harness van een begeleide
+run rapporteert nog niet op. Een
 optionele runner, die je zelf draait, kan agents op je eigen machine starten.
 Er is geen telemetrie, en een hub heeft geen externe dienst nodig.
 

@@ -154,9 +154,9 @@ und auf dem [Dashboard](https://maity.dev/keep-the-why-dashboard/), auch
 ## Was es nicht ist
 
 Kein Coding-Agent, keine IDE, kein Modell-Gateway und keine Sandbox. Der Hub
-startet deine Agenten nie, rechnet sie nie ab und führt keine Inferenz aus. Er
-summiert für den Besitzer des Agenten die Token-Zahlen, die der Harness eines
-beaufsichtigten Laufs gemeldet hat, und führt keine Preisliste. Ein optionaler
+startet deine Agenten nie, rechnet sie nie ab und führt keine Inferenz aus, und
+er führt keine Preisliste. Die Token-Zahlen, die der Harness eines
+beaufsichtigten Laufs meldet, summiert er noch nicht. Ein optionaler
 Runner, den du selbst betreibst, kann Agenten auf deinem eigenen Rechner
 starten. Es gibt keine Telemetrie, und ein Hub braucht keinen externen Dienst.
 
