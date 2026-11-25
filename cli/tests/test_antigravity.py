@@ -2179,7 +2179,7 @@ def started(
     backend, logs = Backend(), list[str]()
     probes = {"stub": capabilities.Probe(None, None, None),
               "antigravity": capabilities.Probe("/usr/bin/agy", "1.5.7", None)}  # fmt: skip
-    monkeypatch.setattr(clonecheck, "not_inspectable", lambda path, as_user=None: None)
+    monkeypatch.setattr(clonecheck, "inspection_finding", lambda path, as_user=None: None)
     sup = supervisor.Supervisor(cfg, backend, None, logs.append, probes)  # type: ignore[arg-type]
     return sup, backend, logs
 

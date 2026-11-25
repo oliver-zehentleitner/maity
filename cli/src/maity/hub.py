@@ -23,7 +23,6 @@ from maity.state import Secret
 API = "/api/v1"
 LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "::1"}
 CLIENT = f"maity-cli/{__version__}"
-USER_AGENT = CLIENT
 # §1.5: exempt from Idempotency-Key, because a repeat is harmless or opens a fresh session.
 NO_IDEMPOTENCY = ("/me/resume", "/join/", "/runner/hello", "/runner/placements/")
 
@@ -457,7 +456,7 @@ def _guard_payload(body: bytes, query: str, path: str = "") -> None:
 
 def get_text(url: str, timeout: float = 30.0) -> str:
     """GET `url`, which callers build from `hub_base()`, so its scheme is http(s) only."""
-    headers = {"Accept": "text/markdown, text/plain", "User-Agent": USER_AGENT}
+    headers = {"Accept": "text/markdown, text/plain", "User-Agent": CLIENT}
     request = urllib.request.Request(url, headers=headers)  # noqa: S310
     try:
         with opener().open(request, timeout=timeout) as response:
@@ -505,7 +504,7 @@ def _exchange(
     `Secret`; it is never decoded into anything that could be printed, and an error body is
     never mistaken for it."""
     body = json.dumps({"code": code, "client": client}).encode("utf-8")
-    headers = {"Content-Type": "application/json", "User-Agent": USER_AGENT}
+    headers = {"Content-Type": "application/json", "User-Agent": CLIENT}
     request = urllib.request.Request(url, data=body, method="POST", headers=headers)  # noqa: S310
     try:
         with opener().open(request, timeout=timeout) as response:
@@ -651,7 +650,7 @@ class Client:
         else:
             data = b"" if body is None else json.dumps(body, separators=(",", ":")).encode("utf-8")
         _guard_payload(data, query_string, path)
-        headers = {"User-Agent": USER_AGENT, "Accept": "application/json"}
+        headers = {"User-Agent": CLIENT, "Accept": "application/json"}
         if raw is not None:
             headers["Content-Type"] = content_type or "application/octet-stream"
         elif body is not None:
@@ -685,7 +684,7 @@ class Client:
             raise HubError(f"not a plain path: {path!r}")
         full_path = f"{API}{path}"
         _guard_payload(b"", "", path)
-        headers = {"User-Agent": USER_AGENT, "Accept": "*/*"}
+        headers = {"User-Agent": CLIENT, "Accept": "*/*"}
 
         def stream(response: Any) -> int:
             total = 0

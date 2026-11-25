@@ -1648,7 +1648,7 @@ window.Maity = window.Maity || {};
       // The tabs this browser has open, in its order (js/tabs.js): dragged
       // into place, or moved with Alt+Shift+Arrow, or from the tabs menu.
       // A public project of which the human is no member is drawn dashed (outsiderTab).
-      M.tabs.row(ctx).map((p) => (p.outsider ? outsiderTab(ctx, p) : h("a", {
+      M.tabs.row(ctx).map((p) => (p.outsider ? outsiderTab(ctx, p, pill) : h("a", {
         href: projectLink(p.full_name, "inbox"),
         "aria-current": ctx.scope === "project" && p.full_name === ctx.slug ? "page" : null,
         "data-project": p.id,
@@ -1679,9 +1679,17 @@ window.Maity = window.Maity || {};
   // its place among the tabs (dragged and moved as they are) and carries a filled star whose
   // button takes the star off; this session's own tab carries an empty star that stars it, once
   // the project's view gave its id. The star is a button beside the link, not inside it: a
-  // link holds no other control.
-  function outsiderTab(ctx, p) {
+  // link holds no other control. Both sit in one dashed outline (`.outsider-tab`).
+  // It draws what a member's tab draws (the maintainer, tsk-q8s9dfjmjsxy): logo, name, lock, state
+  // dot and pill. The logo, the lock (a private project's only) and the state come from the
+  // project's view once read (`/me` `starred` carries no state); the pill comes from the counts
+  // (`pill`). The dot is left out while the state is not known.
+  const outsiderViews = {}; // a dashed tab's project view, kept once read while this page lives
+  function outsiderTab(ctx, p, pill) {
     const movable = !!p.starred;
+    if (ctx.scope === "project" && ctx.slug === p.full_name && ctx.project) outsiderViews[p.full_name] = ctx.project;
+    const view = (ctx.projectViews || {})[p.full_name] || outsiderViews[p.full_name] || null;
+    const state = view && view.state;
     const link = h("a", {
       href: projectLink(p.full_name, "overview"),
       class: "outsider" + (p.starred ? " starred" : ""),
@@ -1698,8 +1706,11 @@ window.Maity = window.Maity || {};
       ondragend: movable ? () => dragTab.end() : null,
       onkeydown: movable ? (e) => moveTabByKey(ctx, e, p) : null,
     },
-    projectMark(p.full_name, p.full_name.split("/").pop(), null, "small"),
+    projectMark(p.full_name, p.full_name.split("/").pop(), view, "small"),
     p.name,
+    privateMark(view),
+    state ? h("span", { class: "dot state-dot-" + state, title: M.dom.word("project", state), "aria-label": M.dom.word("project", state) }) : null,
+    pill ? pill(p) : null,
     h("span", { class: "visually-hidden" }, ", " + outsiderSaid(p)));
     // This session's tab of a project whose id no view of it has given yet: nothing to star.
     if (!p.starred && !p.id) return link;

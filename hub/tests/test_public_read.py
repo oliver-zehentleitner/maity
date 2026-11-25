@@ -10,7 +10,7 @@ from typing import Any
 import pytest
 from sqlalchemy import Engine, select, update
 
-from maity_hub import public_pages, public_projects
+from maity_hub import public_design, public_pages
 from maity_hub import tables as t
 from tests import flow
 from tests.conftest import ClientFactory
@@ -369,6 +369,7 @@ def test_explore_says_so_when_no_project_has_a_page(world: World) -> None:
 
 
 def test_a_monogram_is_the_names_first_letter() -> None:
-    assert public_projects.monogram("a/web", "maity web") == "M"
-    assert public_projects.monogram("a/web", "2 · ünd") == "Ü"
-    assert public_projects.monogram("a/x9", "42") == "X"
+    assert public_design.monogram("maity web", "web") == "M"
+    assert public_design.monogram("2 · ünd", "web") == "Ü"
+    assert public_design.monogram("42", "x9") == "X"
+    assert public_design.monogram(None, "x9") == "X"

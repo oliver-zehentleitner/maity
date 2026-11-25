@@ -38,6 +38,42 @@ def context(tmp_path: Path, harness_id: str = "claude-code", **overrides: Any) -
     return adapters.Context(**data)
 
 
+@pytest.mark.parametrize(
+    ("harness_id", "binary", "flag"),
+    [
+        ("claude-code", "claude", "--model"),
+        ("codex", "codex", "-m"),
+        ("antigravity", "agy", "--model"),
+    ],
+)
+@pytest.mark.parametrize("placement_model", [None, "override"])
+def test_placement_model_or_harness_default(
+    tmp_path: Path, harness_id: str, binary: str, flag: str, placement_model: str | None
+) -> None:
+    harness = config.Harness(
+        harness_id,
+        ("interactive", "supervised"),
+        "interactive",
+        ("default", "override"),
+        default_model="default",
+    )
+    for mode in harness.modes:
+        ctx = context(
+            tmp_path / mode,
+            harness=harness,
+            binary=f"/usr/bin/{binary}",
+            folder=tmp_path / mode if harness_id == "antigravity" else None,
+            placement={**PLACEMENT, "mode": mode, "model": placement_model},
+        )
+        launch = adapters.launch(ctx)
+        commands = [launch.argv]
+        if mode == "supervised":
+            spec = json.loads(Path(launch.argv[-1]).read_text())
+            commands = [spec["first"], spec["again"]]
+        for argv in commands:
+            assert argv[argv.index(flag) + 1] == (placement_model or "default")
+
+
 def test_claude_code_interactive(tmp_path: Path) -> None:
     ctx = context(tmp_path)
     launch = adapters.launch(ctx)
@@ -59,6 +95,7 @@ def test_claude_code_interactive(tmp_path: Path) -> None:
     # to stop waiting (the first runner test of 0.1.0a8: the agents went away after each turn).
     assert launch.env == {
         "MAITY_PLACEMENT": "plc-0003", "GIT_COMMON_DIR": str(ctx.clone / ".git"),
+        clonecheck.GIT_DEVICE_ENV: str(os.lstat(ctx.clone / ".git").st_dev),
         clonecheck.GIT_INODE_ENV: str(os.lstat(ctx.clone / ".git").st_ino),
         clonecheck.GIT_PRIVATE_ENV: str(ctx.agent_dir / "git"),
         # The reaper opt-out is on every claude-code placement (test below for both modes).
@@ -1339,6 +1376,7 @@ def test_opencode_launch(tmp_path: Path) -> None:
     assert flags(launch.argv) <= opencode_23_flags(OPENCODE_23_TUI)
     settings = json.loads(Path(launch.env["OPENCODE_CONFIG"]).read_text())
     assert settings["model"] == "xai/grok-4.7"
+    assert settings["snapshot"] is False
     rules = settings["permission"]
     assert list(rules)[0] == "*" and rules["*"] == "deny"  # first: the last match wins
     assert rules["bash"]["*"] == "deny" and rules["bash"]["make test *"] == "allow"
@@ -1373,7 +1411,9 @@ def test_opencode_supervised(tmp_path: Path) -> None:
     assert "--dir" not in spec["first"] + spec["again"]
     run = opencode_23_flags(OPENCODE_23_RUN)
     assert flags(spec["first"]) <= run and flags(spec["again"]) <= run
-    assert json.loads(Path(launch.env["OPENCODE_CONFIG"]).read_text())["model"] == "xai/grok-4.7"
+    settings = json.loads(Path(launch.env["OPENCODE_CONFIG"]).read_text())
+    assert settings["model"] == "xai/grok-4.7"
+    assert settings["snapshot"] is False
     # Its working directory: the session starts in the placement's workspace path
     # (supervisor: `backend.start(name, place.path, …)`), which is the clone itself for a
     # harness without a workspace folder, and the loop runs each `opencode run` there.

@@ -14,8 +14,10 @@ from __future__ import annotations
 import base64
 import contextvars
 import io
+import itertools
 import json
 import threading
+import time
 import urllib.error
 import urllib.request
 from collections import OrderedDict
@@ -944,8 +946,39 @@ def test_a_link_on_a_user_account_keeps_its_reasons_for_every_admin(
 # --- review A2545 #5 and #6: no cache answers for a link that serves nothing ----------------------
 
 
+_MARKERS = itertools.count(1)
+
+
+def _notices_handled(engine: Engine) -> None:
+    """On PostgreSQL every write that forgets a project's reads also announces it, and this
+    process's own listener forgets once more when the notice arrives, at a moment of its own
+    (`wakeups.forgotten`). A test that puts an entry into the cache after such a write (the
+    repository confirmed) could see it dropped by that late notice before it looks at it
+    (tsk-becwbeam3ysb). This waits until the listener has handled every notice sent so far: a
+    marker sent after them arrives after them, as notices arrive in commit order. It is sent
+    again until it lands, since one sent before the listener's LISTEN is lost. SQLite announces
+    nothing and has no listener."""
+    if engine.dialect.name != "postgresql":
+        return
+    key = ("tests-settle", next(_MARKERS))
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline:
+        with github_app._tokens_lock:
+            github_app._tokens[key] = ("marker", time.time() + 60)
+        with engine.begin() as conn:
+            wakeups.announce_forget(conn, f"token:{key[0]}:{key[1]}")
+        sent = time.monotonic()
+        while time.monotonic() - sent < 1:
+            with github_app._tokens_lock:
+                if key not in github_app._tokens:
+                    return
+            time.sleep(0.01)
+    raise AssertionError("the listener handled no notice within 10 s")
+
+
 def _cached_export(engine: Engine) -> str:
     """An export in §11.3's cache, as a read through the link left it: a private one."""
+    _notices_handled(engine)
     project_id = _project_id(engine)
     snapshot = ktw.Snapshot(clock.rfc3339(clock.now()), [], False)
     with ktw.CACHE.guard:
@@ -1853,6 +1886,7 @@ VIEW = "/projects/maintainer/maity"
 def _cached_member(engine: Engine) -> str:
     """An export in the cache naming one member, as a read through the link left it, with no
     grant's end on it: what the view and §11.3 do must not rest on that mark alone."""
+    _notices_handled(engine)
     project_id = _project_id(engine)
     member = ktw.Member(path=".", name="secret-plan", id="secret-id")
     snapshot = ktw.Snapshot(clock.rfc3339(clock.now()), [member], False)
@@ -1916,6 +1950,7 @@ def test_the_views_refresh_keeps_no_member_of_such_a_link_after_not_admin(
         "_refresh_later",
         lambda reader, pid, url, _s: ktw._refresh_in_background(reader, pid, url, later.append),
     )
+    _notices_handled(migrated)
     with ktw.CACHE.guard:
         ktw.CACHE.entries[project_id].at -= 660
     owner.get(VIEW)
@@ -1943,6 +1978,7 @@ def test_the_why_cache_is_not_answered_when_the_forge_no_longer_names_the_instal
     monkeypatch.setattr(github_app.GitHubApp, "installation_of", lambda _a, _r: None)
     no_grant = (409, "probe_not_configured", {"reason": "no_grant"})
     assert _error(owner.get(WHY)) == no_grant
+    _notices_handled(migrated)
     with ktw.CACHE.guard:
         ktw.CACHE.entries[project_id].at -= 660
     assert _error(owner.get(WHY)) == no_grant

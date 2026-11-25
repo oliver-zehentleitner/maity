@@ -8143,10 +8143,6 @@
     "en": "aa7e6ee1e235416d",
     "text": "efd0461a0aa8254d"
   },
-  "join.field.areas": {
-    "en": "1c4e2d9fbcbe3d15",
-    "text": "1cbcef019dc9bc9e"
-  },
   "join.field.handover": {
     "en": "8d28a5f16e6a31c7",
     "text": "820963e0b7784e96"
@@ -8159,21 +8155,9 @@
     "en": "a79fceb9b8208c11",
     "text": "e6974f60698e227a"
   },
-  "join.field.reports_to": {
-    "en": "ddb4b4f3be5eb79c",
-    "text": "7c654ce83a766b9a"
-  },
-  "join.field.role": {
-    "en": "53e8ea77422c2216",
-    "text": "b59e28aaf1467ae6"
-  },
   "join.field.takes_over": {
     "en": "9464f06edbeffcec",
     "text": "ebabf82ece64c845"
-  },
-  "join.field.trust": {
-    "en": "a820cd68d01373b5",
-    "text": "f3c78c905f4745da"
   },
   "join.field.ttl": {
     "en": "dc4ff46e5270cd76",
@@ -8307,6 +8291,14 @@
     "en": "467135c1c96f9e6d",
     "text": "a26e611f5c4e2814"
   },
+  "join.membership.manage": {
+    "en": "81fa96549bea4298",
+    "text": "16e4cb6597925a7e"
+  },
+  "join.membership.readonly": {
+    "en": "cdd60bffc2c48ee6",
+    "text": "df07359ef10f2903"
+  },
   "join.platform.join": {
     "en": "ddd732782b13bd41",
     "text": "432aac71dd390715"
@@ -8359,6 +8351,14 @@
     "en": "e4e7ea7ba1d2f146",
     "text": "89585be89af4cfce"
   },
+  "join.reports.failed_start": {
+    "en": "076042369641eadb",
+    "text": "27e0fc259cd950bc"
+  },
+  "join.reports.kept": {
+    "en": "f349dea0a8d2d059",
+    "text": "99252c8abd4d9f5a"
+  },
   "join.reports.member_hint": {
     "en": "96701e251e6b2cd0",
     "text": "67001ec77a3ae56a"
@@ -8406,6 +8406,22 @@
   "join.rulebook_link": {
     "en": "609ddf184a7699e1",
     "text": "85c53c61b74bf5b0"
+  },
+  "join.runner.join_only": {
+    "en": "c4dbd7b8298f4e20",
+    "text": "2be5d2d1c144faab"
+  },
+  "join.runner.no_line": {
+    "en": "578bc5dfccf6362e",
+    "text": "17f833a41781ef93"
+  },
+  "join.runner.no_replace": {
+    "en": "275033cf2d3c8810",
+    "text": "e7064d2df9e3ca05"
+  },
+  "join.runner.own_agents": {
+    "en": "96fd5ab8e0a85d75",
+    "text": "91f0907781a502d5"
   },
   "join.seat.join": {
     "en": "295ca9336dc1935b",
@@ -14067,6 +14083,10 @@
     "en": "c0774c185060fc13",
     "text": "0ffb3668cf88fff5"
   },
+  "placements.clone": {
+    "en": "9fc50c4663edb934",
+    "text": "97b176b078feee71"
+  },
   "placements.consent.answer": {
     "en": "3cd96246ee7151c9",
     "text": "e5421a2fe7077344"
@@ -14378,6 +14398,10 @@
   "placements.new.tool": {
     "en": "077dcaba577a59ac",
     "text": "d07f9d4a5d5cda02"
+  },
+  "placements.no_instance": {
+    "en": "18d73d169164d0d8",
+    "text": "e8337e239b3efe87"
   },
   "placements.not_removed": {
     "en": "5d15ffc78d58b477",

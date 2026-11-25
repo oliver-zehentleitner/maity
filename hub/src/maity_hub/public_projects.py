@@ -1,8 +1,9 @@
 """A project's public page (docs/api.md §16.9): `GET /{owner}/{slug}` while the project's
 `public_page` is `on`.
 
-It shows the project's `name` and `full_name`, its state and the `public_about` text; the
-members, the agents, the repository and the statistics follow in the next steps. A page is not
+It shows the project's `name` and `full_name`, its state and the `public_about` text, its
+people and agents, the repository and its links, the statistics, and a snapshot of what is
+happening (Recently, who is online); its views are `public_project_views`. A page is not
 served for an archived project, for one a moderation hold stands on, or while its namespace
 owner is suspended, waiting for approval or deleted, or an organisation that is suspended or
 deleted. Whatever changes one of these calls `public_pages.touch` in its transaction.
@@ -10,7 +11,6 @@ deleted. Whatever changes one of these calls `public_pages.touch` in its transac
 
 from __future__ import annotations
 
-import hashlib
 from collections.abc import Collection
 from html import escape
 from typing import Any
@@ -35,7 +35,7 @@ from maity_hub.config import Settings
 from maity_hub.errors import invalid
 
 KIND = "project"
-VIEWS = "project_views"  # the kind of its Board, Members and Organisation pages
+VIEWS = "project_views"  # the kind of its Board, Team, Organisation and Why pages
 ABOUT_MAX_BYTES = 4096  # 4 KiB (§16.9)
 
 
@@ -215,17 +215,14 @@ def member_pictures(
 
 
 def team_details(
-    conn: Connection, project_id: str, humans: list[Any], agents: list[Any]
-) -> tuple[dict[str, str | None], dict[str, str], dict[str, str | None]]:
-    """What the page's data adds to each one it names (§16.9, `project`): the picture a person's
-    own page shows (none while their `public_profile` is off; an agent always has one), the role
-    of the membership in this project, as the Team tab shows it, and an agent's harness, as its
-    own page shows it."""
+    conn: Connection, project_id: str, agents: list[Any]
+) -> tuple[dict[str, str], dict[str, str | None]]:
+    """What the page's data adds to each one it names besides the picture (§16.9, `project`):
+    the role of the membership in this project, as the Team tab shows it, and an agent's
+    harness, as its own page shows it. The picture follows the member's own page
+    (`member_pictures`, read once by `render_project`)."""
     from maity_hub import public_agents
 
-    pictures = member_pictures(
-        conn, [(h.id, bool(h.public_profile)) for h in humans], [a.id for a in agents]
-    )
     m = t.membership.c
     roles: dict[str, str] = {}
     for human_id, agent_id, role in conn.execute(
@@ -236,18 +233,10 @@ def team_details(
     for a in agents:
         found = public_agents.memberships(conn, a.id)
         harnesses[a.id] = public_agents.latest_session(conn, found)[1] if found else None
-    return pictures, roles, harnesses
+    return roles, harnesses
 
 
 STAT_DAYS = 30
-STAT_LABELS = (
-    ("cards_done", "Cards done"),
-    ("reviews_given", "Reviews given"),
-    ("prs_merged", "Pull requests merged"),
-    ("handovers", "Handovers"),
-    ("claim_to_done_median_seconds", "Median, claim to done"),
-    ("review_to_done_median_seconds", "Median, review to done"),
-)
 
 
 def agent_statistics(
@@ -375,10 +364,15 @@ def render_project(conn: Connection, hub: Settings, project_id: str) -> list[pub
     )
     humans, agents = team(conn, project.id)
     statistics = agent_statistics(conn, project.id, agents)
-    from maity_hub import public_snapshot
+    from maity_hub import public_agents, public_snapshot
+    from maity_hub.public_project_views import members, shown_pictures
 
+    # The members are read once for the page: the Members figure, the pictures of everyone it
+    # names and who is online all come from this one read.
+    who = members(conn, project.id)
+    pictures = shown_pictures(conn, who)
     entries = public_snapshot.ticker(conn, project)
-    up = public_snapshot.online(conn, project.id)
+    up = public_snapshot.online(conn, who, pictures)
     owners = dict(
         conn.execute(
             select(t.human.c.id, t.human.c.handle).where(
@@ -386,11 +380,7 @@ def render_project(conn: Connection, hub: Settings, project_id: str) -> list[pub
             )
         ).all()
     )
-    pictures, roles, harnesses = team_details(conn, project.id, humans, agents)
-    from maity_hub.public_project_views import members as team_members
-
-    # The Members figure: the Team tab's list, those it names and those it only counts.
-    members_count = len(team_members(conn, project.id))
+    roles, harnesses = team_details(conn, project.id, agents)
     data = {
         "name": project.name,
         "full_name": full,
@@ -412,14 +402,15 @@ def render_project(conn: Connection, hub: Settings, project_id: str) -> list[pub
             {
                 "name": a.display_name,
                 "handle": a.handle,
-                "page": f"/{owners[a.owner_id]}/agents/{a.handle}",
+                "page": public_agents.path_of(owners[a.owner_id], a.handle),
                 "picture": pictures.get(a.id),
                 "role": roles.get(a.id),
                 "harness": harnesses.get(a.id),
             }
             for a in agents
         ],
-        "members": members_count,
+        # The Members figure: the Team tab's list, those it names and those it only counts.
+        "members": len(who),
         "statistics": statistics,
         "ticker": entries,
         # The snapshot's time: `data` is stored on every render, the HTML and the sitemap's
@@ -428,21 +419,9 @@ def render_project(conn: Connection, hub: Settings, project_id: str) -> list[pub
     }
     path = f"/{full}"
     content = public_design.page(KIND, data, path)
-    digest = hashlib.sha256("\x00".join((path, project.name, content)).encode())
     return [
-        public_pages.Page(
-            path=path,
-            body=render.page_document(
-                lang="en",
-                title=f"{project.name} ({full})",
-                canonical=f"{hub.public_url.rstrip('/')}{path}",
-                content=content,
-                styled=False,
-            ),
-            inputs=digest.hexdigest(),
-            lastmod=clock.now(),
-            view="project",
-            data=data,
+        public_pages.page(
+            hub, path, f"{project.name} ({full})", content, (project.name,), KIND, data
         )
     ]
 
@@ -483,7 +462,9 @@ def touch_owned(conn: Connection, human_id: str, *, removal: bool = True) -> Non
 def touch_of_org(conn: Connection, org_id: str, *, removal: bool = True) -> None:
     """The organisation's page and those of every project it owns: it was suspended, deleted
     or renamed."""
-    public_pages.touch(conn, "organisation", org_id, removal=removal)
+    from maity_hub import public_orgs
+
+    public_pages.touch(conn, public_orgs.KIND, org_id, removal=removal)
     for project_id in conn.execute(
         select(t.project.c.id).where(
             t.project.c.owner_org_id == org_id, t.project.c.public_page == "on"
@@ -493,7 +474,7 @@ def touch_of_org(conn: Connection, org_id: str, *, removal: bool = True) -> None
 
 
 def dependents(conn: Connection, project_id: str) -> list[tuple[str, str]]:
-    """The pages that show a project: its views (Board, Members, Organisation, which follow its
+    """The pages that show a project: its views (Board, Team, Organisation, Why, which follow its
     page: served, named and shown alike), its agents' pages, and the person pages that list it
     or its agents: its human members' and the owners' of its agent members, who need not be
     members themselves (§16.9)."""
@@ -515,7 +496,7 @@ def member_dependents(
 
 
 def _dependents(conn: Connection, project_id: str, cards: list[str]) -> list[tuple[str, str]]:
-    from maity_hub import public_agents, public_cards
+    from maity_hub import public_agents, public_cards, public_orgs
 
     m = t.membership.c
     members = conn.execute(
@@ -530,9 +511,9 @@ def _dependents(conn: Connection, project_id: str, cards: list[str]) -> list[tup
     return [
         (VIEWS, project_id),
         *[(public_cards.KIND, card) for card in cards],
-        *([("organisation", org)] if org else []),
+        *([(public_orgs.KIND, org)] if org else []),
         *public_agents.pages_of_project(conn, project_id),
-        *[("person", person) for person in people],
+        *[(public_people.KIND, person) for person in people],
         *_shared_agent_pages(conn, project_id),
     ]
 
@@ -558,13 +539,6 @@ def _shared_agent_pages(conn: Connection, project_id: str) -> list[tuple[str, st
         .order_by(other.c.project_id)
     ).scalars()
     return [(KIND, other_id) for other_id in ids]
-
-
-def monogram(full: str, name: str) -> str:
-    """The letter on a project's card on `/explore`: the first letter of its name in upper
-    case, else the first character of its slug. Projects have no picture, so the tile shows
-    this letter in the accent colour (the approved mockup, README point 8)."""
-    return next((char for char in name if char.isalpha()), full.rsplit("/", 1)[-1][:1]).upper()
 
 
 def explore_html(
@@ -594,12 +568,17 @@ def explore_html(
         key=lambda item: (item[1].casefold(), item[0]),
     )
 
+    def monogram_of(full: str, name: str) -> str:
+        return public_design.monogram(name, full.rsplit("/", 1)[-1])
+
     def page(lang: str, words: dict[str, str]) -> tuple[str, str]:
         # As the approved mockup draws it (tsk-tp97v64vpy5z): the landing's dark hero, then the
         # projects as cards. No count is shown, so no figure can be 0.
+        # Projects have no picture, so the tile shows the first letter of the name in the
+        # accent colour, else that of the slug (the approved mockup, README point 8).
         cards = "".join(
             f'<li><a class="xcard" href="/{escape(full, quote=True)}">'
-            f'<span class="pmark" aria-hidden="true">{escape(monogram(full, name))}</span>'
+            f'<span class="pmark" aria-hidden="true">{escape(monogram_of(full, name))}</span>'
             f"<b>{escape(name)}</b><small>{escape(full)}</small>"
             f'<span class="go">{escape(words["open"])} <span aria-hidden="true">→</span></span>'
             "</a></li>"

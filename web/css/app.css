@@ -486,7 +486,13 @@ nav.views a:focus-visible { outline-offset: -2px; }
 /* Positioned, so its visually-hidden words stay inside it: a session tab is not draggable, and
    only a[draggable="true"] is positioned above (390 px was 125 px wider without it). */
 .switcher a.outsider { border-style: dashed; position: relative; }
-.switcher .outsider-tab { display: inline-flex; align-items: center; gap: 2px; flex: none; }
+/* With its star, the box draws the dashed pill around both, star right of the name (tsk-q8s9dfjmjsxy). */
+.switcher .outsider-tab { display: inline-flex; align-items: center; gap: 0; flex: none;
+  border: 1px dashed var(--border); border-radius: 999px; padding-inline-end: 2px; }
+.switcher .outsider-tab > a.outsider { border: 0; padding-inline-end: 4px; }
+.switcher .outsider-tab:has(> a.outsider[aria-current="page"]) { border-color: var(--accent); background: var(--surface-2); }
+.switcher .outsider-tab > a.outsider[aria-current="page"] { background: transparent; }
+.switcher .outsider-tab > a.drop-after::after { inset-inline-end: -32px; }
 .switcher .tab-star { display: inline-flex; align-items: center; justify-content: center; min-width: 24px; min-height: 24px;
   padding: 0; border: 1px solid transparent; border-radius: 999px; background: transparent; color: var(--accent); cursor: pointer; }
 .switcher .tab-star:hover { border-color: var(--border); background: var(--surface-2); }
@@ -1151,7 +1157,7 @@ pre.paste-line { white-space: pre-wrap; margin: 4px 0; }
 
 /* Two panes, like a messenger: the chats left, the open one right. On a
    phone the list is one screen and the chat another. */
-.chat-layout { --chat-h: calc(100dvh - 140px); display: grid; grid-template-columns: minmax(16rem, 24rem) minmax(0, 1fr); gap: 20px; align-items: start; }
+.chat-layout { --chat-h: calc(100dvh - 140px); --chat-min: 0px; display: grid; grid-template-columns: minmax(16rem, 24rem) minmax(0, 1fr); gap: 20px; align-items: start; }
 .chat-list-pane h2 { margin-top: 0; }
 .chat-list, .cross-chat-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
 /* Cross-project chats (§9.5): a list of their own under the project chats. */
@@ -1200,16 +1206,29 @@ pre.paste-line { white-space: pre-wrap; margin: 4px 0; }
 .avatars .dot { position: absolute; right: -2px; bottom: -2px; box-shadow: 0 0 0 2px var(--bg); }
 /* The open chat is a column of the screen's height (--chat-h, set by the
    view): its header and the composer stay, only the history scrolls. */
-.chat-layout.open .chat-pane { display: flex; flex-direction: column; height: var(--chat-h); min-height: 0; }
+/* Never shorter than its heading and composer (--chat-min, js/chat.js fit; tsk-ftrkm6wda8yq): only the
+   history shrinks; in the page's flow, where --chat-h comes out too small, the page scrolls rather than
+   cut the composer (full screen pins the pane and scrolls nothing, below). */
+.chat-layout.open .chat-pane { display: flex; flex-direction: column; height: var(--chat-h); min-height: var(--chat-min); }
 .chat-layout.open .chat-pane .messages { position: relative; flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; margin-bottom: 8px; padding-right: 4px; }
 .chat-layout.open .chat-pane .compose { flex: none; }
 .chat-layout.open .chat-list-pane { max-height: var(--chat-h); overflow-y: auto; }
 /* Full screen (js/chat.js fullScreen, tsk-fnch2yxp2kk1): the open chat covers the window, over the
    header, the list and the product line, on the page's own ground; the page under it does not
-   scroll. Its column is the window's height, whatever --chat-h says for the page. */
+   scroll. Its column is what is seen: the visual viewport, which js/chat.js writes while full (a
+   phone's keyboard shrinks it, 100dvh not: tsk-ftrkm6wda8yq), else the window. */
 html.chat-full body { overflow: hidden; }
-html.chat-full .chat-pane.chat-full-pane { position: fixed; inset: 0; z-index: 20; height: 100dvh; margin: 0;
+html.chat-full .chat-pane.chat-full-pane { --chat-full-top: 0px; --chat-full-h: 100dvh; position: fixed; inset: auto 0;
+  top: var(--chat-full-top); height: var(--chat-full-h); min-height: 0; z-index: 20; margin: 0;
   padding: 8px 12px; box-sizing: border-box; background: var(--bg); }
+/* What is seen above a keyboard can be shorter than the heading, the composer and its field at their
+   rows (tsk-ftrkm6wda8yq, 390 x 300): the history takes only the room left (basis 0, so it gives up all
+   of it first), then the field gives way down to one line; the composer's head and Send's row keep
+   theirs. While there is room, the history grows and the field keeps its rows. */
+html.chat-full .chat-pane.chat-full-pane .messages { flex: 1 1 0; }
+html.chat-full .chat-pane.chat-full-pane .compose { display: flex; flex-direction: column; flex: 0 1 auto; min-height: 0; }
+html.chat-full .chat-pane.chat-full-pane .compose > * { flex: none; }
+html.chat-full .chat-pane.chat-full-pane .compose > textarea { flex: 0 1 auto; min-height: 44px; }
 .chat-back { display: none; }
 .chat-none { margin-top: 3rem; text-align: center; }
 /* The pane being left, until the next one is drawn. */
@@ -1425,6 +1444,14 @@ html.chat-full .chat-pane.chat-full-pane { position: fixed; inset: 0; z-index: 2
   margin: 0; padding: 4px; list-style: none; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
   box-shadow: 0 6px 18px rgb(0 0 0 / 0.15); }
 .menu[hidden] { display: none; }
+/* A menu in the sticky header (the tabs menu, "+", the gear and profile menus) never scrolls away
+   with the page, so it ends at the screen's bottom edge: a longer list scrolls inside it, and the page
+   behind does not scroll along. --menu-top is where the list starts on screen, set on the list when
+   it opens (js/menu.js, which wins over the default here). dvh follows a phone's browser bars;
+   it is in @supports, as a var() line is valid at parse time and would win over the vh one, then
+   fail with no cap where dvh is unknown (tsk-hhyccgssr2pr). */
+#header .menu { --menu-top: 8rem; max-height: calc(100vh - var(--menu-top) - 8px); overflow-y: auto; overscroll-behavior: contain; }
+@supports (height: 100dvh) { #header .menu { max-height: calc(100dvh - var(--menu-top) - 8px); } }
 .menu-item { display: block; width: 100%; padding: 8px 10px; border: 0; border-radius: 4px; background: none; color: var(--text);
   text-align: start; text-decoration: none; font: inherit; cursor: pointer; }
 .menu-item:hover, .menu-item:focus-visible { background: var(--surface-2); }
@@ -1485,6 +1512,10 @@ a.button { display: inline-block; padding: 6px 14px; border-radius: var(--radius
   .send-with-keys { display: contents; }
   .send-keys { display: none; }
   .send-with-keys > button { flex: 1 1 100%; justify-self: stretch; }
+  /* A chat composer keeps Send in its row, at the end (tsk-ftrkm6wda8yq): a row of its own was the
+     composer's last line, and a phone's open keyboard left it out. */
+  .compose-actions > button, .compose-actions .send-with-keys > button { flex: 0 0 auto; min-height: 44px; }
+  .compose-actions > button[type="submit"], .compose-actions .send-with-keys > button { margin-inline-start: auto; }
   .runner-actions .separated { margin-inline-start: 0; }
   .toolbar h2 { flex-basis: 100%; }
   .profiles { grid-template-columns: 1fr; }

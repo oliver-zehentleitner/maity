@@ -3499,7 +3499,8 @@ organisation its members. **View public
 page** is there only while `page_served`, and opens `/<handle>?as=public`
 in a new tab. A picture the answer gives no address for is a neutral
 placeholder, not §6.10's generated avatar. A shared project leads to its
-Overview, any other to its public page. An alias answers with the
+Overview, any other to its address, where the dashboard draws the dashed
+outsider tab (tsk-4hh2y1na7mjx; 3b0c64fc below). An alias answers with the
 current handle and the address follows it; `not_found` says that there
 is nobody to see, as for an unknown name.
 
@@ -3529,6 +3530,32 @@ tsk-2t7efzj1p8zt), reading the visitors' route signed in as well: §6.27
 names `GET /people` as the dashboard's read of a person, and gives the
 same list there (the hub's `listed_agents` serves both), so a second
 route would add a read without adding anything to see.
+
+## A person's page links a project one does not share to its address, not to its public page
+
+**Id:** 3b0c64fc-efc3-4321-840b-e2f0f5967b62
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-4hh2y1na7mjx (the maintainer saw a project as its stored page while signed in as a non-member, 2026-11-25); PR #2223 and its review; the outsider tab of #1996
+**Revisit when:** a signed-in /explore exists (tsk-r6bk2py3ezwg), or the stored page starts handing a signed-in reader over to the dashboard
+
+On a person's or an organisation's page (`js/person.js`), a listed project the reader is no
+member of links to `/<owner>/<slug>` in the same tab. Signed in, the dashboard draws the dashed
+outsider tab there; signed out, the hub serves the stored page at that address as before.
+
+**Reason:** `?as=public` answers the stored page even to a signed-in reader, and every link
+inside it keeps the query, so the old link (`?as=public` in a new tab) never reached the
+dashboard and hid the outsider tab.
+
+**Rejected alternatives:**
+- Keeping `?as=public`: the stored page for a signed-in reader, with no way back into the
+  dashboard.
+- Changing the stored page's cache header `public, max-age=60`: the case reported with the card
+  was no cache (production ran hub a11, without #1996), and the header touches the contract, a
+  middleware allowlist and many tests.
+- Changing the other `?as=public` links (View public page, the public-page setting, the landing
+  editor): they are previews on purpose.
 
 ## The fixture hub serves an organisation's page by its switch; the real hub now serves it from its store
 
@@ -4768,7 +4795,7 @@ At phone width (`max-width: 600px`, the dashboard's one phone breakpoint):
 
 Wider than that, nothing changes.
 
-Any open chat, direct or group, at any width, has a button in its heading row, an icon as the list's actions are (#1483), named "Read in full screen" and pressed while full. Where the chat list and the chat are one pane (`max-width: 720px`, a phone), it stands at the chat head's top right instead, on the row of the back link (← Conversations), and while full 8 px from the window's top and 12 px from its right; in the document it stays after the heading, so Tab still reaches it there. There a direct chat with an agent also shows no session line (`chat.session`) beside its heading. It sets `chat-full` on `<html>`, and the pane becomes `position: fixed` over the whole window at its height, on the page's ground; the page under it does not scroll.
+Any open chat, direct or group, at any width, has a button in its heading row, an icon as the list's actions are (#1483), named "Read in full screen" and pressed while full. Where the chat list and the chat are one pane (`max-width: 720px`, a phone), it stands at the chat head's top right instead, on the row of the back link (← Conversations), and while full 8 px from the window's top and 12 px from its right; in the document it stays after the heading, so Tab still reaches it there. There a direct chat with an agent also shows no session line (`chat.session`) beside its heading. It sets `chat-full` on `<html>`, and the pane becomes `position: fixed` over what is seen, on the page's ground; the page under it does not scroll. What is seen is the visual viewport, its height and top followed while full (tsk-ftrkm6wda8yq): a phone's on-screen keyboard shrinks it while the window (and `100dvh`) stays, so a pane at the window's height left its composer under the keyboard. Without a visual viewport, the pane is the whole window at its height. Where what is seen is shorter than the heading and the composer (390 × 300), the history gives up its room first and then the field, down to one line; the composer's head and Send's row keep theirs.
 
 The full screen ends:
 - with the button again;

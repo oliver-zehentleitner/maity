@@ -38,11 +38,13 @@ MARKER_PATH = Path(".git", "maity", "placement")
 # the agent, beside git's own repositories (GIT_PRIVATE_ENV), and only for Codex here in the
 # clone (IN_CLONE).
 GIT_PATH = Path(".git", "maity", "git")
-# The inode of the clone's `.git` when the runner started the session (adapters.launch).
-# The sandbox keeps the agent out of `.git/maity`, not from renaming `.git` itself, so a
-# directory of the session's own could take its name; maity takes `.git` only as the one
-# with this inode, opened once (opened_git).
+# The device and inode of the clone's `.git` when the runner started the session
+# (adapters.launch). The sandbox keeps the agent out of `.git/maity`, not from renaming
+# `.git` itself, so a directory of the session's own could take its name; maity takes `.git`
+# only as the one with this device and inode, opened once (opened_git). An inode is unique
+# only on its device, so both are compared.
 GIT_INODE_ENV = "MAITY_GIT_INODE"
+GIT_DEVICE_ENV = "MAITY_GIT_DEVICE"
 # Where maity makes git's own repository for one run, outside the clone, in the runner's
 # directory for the agent, which the sandbox hides: git gets that repository as a path, and a
 # path through `.git` names whatever `.git` is when git opens it. For Codex, whose maity
@@ -200,17 +202,45 @@ LOCAL = Local()
 
 def not_inspectable(path: Path, files: Files = LOCAL) -> str | None:
     """Why git must not run in this clone, or None."""
-    finding = _inspect(path, files)[0]
+    finding = inspection_finding(path, files)
     return None if finding is None else finding.reason
+
+
+# Names the runner can repeat in a hub finding. A repository supplies arbitrary
+# subsection and file names, so matching a key or path pattern would disclose them.
+REPORT_KEYS = frozenset(
+    {"core.worktree", "core.hookspath", "core.fsmonitor", "extensions.worktreeconfig"}
+)
+REPORT_ENTRIES = frozenset(
+    {"commondir", "config", "info/sparse-checkout", *SANDBOX_EMPTY_FILES, *SANDBOX_EMPTY_DIRS}
+)
 
 
 class Finding(NamedTuple):
     """Why git must not run in a clone: the reason, and what it names (an entry in `.git`,
     a configuration key) when it names one."""
 
-    reason: str
+    wording: str  # runner-authored, with {} for a repository-supplied item
     item: str = ""
     setting: bool = False  # a configuration key, which `git config --unset` takes back
+
+    @property
+    def reason(self) -> str:
+        shown = without_userinfo(self.item) if self.setting else self.item
+        return self.wording.format(onboarding.inline(shown))
+
+    def report_reason(self) -> str:
+        """Only fixed runner words reach finding.log. Even a config subsection may be private."""
+        if self.setting:
+            shown = self.item if self.item in REPORT_KEYS else "<key>"
+        else:
+            shown = self.item if self.item in REPORT_ENTRIES else "<entry>"
+        return self.wording.format(shown)
+
+
+def inspection_finding(path: Path, files: Files = LOCAL) -> Finding | None:
+    """The finding about this clone, retaining the item for its local or reported wording."""
+    return _inspect(path, files)[0]
 
 
 def _inspect(
@@ -245,8 +275,7 @@ def _inspect(
         subsection, _, key = rest.rpartition(".")
         if key not in GIT_ALLOWED.get(("named" if subsection else None, section), ()):
             # A section may be named by a URL (`[url "https://tok@…"]`): shown without a token.
-            shown = onboarding.inline(without_userinfo(name))
-            return Finding(f"its .git/config sets {shown}", name, setting=True), []
+            return Finding("its .git/config sets {}", name, setting=True), []
     return None, entries
 
 
@@ -328,23 +357,22 @@ def _not_a_plain_git_dir(entries: list[tuple[str, str, int]]) -> Finding | None:
     # the clone is set up for.
     for where, kind, size in sorted(entries, key=lambda e: (e[0] != "info/sparse-checkout", e)):
         top, _, rest = where.partition("/")
-        shown = onboarding.inline(where)
         if kind == "l":
-            return Finding(f".git/{shown} is a symlink", where)
+            return Finding(".git/{} is a symlink", where)
         if kind not in ("f", "d"):  # a FIFO, a socket or a device: never in a plain clone
-            return Finding(f".git/{shown} is not a regular file or directory", where)
+            return Finding(".git/{} is not a regular file or directory", where)
         if SANDBOX_DIR in where.split("/")[:-1]:
-            return Finding(f".git/{shown} is not a plain clone's", where)
+            return Finding(".git/{} is not a plain clone's", where)
         if _sandbox_placeholder(where, kind, size, parents):
             continue
         if not rest and kind != ("f" if top in GIT_FILES else "d" if top in GIT_DIRS else "?"):
-            return Finding(f".git/{shown} is not a plain clone's", where)
+            return Finding(".git/{} is not a plain clone's", where)
         if top == "info" and rest and ("/" in rest or rest not in INFO_FILES):
-            return Finding(f".git/{shown} is not a plain clone's", where)
+            return Finding(".git/{} is not a plain clone's", where)
         # Any case: on a case-insensitive file system (macOS's APFS, Windows) git opens
         # `objects/info/Alternates` as `alternates`.
         if where.lower() in ALTERNATES:
-            return Finding(f".git/{shown} exists", where)
+            return Finding(".git/{} exists", where)
         if where == "config" and size > CONFIG_MAX:
             return Finding(f"its .git/config is larger than {CONFIG_MAX // 1024} KiB")
     return None
@@ -746,17 +774,22 @@ class Opened(NamedTuple):
 def opened_clone(root: Path) -> Iterator[Opened | None]:
     """The clone's root and `.git` as the runner left them: the root opened once without
     following a link, `.git` opened from that descriptor without following one, and refused
-    unless it is the directory whose inode the runner set in GIT_INODE_ENV at the session's
-    start. Yields both descriptors, so what maity reads or writes afterwards is not looked up
-    through the clone's path or the name `.git` again; sandboxed code can rename `.git`, and
-    a root exchanged after the check is not the one written to. Where directories cannot be
-    opened (Windows, local mode) the inode is checked by name and None is yielded."""
-    value = os.environ.get(GIT_INODE_ENV, "")
-    if not (value.isascii() and value.isdigit()):
-        raise Refused(
-            f"{GIT_INODE_ENV} is not set, so the clone's .git is unknown; the runner sets it"
-            " when it starts a session: restart the placement"
-        )
+    unless it is the directory whose device and inode the runner set in GIT_DEVICE_ENV and
+    GIT_INODE_ENV at the session's start. Yields both descriptors, so what maity reads or
+    writes afterwards is not looked up through the clone's path or the name `.git` again;
+    sandboxed code can rename `.git`, and a root exchanged after the check is not the one
+    written to. Where directories cannot be opened (Windows, local mode) device and inode are
+    checked by name and None is yielded."""
+    recorded = []
+    for name in (GIT_DEVICE_ENV, GIT_INODE_ENV):
+        value = os.environ.get(name, "")
+        if not (value.isascii() and value.isdigit()):
+            raise Refused(
+                f"{name} is not set, so the clone's .git is unknown; the runner sets it"
+                " when it starts a session: restart the placement"
+            )
+        recorded.append(int(value))
+    device, inode = recorded
     replaced = Refused(
         "the clone's .git is not the directory it was when the session started (it was"
         " renamed or replaced); maity runs no git there"
@@ -766,7 +799,7 @@ def opened_clone(root: Path) -> Iterator[Opened | None]:
             here = os.lstat(root / ".git")
         except OSError:
             raise replaced from None
-        if not stat.S_ISDIR(here.st_mode) or here.st_ino != int(value):
+        if not stat.S_ISDIR(here.st_mode) or (here.st_dev, here.st_ino) != (device, inode):
             raise replaced
         yield None
         return
@@ -780,7 +813,8 @@ def opened_clone(root: Path) -> Iterator[Opened | None]:
         except OSError:
             raise replaced from None
         try:
-            if os.fstat(fd).st_ino != int(value):
+            opened = os.fstat(fd)
+            if (opened.st_dev, opened.st_ino) != (device, inode):
                 raise replaced
             yield Opened(top, fd)
         finally:

@@ -17,17 +17,16 @@ A public project's outsider reading the member routes (§2.3) reads the cards by
 
 from __future__ import annotations
 
-import hashlib
 from collections.abc import Collection
 from typing import Any
 
 from sqlalchemy import Connection, and_, case, func, or_, select
 
-from maity_hub import clock, moderation, namespace, public_design, public_pages, render
+from maity_hub import clock, moderation, namespace, public_design, public_pages
 from maity_hub import tables as t
 from maity_hub.cards import CLOSED
 from maity_hub.config import Settings
-from maity_hub.public_project_views import _holder, members
+from maity_hub.public_project_views import holder_data, members
 from maity_hub.public_projects import served
 
 KIND = "card"
@@ -231,19 +230,19 @@ def render_card(conn: Connection, hub: Settings, card_id: str) -> list[public_pa
         "title": card.title,
         "status": card.status,
         "label": card.label,
-        "holder": _holder(person, gone) if card.claim_holder is not None else None,
+        "holder": holder_data(person, gone) if card.claim_holder is not None else None,
         "body": body,
         "notes": [
             {
                 "id": note.id,
-                "author": _holder(*author(note)),
+                "author": holder_data(*author(note)),
                 "body": None if note.redacted else note.body or "",
                 "state": note.state,
                 "created_at": clock.rfc3339(note.created_at),
                 "redacted": bool(note.redacted),
                 "edited": (
                     {
-                        "by": _holder(*editor(note)),
+                        "by": holder_data(*editor(note)),
                         "at": note.edited["at"],
                         "reason": note.edited.get("reason"),
                     }
@@ -256,21 +255,15 @@ def render_card(conn: Connection, hub: Settings, card_id: str) -> list[public_pa
     }
     # The HTML in the dashboard's design, from `data` alone (`public_design.page`).
     content = public_design.page(KIND, data, path)
-    digest = hashlib.sha256("\x00".join((path, project.name, content)).encode())
     return [
-        public_pages.Page(
-            path=path,
-            body=render.page_document(
-                lang="en",
-                title=f"{card.title} ({card.id}) · {project.name}",
-                canonical=f"{hub.public_url.rstrip('/')}{path}",
-                content=content,
-                styled=False,
-            ),
-            inputs=digest.hexdigest(),
-            lastmod=clock.now(),
-            view="card",
-            data=data,
+        public_pages.page(
+            hub,
+            path,
+            f"{card.title} ({card.id}) · {project.name}",
+            content,
+            (project.name,),
+            KIND,
+            data,
         )
     ]
 

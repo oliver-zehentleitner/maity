@@ -22,6 +22,17 @@ from maity import clonecheck, gitfacts
 CLONE_GIT = Path(".git", "maity", "git")
 
 
+@pytest.mark.parametrize("entry, shown", [("commondir", "commondir"), ("private-label", "<entry>")])
+def test_report_names_only_known_git_metadata(tmp_path: Path, entry: str, shown: str) -> None:
+    dot_git = tmp_path / ".git"
+    dot_git.mkdir()
+    (dot_git / entry).touch()
+    finding = clonecheck.inspection_finding(tmp_path)
+    assert finding is not None
+    assert finding.reason == f".git/{entry} is not a plain clone's"
+    assert finding.report_reason() == f".git/{shown} is not a plain clone's"
+
+
 def recorded() -> Path:
     """Where the runner records its git (adapters.launch): in its directory for the agent."""
     return Path(os.environ[clonecheck.GIT_PRIVATE_ENV]) / "git"
@@ -38,6 +49,7 @@ def placed(clone: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setenv("MAITY_PLACEMENT", "plc-0003")
     monkeypatch.setenv("GIT_COMMON_DIR", str(clone / ".git"))
     monkeypatch.setenv(clonecheck.GIT_INODE_ENV, str(os.lstat(clone / ".git").st_ino))
+    monkeypatch.setenv(clonecheck.GIT_DEVICE_ENV, str(os.lstat(clone / ".git").st_dev))
     private = clone.parent / "agent-dir" / "git"  # the runner's, outside the clone
     private.mkdir(parents=True)
     monkeypatch.setenv(clonecheck.GIT_PRIVATE_ENV, str(private))
@@ -686,6 +698,7 @@ def test_a_partial_clone_is_named_so(
     (partial / ".git" / "maity").mkdir()
     monkeypatch.setenv("GIT_COMMON_DIR", str(partial / ".git"))
     monkeypatch.setenv(clonecheck.GIT_INODE_ENV, str(os.lstat(partial / ".git").st_ino))
+    monkeypatch.setenv(clonecheck.GIT_DEVICE_ENV, str(os.lstat(partial / ".git").st_dev))
     with pytest.raises(gitfacts.FactsError, match="Partial clones are not supported") as refused:
         gitfacts.collect(partial)
     assert "unset" not in str(refused.value)
@@ -869,14 +882,35 @@ def test_a_git_directory_that_is_a_link_is_refused(placed: Path, tmp_path: Path)
         proc.run([*proc.GIT, "status"], placed)
 
 
-def test_without_the_recorded_inode_maity_runs_no_git_there(
-    placed: Path, monkeypatch: pytest.MonkeyPatch
+@pytest.mark.parametrize("walks", [True, False])
+def test_the_same_inode_on_another_device_is_refused(
+    placed: Path, monkeypatch: pytest.MonkeyPatch, walks: bool
 ) -> None:
-    """A session a runner without this check started: restart it, then the inode is set."""
+    """An inode is unique only on its device: a `.git` whose inode is the recorded one but
+    whose device is not is another directory, refused on the descriptor walk and by name
+    (tsk-er1nymh4te1h)."""
     from maity import proc
 
-    monkeypatch.delenv(clonecheck.GIT_INODE_ENV)
-    with pytest.raises(proc.ToolError, match="restart the placement"):
+    if not walks:
+        monkeypatch.setattr(clonecheck, "_walks", lambda: False)
+    elif not clonecheck._walks():
+        pytest.skip("no descriptor walk on this platform")
+    other = os.lstat(placed / ".git").st_dev + 1
+    monkeypatch.setenv(clonecheck.GIT_DEVICE_ENV, str(other))
+    with pytest.raises(proc.ToolError, match="not the directory it was"):
+        proc.run([*proc.GIT, "status"], placed)
+
+
+@pytest.mark.parametrize("name", [clonecheck.GIT_INODE_ENV, clonecheck.GIT_DEVICE_ENV])
+def test_without_the_recorded_inode_maity_runs_no_git_there(
+    placed: Path, monkeypatch: pytest.MonkeyPatch, name: str
+) -> None:
+    """A session a runner without this check started: restart it, then the device and inode
+    are set."""
+    from maity import proc
+
+    monkeypatch.delenv(name)
+    with pytest.raises(proc.ToolError, match=f"{name} is not set"):
         proc.run([*proc.GIT, "status"], placed)
 
 

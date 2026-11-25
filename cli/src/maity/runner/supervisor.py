@@ -2375,12 +2375,34 @@ class Supervisor:
                 name, place.path, launch.argv, launch.env, p["id"], p["generation"]
             )
         except workspace.Refused as refused:
-            if refused.why:  # the runner's log only; the report keeps the codes
+            if refused.why:  # only the service log gets the full local explanation
                 self.log(f"{p['id']}: {refused.reason}: {refused.why}")
-                self.note(p["id"], f"{_code_or_dash(refused.reason)}: <error>", log=False)
+                safe = (
+                    refused.finding.report_reason()
+                    if isinstance(refused, workspace.CloneRefused)
+                    else "<error>"
+                )
+                self.note(p["id"], f"{_code_or_dash(refused.reason)}: {safe}", log=False)
             finding = None
             if isinstance(refused, HubRefused) and watch.takes_finding(p):
                 finding = self._pickup_finding(p, harness, target, view, refused.detail)
+            elif isinstance(refused, workspace.CloneRefused) and watch.takes_finding(p):
+                signals = watch.signals(
+                    process="gone",
+                    exit_code=None,
+                    below="unknown",
+                    pane_match=[],
+                    login="unknown",
+                    pickup_code=None,
+                )
+                finding = self._finding(
+                    p["id"],
+                    {
+                        "cause": "unknown",
+                        "signals": signals,
+                        "seen_at": self.now() + self.hub_offset,
+                    },
+                )
             with self.lock:
                 rec.enter(self.now(), "failed", refused.reason, detail=refused.detail,
                           exit_code=refused.exit_code)  # fmt: skip
