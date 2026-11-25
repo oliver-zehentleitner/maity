@@ -135,10 +135,17 @@ What a dropped key held is read or computed again on its next use. For
   change: a move to another namespace owner (`project_names.move_to`,
   on the transfer and on its request's `go`), an organisation owner who
   confirmed the repository and stops being one
-  (`org_projects.forget_confirmation`), and an account deletion
+  (`org_projects.forget_confirmation`), an account deletion
   (`account_deletion._forget_confirmations`, which covers every project
   the account's grants served, as a grant counts only for the human
-  who confirmed). Each runs in an `events.transaction` already.
+  who confirmed), a confirmation replaced by another owner of the
+  organisation (`routes/projects.confirm_repository`, before its reply,
+  which shows the project; review A2606 P2-1), and a confirmation
+  cleared by a change of the repository's URL (the project's `PATCH`).
+  Each runs in an `events.transaction` already. A replaced confirmation
+  must forget there and then: the forgets that follow the replaced
+  owner's link look for projects by `repository_confirmed_by`, which no
+  longer names them.
   Such a writer leaves the link serving, so a request that chose the
   link before the change and reaches `Cache.get` after its commit would
   find the generation unchanged. `still_serves` therefore reads the
@@ -146,13 +153,12 @@ What a dropped key held is read or computed again on its next use. For
   confirmed, still the URL the choice read, and its grants
   (`forge_access.grants_of`, the rule `_facts` uses) still the link
   human's. A read that fails it keeps nothing (review A2595 P2-1).
-  Rejected: noting the generation only at `Cache.get` (a change between
-  the choice and the read leaves it unchanged); asking the database
-  before every cached answer (one query per listed project).
   The second forget is registered only inside an `events.transaction`,
   and a forget on a plain `engine.begin()` raises instead of running
-  only before the commit (review A2595 P3-1). Rejected: asking the stored
-  link before each cached answer (one query per listed project, and an
+  only before the commit (review A2595 P3-1). Rejected: noting the
+  generation only at `Cache.get` (a change between the choice and the
+  read leaves it unchanged); asking the database or the stored link
+  before each cached answer (one query per listed project, and an
   unlinked link leaves no row to ask); a generation kept in the
   database (one more query per §11.3 call); and SQLAlchemy's `commit`
   event, which fires before the database has committed, so a step run

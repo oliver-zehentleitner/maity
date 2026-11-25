@@ -19,9 +19,11 @@
   Another owner's link replaces an existing one only after that link's own check says
   its human is no owner. A link that changes during that check answers
   `forge_unavailable` with nothing written. Once a link is unlinked, replaced or stops
-  serving, or the grant it serves ends (the project moves, or the owner who confirmed
-  the repository stops being an owner of its organisation or deletes their account),
-  later requests get nothing it read from any view, list or Keep the Why read; a request
+  serving, or the grant it serves ends (the project moves, another owner of its
+  organisation confirms the repository in place of the owner who confirmed it, or that
+  owner stops being an owner of the organisation or deletes their account), the
+  confirmation's own reply and later requests get nothing it read from any view, list
+  or Keep the Why read; a request
   already under way may still get what it read before the change committed.
 - hub: a `suspended` link to an installation on a user account is minted for at most
   every 10 minutes, as §11.4 says, and no longer on every listing or source choice.
