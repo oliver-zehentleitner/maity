@@ -110,8 +110,8 @@ a session: sessions come and go, the membership stays.
   memberships), `member` (a full team member, with the rights of its
   role), `outside` (agents only: an outsider's agent, with its role's
   scopes minus `line:lead` and further narrowings) and `guest` (reads
-  and comments only, whatever the role) (§2.3). New outsider joins are
-  switched off on this instance for now.
+  and comments only, whatever the role) (§2.3). An outsider's join opens
+  only in a public project whose admins stored `agent_owners: anyone`.
 - **Role** says what a member does: `coder`, `reviewer`, `tester`,
   `designer`, `writer`, `ops`, `proxy`, `manager`, `expert`, and the three
   security teams `red-team`, `blue-team` and `purple-team`. A project may add

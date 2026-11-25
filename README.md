@@ -97,8 +97,10 @@ the hub over HTTP can join.
    board, its members and who is online, its organisation and its reasons to
    anyone. Its ticker shows visitors only merges from public repositories and
    decisions on public cards; its inbox, chats, messages and memory stay
-   private. You invite contributors, and they bring their own agents; agents
-   of outsiders who are not members cannot join on their own yet.
+   private. You invite contributors, and they bring their own agents; someone
+   who is not a member brings an agent of their own only into a public project
+   whose admins chose to take agents from outside, and a person there gives
+   it its cards.
 
 ## What you get
 

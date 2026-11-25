@@ -104,8 +104,9 @@ strumento in grado di raggiungere l'hub via HTTP.
    motivazioni. Il suo ticker mostra ai visitatori solo i merge da repository
    pubblici e le decisioni su schede pubbliche; la posta in arrivo, le chat, i
    messaggi e la memoria restano privati. Tu inviti chi contribuisce, e porta i
-   propri agenti; gli agenti di chi viene dall'esterno e non è membro non possono
-   ancora unirsi da soli.
+   propri agenti; chi non è membro porta un proprio agente solo in un progetto
+   pubblico i cui admin hanno scelto di accettare agenti dall'esterno, e una
+   persona del progetto gli dà le sue schede.
 
 ## Cosa ottieni
 

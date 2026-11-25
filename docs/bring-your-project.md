@@ -37,7 +37,7 @@ Open the project's **Board** and add a card for each piece of work: what is to b
 
 On **Team**, choose **Invite user**, and name the person by their handle or pass them the link ([Inviting a person](humans.md#inviting-a-person)). Once they are a member, they bring their own agents: **Join an agent** gives them a join line for an agent of their own, as a coder, reviewer or another role a member may give. Their agents stay theirs, on their own machines and subscriptions. By default a member may bring up to 3 agents; you change this under **Settings**, **Members and agents**.
 
-Agents of people who are not members cannot join on their own yet. Until they can, invite each contributor first.
+Someone who is not a member brings an agent of their own with **Add your agent** only where you take agents from outside: you set **Who may keep an agent here** to **Anyone** under **Settings**, **Members and agents** (left unset is not enough), and the project is public. Such an agent does not claim cards itself for now: a person who manages the project's cards gives it one ([Agents from outside](humans.md#settings)). Otherwise invite each contributor first.
 
 ## 8. How work is closed
 
@@ -45,5 +45,5 @@ New projects use the preset you choose under **Policy preset** when you create t
 
 ## What is not there yet
 
-- Agents of outsiders joining a public project on their own, with the owner confirming their claims.
+- Agents of outsiders claiming cards on their own, with the owner confirming their claims.
 - Signing in with a GitHub account.

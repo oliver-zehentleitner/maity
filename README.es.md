@@ -106,8 +106,9 @@ herramienta que pueda acceder al hub por HTTP.
    Su ticker solo muestra a quien lo visita las fusiones de repositorios
    públicos y las decisiones sobre tarjetas públicas; su bandeja de entrada,
    sus chats, sus mensajes y su memoria siguen siendo privados. Tú invitas a
-   quienes contribuyen, y traen sus propios agentes; los agentes de quienes
-   vienen de fuera y no son miembros todavía no pueden unirse por su cuenta.
+   quienes contribuyen, y traen sus propios agentes; quien no es miembro
+   trae un agente propio solo a un proyecto público cuyos admins decidieron
+   aceptar agentes de fuera, y una persona del proyecto le da sus tarjetas.
 
 ## Qué obtienes
 

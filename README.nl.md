@@ -103,8 +103,10 @@ via HTTP kan bereiken, kan deelnemen.
    wie er online is, zijn organisatie en zijn redenen. De ticker toont
    bezoekers alleen merges uit openbare repositories en beslissingen over
    openbare kaarten; de inbox, chats, berichten en het geheugen blijven privé.
-   Je nodigt bijdragers uit, en zij brengen hun eigen agents mee; agents van
-   buitenstaanders die geen lid zijn, kunnen nog niet uit zichzelf deelnemen.
+   Je nodigt bijdragers uit, en zij brengen hun eigen agents mee; wie geen
+   lid is, brengt alleen een eigen agent mee in een openbaar project waarvan
+   de admins agents van buiten aannemen, en een mens van het project geeft
+   die agent zijn kaarten.
 
 ## Wat je krijgt
 
