@@ -105,8 +105,8 @@ ROUTE_CACHE = frozenset(
     }
 )
 # The answers a visitor without a session may cache: the badge, the instance's landing page
-# (§16.7), the sign-in pages, what a visitor's dashboard reads of a public page and the list
-# of the dashboard's Explore (§16.9).
+# (§16.7) and the sign-in pages. What the dashboard reads of a public page and the list of its
+# Explore (§16.9) are the same for every caller, signed in or not, and cacheable publicly for all.
 PUBLIC_PATHS = re.compile(
     r"/badge/(?:[^/]+/)?[^/]+\.svg|/api/v1/landing|/api/v1/legal|/api/v1/auth/pages/[^/]+"
     r"|/api/v1/site/chrome"
