@@ -848,13 +848,20 @@ read with no link below the home. The pid is opened as a pidfd, and the
 process must show this boot's id, the start ticks Codex recorded, the
 agents' user, the loop's argv and this `CODEX_HOME` in its environment.
 Then signal 0 through the pidfd, which shows the checked process is still
-the one opened, then TERM. Never KILL, never a pattern, nothing outside the
-home; anything else is one log line, and the daemon stop goes on. Off the
+the one opened, then TERM, and then a wait on the pidfd, up to 3 s, until the
+loop has exited: a loop still running at the daemon stop could still start
+the replacement. Never KILL, never a pattern, nothing outside the home; a
+loop that has not exited in time, and anything else, is one log line, and
+the daemon stop goes on. The record is reached from the runner's root one
+directory at a time with no link at any step, and all four of the
+process's uids must be the agents' user's. Off the
 runner's own user it runs as the agents' user (`maity runner codexd`), and
 a host whose `maity` lacks it logs and goes on. On a system without pidfds
 nothing is signalled. When a Codex placement is closed, the same steps
-(loop, then daemon) run before the scratch with its `CODEX_HOME` is
-removed, or both would run on without their home.
+(loop, then daemon) run for its scratch in either layout, before its TMPDIR
+leaf and the scratch with its `CODEX_HOME` are removed, or both would run on
+without their home. Where the host's layout is unknown, nothing is asked of
+it that pass, the stop included.
 
 A stop that fails, does not answer or is skipped leaves the
 old daemon running, so the new session may still reach it and fail as it
