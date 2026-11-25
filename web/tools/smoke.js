@@ -169,6 +169,18 @@ const win = {
   clearInterval: (id) => { intervals.delete(id); },
 };
 const fireIntervals = async () => { for (const fn of [...intervals.values()]) await fn(); };
+// A round whose counts differ from the last (the inbox count raised), so the tab row has something to
+// draw anew: a round that changes nothing leaves the row as it is (js/app.js renderSwitcher).
+let countsMoved = 0;
+const fireMovedCounts = async () => {
+  const read = win.Maity.notify.read;
+  win.Maity.notify.read = () => read().then((answer) => {
+    const st = win.Maity.notify.state;
+    st.counts = Object.assign({}, st.counts, { inbox: ((st.counts || {}).inbox || 0) + 100 + (++countsMoved) });
+    return answer;
+  });
+  try { await fireIntervals(); } finally { win.Maity.notify.read = read; }
+};
 const ctx = { window: win, document, Node: Node_, URL, URLSearchParams, Uint8Array, console, Promise, JSON, Date, Set, Object, Array, Number, String, Error, btoa, atob };
 win.window = win;
 // A ResizeObserver that never fires by itself: the rows it watches are kept, and a test calls its
@@ -597,13 +609,20 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     const swFocus = swProto.focus;
     swProto.focus = function () { document.activeElement = this; };
     tabChip(SA).focus();
-    const swBefore = header.querySelector("nav.switcher");
+    // A round that changes nothing in the row leaves it, its tabs the very same elements: a read or a click
+    // aimed at a tab is not taken along by a redraw for nothing (PR 2201's web-e2e, the outsider tab's edge).
+    const swSame = header.querySelector("nav.switcher");
+    const swSameChip = tabChip(SA);
     await fireIntervals(); for (let k = 0; k < 4; k++) await tick();
+    const swKept = header.querySelector("nav.switcher") === swSame && tabChip(SA) === swSameChip;
+    expect(swKept, "tabs: a counts round that changes nothing in the row leaves the row and its tabs as they are");
+    const swBefore = header.querySelector("nav.switcher");
+    await fireMovedCounts(); for (let k = 0; k < 4; k++) await tick();
     const swRedrawn = header.querySelector("nav.switcher") !== swBefore;
     const swFocusKept = document.activeElement === tabChip(SA);
     tabChip(MA).dispatch("dragstart", { dataTransfer: null });
     const swDragRow = header.querySelector("nav.switcher");
-    await fireIntervals(); for (let k = 0; k < 4; k++) await tick();
+    await fireMovedCounts(); for (let k = 0; k < 4; k++) await tick();
     const swHeld = header.querySelector("nav.switcher") === swDragRow;
     tabChip(MA).dispatch("dragend");
     const swAfter = header.querySelector("nav.switcher") !== swDragRow;
@@ -614,7 +633,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     // redraws no second time (A2598).
     const swDragged = tabChip(SA);
     swDragged.dispatch("dragstart", { dataTransfer: null });
-    await fireIntervals(); for (let k = 0; k < 4; k++) await tick();
+    await fireMovedCounts(); for (let k = 0; k < 4; k++) await tick();
     const swTarget = tabChip(MA);
     swTarget.dispatch("drop", { dataTransfer: null, currentTarget: swTarget });
     const swDropRow = header.querySelector("nav.switcher");
@@ -625,7 +644,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     tabChip(MA).dispatch("dragstart", { dataTransfer: null });
     await go("#/maintainer/maity/inbox"); await go("#/all"); for (let k = 0; k < 4; k++) await tick();
     const swNewRow = header.querySelector("nav.switcher");
-    await fireIntervals(); for (let k = 0; k < 4; k++) await tick();
+    await fireMovedCounts(); for (let k = 0; k < 4; k++) await tick();
     const swNotHeld = !!swNewRow && header.querySelector("nav.switcher") !== swNewRow;
     expect(swMoved && swOnce && swNotHeld,
       "tabs: a drop's move supersedes a held redraw, and a header drawn anew ends the drag " + JSON.stringify([swMoved, swOnce, swNotHeld]));
@@ -9907,7 +9926,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   byId("state-reason").value = "release 0.1.0";
   // The 15-s count re-read replaces the switcher only; the open panel and what is typed stay.
   const switcherBefore = header.querySelector("nav.switcher");
-  await fireIntervals(); await tick(); await tick();
+  await fireMovedCounts(); await tick(); await tick();
   expect(byId("state-reason") && byId("state-reason").value === "release 0.1.0" && byId("state-select").value === "review",
     "the count re-read keeps the open Project settings panel and its input");
   expect(header.querySelector("nav.switcher") !== switcherBefore && header.querySelectorAll("nav.switcher").length === 1,

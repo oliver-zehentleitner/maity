@@ -1593,6 +1593,15 @@ window.Maity = window.Maity || {};
 
   // Always visible: every project of this human with what waits there, and
   // the cross-project view with the total.
+  // What a freshly built row shows: its elements, their attributes and their words, taken before
+  // anything is moved into it or marked on it. Two rows drawn alike are the same row to a reader.
+  function drawnAs(el) {
+    if (el.nodeType === 3) return JSON.stringify(el.textContent);
+    if (el.nodeType !== 1) return "";
+    const attrs = el.getAttributeNames().sort().map((name) => name + "=" + JSON.stringify(el.getAttribute(name)));
+    return "<" + el.tagName + " " + attrs.join(" ") + ">" + Array.from(el.childNodes).map(drawnAs).join("") + "</>";
+  }
+
   function switcher(ctx) {
     const N = M.notify.state;
     // What asks for the human, requests and unread chats (docs/api.md §18.2);
@@ -1606,7 +1615,7 @@ window.Maity = window.Maity || {};
     String(c.total)) : null);
     const pill = (p) => (N.counts ? counted(M.notify.projectCount(p)) : count(p.open_requests));
     const all = N.counts ? counted({ requests: N.counts.inbox, chat: N.counts.chat, total }) : count(total);
-    return h("nav", { class: "switcher", "aria-label": M.t("header.projects") },
+    const row = h("nav", { class: "switcher", "aria-label": M.t("header.projects") },
       h("a", { href: "/all", "aria-current": !ctx.visiting && ALL_PAGES.some((page) => page.scope === ctx.scope) ? "page" : null }, M.t("header.all_projects"), all),
       // The tabs this browser has open, in its order (js/tabs.js): dragged
       // into place, or moved with Alt+Shift+Arrow, or from the tabs menu.
@@ -1629,6 +1638,8 @@ window.Maity = window.Maity || {};
       privateMark(p),
       h("span", { class: "dot state-dot-" + p.state, title: M.dom.word("project", p.state), "aria-label": M.dom.word("project", p.state) }),
       pill(p)))));
+    row.drawnAs = drawnAs(row);
+    return row;
     // Runners belong to the person, not to a project (the maintainer's
     // wish, tsk-cb6myw32def0): they are in the gear menu, not this row. A new
     // project is in the "+" menu, so the tabs menu stands right after the tabs (tsk-hp9gq9rmrdq2).
@@ -2141,10 +2152,13 @@ window.Maity = window.Maity || {};
     if (dragTab.id) { dragTab.redraw = () => renderSwitcher(ctx); return; }
     // This redraw is the latest (a drop's move included): one held during the drag is not run again.
     dragTab.redraw = null;
+    const fresh = switcher(ctx);
+    // Drawn alike, the row stays: most counts rounds change nothing in it, and a row replaced for
+    // nothing takes a read or a click aimed at the old one along (PR 2201's web-e2e, outsider tab).
+    if (old.drawnAs && fresh.drawnAs === old.drawnAs) return;
     const active = document.activeElement;
     const keyOf = (el) => el.getAttribute("data-project") || el.getAttribute("href");
     const focusedKey = active && active !== old && old.contains && old.contains(active) && active.getAttribute ? keyOf(active) : null;
-    const fresh = switcher(ctx);
     const scrolled = old.scrollLeft;
     M.dom.keepImages(old, fresh);
     old.parentNode.insertBefore(fresh, old);

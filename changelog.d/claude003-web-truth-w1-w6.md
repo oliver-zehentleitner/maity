@@ -16,4 +16,5 @@
   the hub lists no disabled accounts.
 - web: when the notification counts redraw the project tabs, a focused tab keeps the focus, and a
   tab being dragged keeps its drag; the redraw waits until the drag ends. Since the page no longer
-  waits for the counts, that redraw can come right after the page is drawn.
+  waits for the counts, that redraw can come right after the page is drawn. A counts round that
+  changes nothing in the tab row leaves the row as it is.
