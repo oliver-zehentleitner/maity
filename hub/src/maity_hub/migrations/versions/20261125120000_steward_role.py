@@ -23,6 +23,13 @@ A project that already has a project role `steward-custom` gets the next free na
 that stopped would block the deploy of every hub with both names, and the operator cannot fix
 that from the dashboard. Every rename is logged with the project and the name it got.
 
+A project whose project role `steward` was removed while a request waited to apply it keeps
+that request open. The name in its proposal would now mean the built-in role, which the owner
+never agreed to, so the proposal is marked `role_gone` and a `go` stays refused as
+`role_unknown` (`_mark_gone`, A2692 P2-1). Binding every proposal to what its role resolved to
+when it was filed would change how a rebase applies to a waiting request (§2.3), which is
+outside this revision.
+
 The downgrade does nothing: the built-in role and the renamed project role cannot be told
 apart from the name the code before this revision reads.
 
@@ -125,10 +132,12 @@ def upgrade() -> None:
             _project.c.settings,
         ).order_by(_project.c.owner_id, _project.c.slug)
     ).all()
+    renamed: set[str] = set()
     for row in rows:
         roles = _json(row.roles) or []
         if not any(r.get("name") == OLD for r in roles):
             continue
+        renamed.add(row.id)
         new = free_name({str(r.get("name")) for r in roles})
         _rename(conn, row, roles, new)
         log.warning(
@@ -139,6 +148,7 @@ def upgrade() -> None:
             OLD,
             new,
         )
+    _mark_gone(conn, renamed)
 
 
 def _rename(conn: Any, row: Any, roles: list[dict[str, Any]], new: str) -> None:
@@ -274,6 +284,42 @@ def _rename_proposals(conn: Any, project_id: str, new: str) -> None:
                     canonical[name], digest[name] = _canonical(shown)
             renamed["canonical"], renamed["sha256"] = canonical, digest
         conn.execute(sa.update(_request).where(_request.c.id == row.id).values(proposal=renamed))
+
+
+def _names_old(values: dict[str, Any]) -> bool:
+    """The proposal's member change names `steward`: as `role`, as `role_base`, or as the
+    `role:` token in `availability_policy.substitutes`."""
+    if OLD in (values.get("role"), values.get("role_base")):
+        return True
+    policy = values.get("availability_policy")
+    return isinstance(policy, dict) and f"role:{OLD}" in (policy.get("substitutes") or [])
+
+
+def _mark_gone(conn: Any, renamed: set[str]) -> None:
+    """An open request, in a project that has no project role `steward` any more, whose
+    proposal still names it. Before this revision the name could only have meant a project role
+    that was removed while the request waited, so a `go` was refused as `role_unknown`. After
+    it, the name resolves to the built-in steward. So the proposal is marked `role_gone`, and
+    every `go` on it is refused as before (`proposals.settle`): the owner never consented to the
+    built-in role. The request stays open for a `no` or a withdrawal (A2692 P2-1), and a new
+    change asks again. A project in `renamed` had its proposals renamed above instead."""
+    rows = conn.execute(
+        sa.select(_request.c.id, _request.c.project_id, _request.c.proposal).where(
+            _request.c.status == "open", _request.c.proposal.is_not(None)
+        )
+    ).all()
+    for row in rows:
+        if row.project_id in renamed:
+            continue
+        proposal = _json(row.proposal)
+        values = proposal.get("values") if isinstance(proposal, dict) else None
+        if not isinstance(values, dict) or not _names_old(values):
+            continue
+        conn.execute(
+            sa.update(_request)
+            .where(_request.c.id == row.id)
+            .values(proposal={**proposal, "role_gone": OLD})
+        )
 
 
 def downgrade() -> None:

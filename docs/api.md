@@ -1073,15 +1073,18 @@ role table above says what it does. Its scopes are the coder's.
   is the rule of the role, carried in its guide and the rules text
   (§5.2, §6.9), as for the red team's targets.
 - **When it sweeps.** On events, with no schedule of the hub's: every
-  `merge` item of the ticker (§17) wakes every steward
-  (`steward` in `reasons`, §17.3), whatever paths it touches, and the
-  steward checks that pull request. It goes over the open entries at
+  `merge` item of the ticker (§17) has every steward in its computed
+  audience (`steward` in `reasons`, §17.3), whatever paths it touches,
+  and the steward checks that pull request. The delivery rules of §17.3
+  then apply as to every member: a steward that muted a matching area
+  or type is removed, and a human steward sees the item as "for me" in
+  the dashboard rather than being woken. It goes over the open entries at
   resume (§5.2) and with the first merge it is woken by after 24 hours
   without such a round, and whenever it is asked. Without the ticker
   (`settings.ticker.enabled: false`) no merge wakes it, and it sweeps
   at resume and when asked. The wake does not read `memory.provider`
-  (§6.1): under `none` a steward that exists anyway is still woken by
-  every merge.
+  (§6.1): under `none` a steward that exists anyway is still in the
+  audience of every merge, with the same delivery rules.
 - **Its place in the project.** One steward per project is the
   default; the hub sets no limit. A large project may have one per
   part, each with that part's `context/` as its sources, each checking
@@ -1102,6 +1105,13 @@ role table above says what it does. Its scopes are the coder's.
   request's `to`; what an open request waits to apply (its member
   change's `role` and `substitutes`); a placement's profile; and the
   role memory. The event log keeps the audiences it was written with.
+  Where the project role `steward` was removed while a request waited
+  to apply it, the upgrade has nothing to rename, and the name would
+  now mean the built-in role, which no one agreed to. A `go` on such an
+  open request is refused with `409 role_unknown`, as it was before the
+  upgrade, and the request stays open for a `no` or a withdrawal. The
+  same holds where the waiting change names `role:steward` in
+  `substitutes`. A new change asks again.
   Its members keep their base;
   in a project that already has a project role `steward-custom` it
   takes the next free name, `steward-custom-2`, then `-3` and on, and
@@ -1123,7 +1133,8 @@ role table above says what it does. Its scopes are the coder's.
   author reads, whom the status goes to. The dashboard offers it in
   every role picker after `expert`, in **Join an agent** and a member's
   **Manage**, and shows **Expert for** and **Sources** for it as for an
-  expert, filled as above; the project's settings show
+  expert, filled as above. Manage shows them for a human expert or steward
+  too, to a human with `members:admin`, who alone sets them there; the project's settings show
   `policy.steward_writes` with the other policy fields. Where the
   project's `memory.provider` is `none` (§6.1) the dashboard hides the
   role in both pickers; the hub does not refuse it, and a join or
@@ -28150,7 +28161,7 @@ recomputed: an area that changes owner later does not move an old item.
 
 | `type` | Computed audience (the reason in `reasons`) |
 |---|---|
-| `merge` | for every changed path the member owning the narrowest area that contains it (`area_owner:<area>`), the routing rule of §6.2; the holder of every linked card, and its assignee while nobody holds it. A member named only as a holder has `instances` on its entry in `reasons`, the holding instances, and only those wake (`card_holder:<id>`, `card_assignee:<id>`)|
+| `merge` | for every changed path the member owning the narrowest area that contains it (`area_owner:<area>`), the routing rule of §6.2, so a steward's area is passed over as routing passes it over (§2.3, "The steward") and the owner of the wider area around it is the one named; the holder of every linked card, and its assignee while nobody holds it. A member named only as a holder has `instances` on its entry in `reasons`, the holding instances, and only those wake (`card_holder:<id>`, `card_assignee:<id>`)|
 | `merge`, an expert's sources | every member with the role `expert` one of whose `expert_sources` (§6.2) contains a changed path, once per such source (`expert_source:<source>`); when `paths_truncated` is `true`, every expert with sources (`expert_source:*`) |
 | `merge`, the stewards | every member with the role `steward` (§2.3, "The steward"), whatever paths the merge touches (`steward`) |
 | `merge` with `contract` | in addition, the implementers of each touched section (`contract_implementer:<section>`) and every member `trust:admin` names (§8.2) |

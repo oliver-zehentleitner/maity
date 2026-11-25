@@ -117,10 +117,20 @@ def contains(area: str, path: str) -> bool:
     return path == bare or path.rstrip("/") == bare or path.startswith(bare + "/")
 
 
+def owns_areas(m: Member) -> bool:
+    """Whether `m` counts as an area's owner: a steward never does, as area routing skips it
+    (§2.3 "The steward", §6.2). Its own `steward` reason reaches it on every merge, and an area
+    it holds must not hide the owner of the wider area around it (A2692 P2-2)."""
+    return m.role != "steward"
+
+
 def area_owner(people: Sequence[Member], path: str) -> tuple[Member, str] | None:
-    """The member owning the narrowest area that contains `path`, `/` last (§6.2)."""
+    """The member owning the narrowest area that contains `path`, `/` last (§6.2), among
+    the members that own areas (`owns_areas`)."""
     best: tuple[Member, str] | None = None
     for m in people:
+        if not owns_areas(m):
+            continue
         for area in m.areas:
             if not contains(area, path):
                 continue
@@ -922,7 +932,7 @@ def write_merge(
             audience.add(owner[0].principal, f"area_owner:{owner[1]}")
     if merge.paths_truncated:  # more reach, never less: every area's owner (§17.3)
         for m in people:
-            if m.areas:
+            if m.areas and owns_areas(m):
                 audience.add(m.principal, "area_owner:*")
     for m in people:  # an expert whose declared source changed (§2.3 "The expert", §17.3)
         if not m.expert_sources:

@@ -1665,6 +1665,69 @@ def test_the_steward_migration_renames_what_an_open_request_waits_to_apply(engin
     assert stored["req-closed"] == proposals["req-closed"][1]  # history keeps what it applied
 
 
+def test_the_steward_migration_marks_a_consent_for_a_removed_project_role_steward(
+    engine: Engine,
+) -> None:
+    """20261125120000 (A2692 P2-1): the project role `steward` was removed while a consent
+    waited to apply it. The upgrade has nothing to rename, and without a mark the old name
+    would now mean the built-in steward. So every open proposal that names `steward` (as role,
+    as base, or as a `substitutes` token) is marked `role_gone`, and a go stays refused. A
+    proposal for another role, a closed request, and a project that still has the project role
+    (renamed instead) are left alone."""
+    from sqlalchemy import insert, select, update
+
+    from maity_hub import tables as t
+    from tests import factory
+
+    rev = "20261125120000_steward_role"
+    migrate(engine)
+    human = factory.human(engine, "a")
+    gone = factory.project(engine, "gone", owner_id=human)
+    kept = factory.project(engine, "kept", owner_id=human)
+    downgrade(engine, _before(engine, rev))
+    role = {"name": "steward", "base": "writer", "description": "", "guide": "", "guide_by": None}
+    now = factory.at("2026-11-20T10:00:00Z")
+    cover = {"on_unavailable": "substitute", "substitutes": ["role:steward"]}
+    requests: dict[str, tuple[str, str, dict[str, Any]]] = {
+        "req-role": (gone, "open", {"kind": "foreign_agent", "target": 1,
+                                    "values": {"role": "steward", "role_base": "writer"}}),
+        "req-cover": (gone, "open", {"action": "patch",
+                                     "values": {"availability_policy": cover}}),
+        "req-other": (gone, "open", {"action": "patch",
+                                     "values": {"role": "coder", "role_base": "coder"}}),
+        "req-closed": (gone, "withdrawn", {"action": "patch",
+                                           "values": {"role": "steward", "role_base": "writer"}}),
+        "req-kept": (kept, "open", {"action": "patch",
+                                    "values": {"role": "steward", "role_base": "writer"}}),
+    }  # fmt: skip
+    with engine.begin() as conn:
+        conn.execute(update(t.project).where(t.project.c.id == kept).values(roles=[role]))
+        askers = {}
+        for project in (gone, kept):
+            conn.execute(insert_membership(project, human, now, True))
+            askers[project] = conn.execute(
+                select(t.membership.c.id).where(t.membership.c.project_id == project)
+            ).scalar_one()
+        for request_id, (project, status, proposal) in requests.items():
+            conn.execute(
+                insert(t.request).values(
+                    id=request_id, project_id=project, title="Change", options=[],
+                    priority="normal", to_kind="owner", asked_by=askers[project],
+                    while_open="wait", status=status, created_at=now, proposal=proposal,
+                    **{"class": "consent"},
+                )
+            )  # fmt: skip
+    migrate(engine)
+    with engine.connect() as conn:
+        stored = dict(conn.execute(select(t.request.c.id, t.request.c.proposal)).all())
+    for marked in ("req-role", "req-cover"):
+        assert stored[marked] == {**requests[marked][2], "role_gone": "steward"}
+    for untouched in ("req-other", "req-closed"):
+        assert stored[untouched] == requests[untouched][2]
+    assert "role_gone" not in stored["req-kept"]
+    assert stored["req-kept"]["values"]["role"] == "steward-custom"
+
+
 def test_the_steward_migration_takes_the_next_free_name_and_logs_it(
     engine: Engine, caplog: pytest.LogCaptureFixture
 ) -> None:

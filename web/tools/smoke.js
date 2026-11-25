@@ -19203,6 +19203,17 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     const notExpert = exParts({ id: "hum-owner", kind: "human" }, true).expertPart(Object.assign({}, exM, { role: "coder" }), "/x");
     expect(stranger === null && owner && admin && notExpert === null,
       "expert: the form is offered to the agent's owner and to members:admin, not to another member, and only on an expert");
+    // A human expert or steward (an invitation gives the role, §3.4): members:admin only (A2692 P2-3).
+    const humanSteward = { id: "hum-s", kind: "human", role: "steward", expert_for: null, expert_sources: [] };
+    const humanExpert = Object.assign({}, humanSteward, { id: "hum-e", role: "expert" });
+    const hsAdmin = exParts({ id: "hum-other", kind: "human" }, true).expertPart(humanSteward, "/x");
+    const heAdmin = exParts({ id: "hum-other", kind: "human" }, true).expertPart(humanExpert, "/x");
+    const hsPlain = exParts({ id: "hum-other", kind: "human" }, false).expertPart(humanSteward, "/x");
+    const hsSelf = exParts({ id: "hum-s", kind: "human" }, false).expertPart(humanSteward, "/x");
+    const hsCoder = exParts({ id: "hum-other", kind: "human" }, true).expertPart(Object.assign({}, humanSteward, { role: "coder" }), "/x");
+    expect(hsAdmin && heAdmin && hsPlain === null && hsSelf === null && hsCoder === null
+      && text(hsAdmin).includes("Expert for") && hsAdmin.querySelectorAll("input").find((i) => i.getAttribute("id") === "member-expert-sources-hum-s").value === "context/",
+      "expert: a human steward's or expert's fields are offered to members:admin only, a steward's prefilled with context/");
   }
   await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/team"); for (let k = 0; k < 6; k++) await tick();
   orManage("Agent A").click(); for (let k = 0; k < 4; k++) await tick();

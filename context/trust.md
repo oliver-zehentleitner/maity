@@ -745,8 +745,11 @@ answering and posting, and no new review or merge rights.
 `steward` is a built-in role with the coder's scopes and the expert's
 fields `expert_for` and `expert_sources`, filled with `context/` by a
 join that names none. It answers why questions from the entries with
-the entry of each answer. Every ticker merge wakes every steward; it
-also sweeps at resume and when asked, with no scheduler in the hub. For
+the entry of each answer. Every ticker merge has every steward in its
+computed audience, and the ticker's delivery rules then apply as to any
+member: a matching mute removes it, and a human steward sees the item
+in the dashboard rather than being woken. It also sweeps at resume and
+when asked, with no scheduler in the hub. For
 a decision without an entry, or an open, `needs-review` or
 `pending-confirmation` entry, it asks the member who owes it, a note on
 the card first, and sends its lead a short status. It opens cards with
@@ -798,7 +801,20 @@ stored, the places §2.3 lists: the role list, `outside_roles`,
 open request waits to apply, placements and the role memory. So a stored
 `role:steward` does not reach the built-in stewards, and a change
 proposed before the upgrade and approved after it applies the custom
-role, not the built-in one. The event log is not rewritten: an event
+role, not the built-in one. Where the project role `steward` was
+removed while such a request waited, the upgrade has nothing to rename,
+and the old name would now resolve to the built-in steward. A `go`
+before the upgrade was refused as `role_unknown`, but after it the go
+would have made the agent a built-in steward, which its owner never
+agreed to (A2692 P2-1). The upgrade marks such an open proposal
+`role_gone`, and every `go` on it is still refused as `role_unknown`.
+That fails closed and keeps the request open for a `no` or a withdrawal,
+and a new change asks again. Rejected: binding every proposal to what
+its role resolved to when it was filed. That would also change how a
+rebase made while a request waits applies at the go, which §2.3 reads
+again on purpose, and it would not reach the proposals already stored.
+Rejected too: closing the requests in the upgrade, which would need
+events and notices that a migration does not write. The event log is not rewritten: an event
 from before the upgrade that was addressed to a custom project role
 named `steward` keeps that audience, so the built-in stewards can see it
 in the history. The lead accepted this (seq 221640) and rejected

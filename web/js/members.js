@@ -413,11 +413,13 @@ window.Maity = window.Maity || {};
 
     // An expert's fields (§6.2 "An expert's fields"): what it answers about and the paths it
     // learned, set by its owner or an admin, alone in their own PATCH, at once and with no
-    // consent; only while the role is expert or steward (§2.3 "The steward"). A steward with
-    // neither field yet, one that became steward by a role change, starts from the steward's
-    // defaults, saved only with the form.
+    // consent; only while the role is expert or steward (§2.3 "The steward"). A human expert
+    // or steward (an invitation gives the role, §3.4) has the fields too, and only an admin
+    // sets them, as nobody owns a human's profile. A steward with neither field yet, one that
+    // became steward by a role change, starts from the steward's defaults, saved only with
+    // the form.
     function expertPart(m, memberPath) {
-      if (m.kind !== "agent" || !M.trust.EXPERT_FIELD_ROLES.includes(m.role) || m.removed_at || ctx.me.kind !== "human" || !(ownAgent(m) || ctx.canAdmin)) return null;
+      if (!M.trust.EXPERT_FIELD_ROLES.includes(m.role) || m.removed_at || ctx.me.kind !== "human" || !((m.kind === "agent" && ownAgent(m)) || ctx.canAdmin)) return null;
       const id = (what) => "member-expert-" + what + "-" + m.id;
       const draft = edits.get(m.id) || {};
       const keep = (k, v) => { edits.set(m.id, Object.assign(edits.get(m.id) || {}, { [k]: v })); };
@@ -807,11 +809,14 @@ window.Maity = window.Maity || {};
           P.teamForm(m, memberPath), P.dormantPart(m, memberPath), P.bridgesPart(m, memberPath)));
       }
       const parts = [editForm(m, memberPath, self)];
-      if (m.kind === "agent") {
+      if (m.kind === "agent" && M.agentParts) {
         // The briefing (§6.2), edited here; an admin is sent every member's.
-        if (M.agentParts) parts.push(M.agentParts.briefingControl(ctx, m));
-        // An expert's fields go alone in their own PATCH (§6.2), so in their own form.
-        parts.push(P.expertPart(m, memberPath));
+        parts.push(M.agentParts.briefingControl(ctx, m));
+      }
+      // An expert's or a steward's fields go alone in their own PATCH (§6.2), so in their own
+      // form, a human's as an agent's.
+      parts.push(P.expertPart(m, memberPath));
+      if (m.kind === "agent") {
         if (ownAgent(m) && M.preferences && "owner_preferences" in m) parts.push(M.preferences.ownerToggle(ctx, m));
         parts.push(P.picturePart(m), P.teamForm(m, memberPath), P.credentialsPart(m), P.bridgesPart(m, memberPath), P.pausePart(m, memberPath), P.dormantPart(m, memberPath), P.isolatePart(m, memberPath));
       }

@@ -807,3 +807,30 @@ def test_every_merge_wakes_every_steward_whatever_it_touches(
         [entry] = [r for r in item["payload"]["reasons"] if r["member_id"] == steward.id]
         assert entry["wake"] is True
     assert expert.id not in reasons(item)
+
+
+def test_a_stewards_narrower_area_does_not_hide_the_wider_areas_owner(
+    owner: flow.Human,
+    team: dict[str, flow.Agent],
+    github: FakeGitHub,
+    migrated: Engine,
+    make_client: ClientFactory,
+) -> None:
+    """A2692 P2-2: the area owner of a merge follows the routing rule of §6.2, which passes a
+    steward over. A steward holding `hub/ticker/` inside the coder's `hub/` leaves the coder
+    the area owner of a change there, and the steward is in the audience by its own reason
+    alone. The same holds when the hub cannot see the merge in full (`area_owner:*`)."""
+    enable(owner, contract_files=[])
+    steward = flow.agent(make_client, owner, role="steward", areas=["hub/ticker/"])
+    merged(github, 33, [{"filename": "hub/ticker/x.py", "patch": ""}])
+    assert probe.announce_merges(migrated, READER, project_id(migrated)) == 1
+    [item] = items(owner)
+    assert reasons(item)[team["hub"].id] == ["area_owner:hub/"]
+    assert reasons(item)[steward.id] == ["steward"]
+    assert item["payload"]["areas"] == ["hub/"]
+    merged(github, 34, [{"filename": f"hub/ticker/f{n}.py", "patch": ""} for n in range(100)])
+    github.answers["/repos/acme/maity/pulls/34/files?per_page=100&page=2"] = None
+    assert probe.announce_merges(migrated, READER, project_id(migrated)) == 1
+    [truncated] = [i for i in items(owner) if i["payload"].get("paths_truncated")]
+    assert reasons(truncated)[team["hub"].id] == ["area_owner:*"]
+    assert reasons(truncated)[steward.id] == ["steward"]

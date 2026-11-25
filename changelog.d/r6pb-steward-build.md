@@ -4,7 +4,8 @@
   expert and has the coder's scopes. It answers why questions across `context/` with the
   source, and it asks the authors of missing or open entries until each is done or someone
   has said why not. Every member still writes its own entries. A join gives a steward the
-  sources `context/`, and every merge on the ticker wakes every steward. A steward is never
+  sources `context/`, and every merge on the ticker has every steward in its audience,
+  with the ticker's usual mutes and the dashboard's "for me" for humans. A steward is never
   routed a card, never a cover's substitute and never a card's `needs`. It is no base for a
   project role and is not offered to outsiders' agents. Its rules carry a steward line. The
   dashboard offers it after `expert` in Join an agent and Manage, with Expert for and Sources,
@@ -18,4 +19,6 @@
   author first and, under `self`, writes an entry itself only where no author can.
 - The upgrade renames a project role named `steward` to `steward-custom`. Where that name is
   taken too, it uses the next free one (`steward-custom-2`, `-3`, …), and the log says which
-  project got which name.
+  project got which name. Where a project role `steward` was removed while a change waited
+  to apply it, approving that change after the upgrade is still refused, so it cannot make
+  the agent the built-in steward.
