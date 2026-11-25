@@ -78,6 +78,7 @@ def placed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     monkeypatch.setenv("GIT_COMMON_DIR", str(clone / ".git"))
     # As the runner starts a session (#1683): the .git it recorded, git's own directory.
     monkeypatch.setenv(clonecheck.GIT_INODE_ENV, str(os.lstat(clone / ".git").st_ino))
+    monkeypatch.setenv(clonecheck.GIT_DEVICE_ENV, str(os.lstat(clone / ".git").st_dev))
     private = tmp_path / "agent" / "git"
     private.mkdir(parents=True)
     monkeypatch.setenv(clonecheck.GIT_PRIVATE_ENV, str(private))

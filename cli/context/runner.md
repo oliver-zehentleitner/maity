@@ -3935,15 +3935,17 @@ non-directory in that place, and anything else, is left.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** review of #1663, round 5 (a `.git` exchanged with a decoy under bwrap with the runner's deny list); review of #1683 (a learned private name and a decoy's clean filter under bwrap); reproduction on main 5abda036 for tsk-er1nymh4te1h, 2026-11-12: a decoy `.git` whose `maity/git` named a script made maity run it outside the sandbox (7 calls on `maity checkpoint`'s path); under Claude Code 2.1.322's own sandbox `mv .git` failed with EBUSY, because Claude Code bind-mounts the clone's `.git` itself
+**Source:** review of #1663, round 5 (a `.git` exchanged with a decoy under bwrap with the runner's deny list); review of #1683 (a learned private name and a decoy's clean filter under bwrap); reproduction on main 5abda036 for tsk-er1nymh4te1h, 2026-11-12: a decoy `.git` whose `maity/git` named a script made maity run it outside the sandbox (7 calls on `maity checkpoint`'s path); under Claude Code 2.1.322's own sandbox `mv .git` failed with EBUSY, because Claude Code bind-mounts the clone's `.git` itself; card tsk-er1nymh4te1h, the lead's decision of 2026-11-25 (the device added to the pin, the `.git` entry left writable), after a code reading of main e0ea4cf5 found the pin comparing the inode alone
 **See:** runner.md#under-the-runner-maitys-own-git-runs-only-in-the-runners-clone-and-only-while-it-is-plain — b4a8030d-3b24-4b76-81cc-a84b0ca84c11 — as of 2026-11-12
-**Revisit when:** a harness's sandbox denies renaming the clone's `.git` through a setting the runner sets, the runner starts sessions without setting `MAITY_GIT_INODE` or `MAITY_GIT_PRIVATE`, Codex's maity starts running outside its sandbox, maity's state directory starts reading `.git` through a descriptor, or git can be given a repository by descriptor instead of by path
+**Revisit when:** a harness's sandbox denies renaming the clone's `.git` through a setting the runner sets, the runner starts sessions without setting `MAITY_GIT_DEVICE`, `MAITY_GIT_INODE` or `MAITY_GIT_PRIVATE`, Codex's maity starts running outside its sandbox, maity's state directory starts reading `.git` through a descriptor, or git can be given a repository by descriptor instead of by path
 
-At a session's start the runner records the inode of the clone's `.git`
-(`MAITY_GIT_INODE`, read on the agents' side with `ls -di` where the
-runner cannot read it itself). Before maity starts git there, it opens
-the clone's root, then `.git` from it once, without following a link,
-and refuses a directory with another inode. It copies the refs (and,
+At a session's start the runner records the device and inode of the
+clone's `.git` (`MAITY_GIT_DEVICE`, `MAITY_GIT_INODE`; read on the
+agents' side with `stat`, GNU's `-c` or else BSD's and macOS's `-f`,
+where the runner cannot read them itself). Before maity starts git
+there, it opens the clone's root, then `.git` from it once, without
+following a link, and refuses a directory with another device or
+inode. It copies the refs (and,
 for Codex, reads the recorded git; for the others it is read from the
 runner's directory since 818828af) through that descriptor, so a `.git` renamed after
 the check is not read. git's own repository for the run (its
@@ -3952,10 +3954,10 @@ directory for the agent, which the sandbox hides (`MAITY_GIT_PRIVATE`);
 for Codex, whose maity runs inside its sandbox with the agent's own
 rights, the runner sets the value `clone`, and it stays in `.git/maity`,
 made through the descriptor. A directory inside the clone, a link or a
-relative path is refused. Without the inode or that variable maity runs
-no git: a session started by an older runner needs a restart. On
-Windows (local mode) no directory opens, so the inode is compared by
-name. The check of the clone (`_inspect`) and the objects
+relative path is refused. Without the device, the inode or that
+variable maity runs no git: a session started by an older runner needs
+a restart. On Windows (local mode) no directory opens, so device and
+inode are compared by name. The check of the clone (`_inspect`) and the objects
 and index git reads still go through the name `.git`: under an exchange
 the check reads the replacement and passes on only a plain clone's keys,
 none of which starts a program, and objects and the index are data.
@@ -3967,14 +3969,28 @@ writable. A directory of the session's own named `.git` then held a
 rename today with a mount of its own, which the runner neither asks for
 nor checks, so an update of Claude Code could reopen it unnoticed.
 
+The device is compared too since tsk-er1nymh4te1h: an inode number names
+a directory only on its own file system, and the rest of maity already
+compares the pair where it checks that a name still holds the file it
+opened (`inclone`, the scratch operations, the log capture). The child
+card that brought the pin (tsk-g779xysypp4c) had named device and inode;
+the inode alone shipped because `ls -di` prints no device. `stat` prints
+both, at the cost of two spellings (GNU's `-c`, BSD's and macOS's `-f`).
+
 **Rejected alternatives:**
 - Denying writes to `.git`: the whole directory turns read-only, and
   commit, fetch and push write refs, the index, objects and logs there.
+- Denying writes to the `.git` entry itself, in the clone's root
+  (tsk-er1nymh4te1h): it breaks commit and fetch, and whether a deny of
+  that one name could leave them working needs a check in a real
+  sandbox, which nobody ran; the pin already keeps maity outside the
+  sandbox off a renamed or replaced `.git`.
 - Making `.git` a mount point in the sandbox settings (a rename then
   fails with EBUSY): the settings cannot ask for it.
-- Recording the device too: `ls -di` prints only the inode on every
-  system, and a decoy cannot come from another file system, since a
-  directory cannot be renamed across one.
+- Recording the inode without the device (as shipped with #1683, until
+  tsk-er1nymh4te1h): `ls -di` prints only the inode on every system, and
+  a directory cannot be renamed across file systems. Given up because
+  the pair is what identifies a directory, and `stat` reads it.
 - Falling back to the name when the variable is missing: the fallback
   would be the hole again, for every session older than the runner.
 - git's own repository under a random name in `.git/maity`: git opens
@@ -4845,7 +4861,8 @@ Rejected as well: `MAITY_*` as a wildcard (the eighth round's first list,
 message 162185; review A1269 and message 162361). The runner, its
 supervisor and the placement set `MAITY_` variables that decide what
 maity trusts: `MAITY_PLACEMENT` switches on the placed session's rules,
-`MAITY_GIT_INODE` names the `.git` maity accepts, `MAITY_GIT_PRIVATE`
+`MAITY_GIT_DEVICE` and `MAITY_GIT_INODE` name the `.git` maity accepts
+(the device since tsk-er1nymh4te1h), `MAITY_GIT_PRIVATE`
 where git's private repository and the runner's records are,
 `MAITY_STATE_DIR` the state directory and with it the credential and the
 identity, `MAITY_SUPERVISOR` the session's mode at the hub,
