@@ -801,9 +801,15 @@ def _is_member(conn: Connection, project_id: str, principal: str) -> bool:
     return True
 
 
-def _export(project: Any, request: Request) -> dict[str, Any] | None:
-    """From the cache only: building a view never waits on a read (§11.3)."""
-    return ktw.export_for_view(reader_of(request), project.id, project.repository_url)
+def _export(conn: Connection, project: Any, request: Request) -> dict[str, Any] | None:
+    """From the cache only: building a view never waits on a read (§11.3). None while the
+    grants hold a link on a forge organisation that serves nothing as stored: an export it read
+    is answered nowhere once it stops serving (§11.4), and the view asks no forge to find out
+    whether the export rests on it (review A2573 F1, A2574 P2-3)."""
+    export = ktw.export_for_view(reader_of(request), project.id, project.repository_url)
+    if export is not None and forge_access.org_link_serves_nothing(conn, project):
+        return None
+    return export
 
 
 class _Unread:
@@ -856,7 +862,7 @@ def _view(
         settings_of(request),
         owner,
         shown,
-        _export(project, request),
+        _export(conn, project, request),
         aliases,
         _stored(conn, project, request, mine),
         confirmed_by_of(conn, [project])[project.id],
@@ -953,7 +959,7 @@ def list_projects(request: Request, caller: AnyCaller) -> JSONResponse:
                     settings,
                     names[r.id].split("/")[0],
                     shown[r.id],
-                    _export(r, request),
+                    _export(conn, r, request),
                     aliases[r.id],
                     _stored(conn, r, request),
                     confirmed[r.id],
@@ -1700,6 +1706,13 @@ def confirm_repository(
             .where(t.project.c.id == project.id)
             .values(repository_owner_confirmed=True, repository_confirmed_by=mine.row.human_id)
         )
+        if not project.repository_owner_confirmed or (
+            project.repository_confirmed_by != mine.row.human_id
+        ):
+            # Another owner's confirmation ends the grants of the one it replaces (§11.4):
+            # nothing read with them is answered after it, the reply to this call included;
+            # now and again after the commit.
+            wakeups.forget_repository_everywhere(conn, project.id)
         return idempotency.Outcome(
             200, "project", project.id, _view(conn, _load(conn, project.id), request)
         )

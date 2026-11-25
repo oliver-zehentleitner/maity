@@ -100,6 +100,7 @@
   "notify.asks_you": "{who} te pregunta: {title}",
   "notify.chat": "{who} en {chat}",
   "notify.forge_added": "Acceso a la forja añadido: {login} ({source})",
+  "notify.forge_not_admin": "Acceso a la forja detenido: ya no eres propietario de {login}",
   "notify.jf_no_moderator": "Reunión fija omitida, nadie que modere: {topic}",
   "notify.jf_reported": "Informe de la reunión fija: {topic}",
   "notify.mail_disabled": "Correo a {address} desactivado tras 3 fallos",

@@ -28,6 +28,7 @@ from maity_hub import (
     proposals,
     public_pages,
     ticker,
+    wakeups,
 )
 from maity_hub import tables as t
 from maity_hub.access import Membership
@@ -343,6 +344,9 @@ def move_to(conn: Connection, project: Any, to: str, actor: Actor | None, by: st
             repository_public=None,  # the old owner's answer is not the new owner's page
         )
     )
+    # nothing read with the old owner's grants is answered under the new one: now and again
+    # after the commit
+    wakeups.forget_repository_everywhere(conn, project.id)
     moved = conn.execute(select(t.project).where(t.project.c.id == project.id)).one()
     org_projects.moved(
         conn, moved, sending, moved.owner_org_id, to if to.startswith("hum-") else None, by

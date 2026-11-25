@@ -440,10 +440,10 @@ def test_only_ids_go_through_the_channel_and_at_commit(postgres: Engine) -> None
     github_app._tokens[("app-1", 7)] = ("a secret token", time.time() + 3000)
     with psycopg.connect(_url(postgres).replace("+psycopg", ""), autocommit=True) as watch:
         watch.execute(f"LISTEN {wakeups.FORGET}")
-        with pytest.raises(RuntimeError, match="abort"), postgres.begin() as conn:
+        with pytest.raises(RuntimeError, match="abort"), events.transaction(postgres) as conn:
             wakeups.forget_token_everywhere(conn, app, 9)  # type: ignore[arg-type]
             raise RuntimeError("abort")
-        with postgres.begin() as conn:
+        with events.transaction(postgres) as conn:
             wakeups.forget_token_everywhere(conn, app, 7)  # type: ignore[arg-type]
         payloads = [n.payload for n in watch.notifies(timeout=2, stop_after=2)]
     assert payloads == ["token:app-1:7"]
@@ -459,6 +459,23 @@ def test_elsewhere_the_token_goes_and_nothing_is_announced(migrated: Engine) -> 
     if migrated.dialect.name == "postgresql":
         pytest.skip("PostgreSQL announces")
     github_app._tokens[("app-1", 7)] = ("a token", time.time() + 3000)
-    with migrated.begin() as conn:
+    with events.transaction(migrated) as conn:
         wakeups.forget_token_everywhere(conn, SimpleNamespace(app_id="app-1"), 7)  # type: ignore[arg-type]
     assert ("app-1", 7) not in github_app._tokens
+
+
+@pytest.mark.parametrize("forget", ["repository", "token"])
+def test_a_forget_on_a_plain_begin_raises_and_forgets_nothing(
+    migrated: Engine, monkeypatch: pytest.MonkeyPatch, forget: str
+) -> None:
+    """Review A2595 P3-1: the second forget runs only after an `events.transaction` commits, so a
+    forget on a plain `engine.begin()` fails loudly instead of forgetting only before it."""
+    forgotten: list[object] = []
+    monkeypatch.setattr(ktw.CACHE, "forget", forgotten.append)
+    monkeypatch.setattr(github_app, "forget_token", lambda *ids: forgotten.append(ids))
+    with pytest.raises(RuntimeError, match="outside events.transaction"), migrated.begin() as conn:
+        if forget == "repository":
+            wakeups.forget_repository_everywhere(conn, "prj-x")
+        else:
+            wakeups.forget_token_everywhere(conn, SimpleNamespace(app_id="app-1"), 7)  # type: ignore[arg-type]
+    assert forgotten == []

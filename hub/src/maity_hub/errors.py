@@ -106,6 +106,50 @@ def probe_not_configured(reason: str | None) -> ApiError:
     )
 
 
+# Why a link to an installation on a forge organisation serves nothing (§11.4, "What a project
+# sees"): reasons of the hub's own, kept apart from a user account's, which the readers answer
+# by `forge_refusal` alone, so none reaches an answer as it is.
+ORG_NOT_ADMIN = "org:installation_not_admin"
+ORG_SUSPENDED = "org:installation_suspended"
+ORG_REMOVED = "org:installation_removed"
+ORG_UNANSWERED = "org:unanswered"  # `active`, and its owner check had no answer
+ORG_REASONS_BY_STATUS = {
+    "not_admin": ORG_NOT_ADMIN,
+    "suspended": ORG_SUSPENDED,
+    "removed": ORG_REMOVED,
+}
+ORG_REASONS = frozenset((*ORG_REASONS_BY_STATUS.values(), ORG_UNANSWERED))
+
+
+def forge_refusal(
+    reason: str,
+    *,
+    admin: bool,
+    confirmer: bool,
+    views: bool = False,
+    details: dict[str, Any] | None = None,
+) -> ApiError:
+    """The answer to a read no source covers (§11.4), by reader: the one mapping every reader
+    uses (`GET …/probe`, the contract text, an import, §11.3 and §11.5).
+
+    A reason of a link on a forge organisation (`ORG_*`) is the specific one for the human named
+    in `confirmed_by` (`confirmer`): `installation_not_admin`, `installation_suspended` or
+    `installation_removed`, and while the link is `active` and its owner check has no answer
+    `probe_unavailable` (with `details`, the probe's `last`), for the Keep the Why views
+    (`views`) `ktw_unavailable` with `forge_unavailable` and no `last`. The project's other
+    `project:admin` readers get `installation_link_invalid` for every such state, everyone else
+    `details: {}`. Any other reason as before: to `project:admin` only."""
+    if reason in ORG_REASONS:
+        if confirmer and reason == ORG_UNANSWERED:
+            if views:
+                return ktw_unavailable("forge_unavailable")
+            return ApiError(503, "probe_unavailable", "the forge did not answer", details or None)
+        if confirmer:
+            return probe_not_configured(reason.removeprefix("org:"))
+        return probe_not_configured("installation_link_invalid" if admin else None)
+    return probe_not_configured(reason if admin else None)
+
+
 def ktw_not_configured() -> ApiError:
     """The project's repository names no Keep the Why export (§11.3, §11.5)."""
     return ApiError(

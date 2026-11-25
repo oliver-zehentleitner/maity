@@ -232,7 +232,9 @@ def scratch(conn: Connection) -> dict[str, Any]:
 
 def on_commit(conn: Connection, step: Callable[[], None]) -> None:
     """Run `step` once the caller's `transaction` has committed (a blob removed after the
-    row that named it is gone); a failure is logged, never the request's."""
+    row that named it is gone); a failure is logged, never the request's. A step registered
+    inside a savepoint that was rolled back still runs after the outer commit, so a step must
+    be idempotent and harmless when what it follows did not happen."""
     after = conn.info.get(_AFTER)
     if after is None:
         raise RuntimeError("events.on_commit outside events.transaction()")

@@ -29,7 +29,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager, suppress
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
@@ -721,6 +721,17 @@ class Forge:
     # that token and no later one, nor another owner's after a transfer (§11.4).
     grant: tuple[str, str] | None = field(default=None, repr=False)
     access: Any = field(default=None, repr=False, compare=False)
+    # A grant that rests on a link on a forge organisation serves only until 10 minutes after
+    # its last successful owner check (§11.4): what it read is answered no longer than that.
+    serves_until: datetime | None = None
+    # With such a grant: whether its link serves still, as stored now. Asked before what was
+    # read through it is kept, so a link unlinked or replaced during the read keeps nothing
+    # of it (review A2585 P2-1).
+    still_serves: Callable[[], bool] | None = field(default=None, repr=False, compare=False)
+    # The grants the choice considered hold a link on a forge organisation, whatever it chose:
+    # what such a link read may sit in a cache, so a reader that does not rest on it answers
+    # nothing from there (§11.3; review A2573 F2).
+    org_grants: bool = False
 
     @property
     def via(self) -> str | None:

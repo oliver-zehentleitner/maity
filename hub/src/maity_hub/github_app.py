@@ -85,20 +85,25 @@ class GitHubApp:
 
     def installation(self, installation_id: int) -> dict[str, Any] | None:
         """The installation as the forge has it: `{id, account: {id, login, type},
-        repository_selection, suspended}`; None when it is not there."""
+        repository_selection, suspended}`; None when it is not there. An answer without a
+        numeric `id` and `account.id`, or without a non-empty `account.login` and
+        `account.type`, is no answer (`ForgeUnavailableError`): the account check and the
+        owner check compare these, and a missing one must never read as a match or a "no"."""
         found = _call(f"/app/installations/{installation_id}", f"Bearer {self.jwt()}")
         if found is None:
             return None
-        if not isinstance(found, dict) or not isinstance(found.get("account"), dict):
+        account = found.get("account") if isinstance(found, dict) else None
+        if (
+            not isinstance(account, dict)
+            or not is_id(found.get("id"))
+            or not is_id(account.get("id"))
+            or not is_name(account.get("login"))
+            or not is_name(account.get("type"))
+        ):
             raise forge.ForgeUnavailableError("the forge answered an installation of no shape")
-        account = found["account"]
         return {
-            "id": found.get("id"),
-            "account": {
-                "id": account.get("id"),
-                "login": account.get("login"),
-                "type": account.get("type"),
-            },
+            "id": found["id"],
+            "account": {"id": account["id"], "login": account["login"], "type": account["type"]},
             "repository_selection": found.get("repository_selection"),
             "suspended": found.get("suspended_at") is not None,
         }
@@ -109,16 +114,23 @@ class GitHubApp:
         found = _call(f"/repos/{repository}/installation", f"Bearer {self.jwt()}")
         if found is None:
             return None
-        if not isinstance(found, dict) or not isinstance(found.get("id"), int):
+        if not isinstance(found, dict) or not is_id(found.get("id")):
             raise forge.ForgeUnavailableError("the forge answered an installation of no shape")
         installation_id: int = found["id"]
         return installation_id
 
     # --- the user who installed it (OAuth, once per link) --------------------------------
 
-    def user_of_code(self, code: str) -> dict[str, Any]:
+    def user_of_code(self, code: str, organisation: str | None = None) -> dict[str, Any]:
         """Exchange the OAuth `code` for a user token, read that user, discard the token:
-        `{id, login}` (§11.4). The token is used for this one read and never stored."""
+        `{id, login}` (§11.4). The token is used for this one check and never stored.
+
+        With `organisation` (the login of an installation's forge organisation) the same token
+        also reads the user's own membership in it (`GET /user/memberships/orgs/{login}`), as
+        `membership`: the forge's answer as `membership_of` gives it, or None for a `404` (no
+        membership: an outside collaborator, a stranger). Any other refusal of that read, a
+        missing permission and a spent budget included, is `ForgeUnavailableError`: no
+        answer, never a "no"."""
         body = urllib.parse.urlencode(
             {"client_id": self.client_id, "client_secret": self.client_secret, "code": code}
         ).encode()
@@ -131,22 +143,57 @@ class GitHubApp:
         token = answer.get("access_token") if isinstance(answer, dict) else None
         if not isinstance(token, str) or not token:
             raise forge.ForgeUnavailableError("the forge exchanged no user token")
-        user = _call("/user", f"Bearer {token}")
-        del token
-        if not isinstance(user, dict) or not isinstance(user.get("id"), int):
-            raise forge.ForgeUnavailableError("the forge answered no user")
-        return {"id": user["id"], "login": user.get("login")}
+        try:
+            user = _call("/user", f"Bearer {token}")
+            if not isinstance(user, dict) or not is_id(user.get("id")):
+                raise forge.ForgeUnavailableError("the forge answered no user")
+            if not is_name(user.get("login")):
+                raise forge.ForgeUnavailableError("the forge answered a user of no shape")
+            found: dict[str, Any] = {"id": user["id"], "login": user["login"]}
+            if organisation is not None:
+                path = f"/user/memberships/orgs/{urllib.parse.quote(organisation, safe='')}"
+                found["membership"] = membership_of(_call(path, f"Bearer {token}"))
+        finally:
+            del token
+        return found
+
+    # --- the owner check of a link on a forge organisation (with an installation token) ---
+
+    def user_login(self, installation_token: str, user_id: int) -> str | None:
+        """The forge user's current login by their id (`GET /user/{id}`), None for a `404`."""
+        found = _call(f"/user/{int(user_id)}", f"Bearer {installation_token}")
+        if found is None:
+            return None
+        if not isinstance(found, dict) or not is_name(found.get("login")):
+            # an empty login would cut the membership's path short and read as a `404`, a "no"
+            raise forge.ForgeUnavailableError("the forge answered a user of no shape")
+        login: str = found["login"]
+        return login
+
+    def org_membership(
+        self, installation_token: str, organisation: str, username: str
+    ) -> dict[str, Any] | None:
+        """`GET /orgs/{organisation}/memberships/{username}`, as `membership_of` gives it;
+        None for a `404`."""
+        org = urllib.parse.quote(organisation, safe="")
+        user = urllib.parse.quote(username, safe="")
+        return membership_of(
+            _call(f"/orgs/{org}/memberships/{user}", f"Bearer {installation_token}")
+        )
 
     # --- installation tokens (memory only) -----------------------------------------------
 
-    def token(self, installation_id: int) -> str:
+    def token(self, installation_id: int, keep: bool = True) -> str:
         """An installation token, minted when none is held or the held one expires within
         TOKEN_MARGIN. A mint the forge refuses because the installation was suspended or
-        removed is `InstallationGoneError`."""
-        with _tokens_lock:
-            held = _tokens.get((self.app_id, installation_id))
-            if held is not None and held[1] - time.time() > TOKEN_MARGIN:
-                return held[0]
+        removed is `InstallationGoneError`. `keep=False` mints one that is neither taken from
+        nor put into the held tokens: the owner check of a link that serves nothing uses it for
+        its own reads alone (§11.4)."""
+        if keep:
+            with _tokens_lock:
+                held = _tokens.get((self.app_id, installation_id))
+                if held is not None and held[1] - time.time() > TOKEN_MARGIN:
+                    return held[0]
         try:
             minted = _call(
                 f"/app/installations/{installation_id}/access_tokens",
@@ -163,8 +210,9 @@ class GitHubApp:
         expires = _expiry(minted.get("expires_at")) if isinstance(minted, dict) else None
         if not isinstance(token, str) or expires is None:
             raise forge.ForgeUnavailableError("the forge minted no installation token")
-        with _tokens_lock:
-            _tokens[(self.app_id, installation_id)] = (token, expires)
+        if keep:
+            with _tokens_lock:
+                _tokens[(self.app_id, installation_id)] = (token, expires)
         return token
 
     def repositories(self, installation_id: int, limit: int = 100) -> list[str]:
@@ -182,6 +230,42 @@ class GitHubApp:
 # (app id, installation id) -> (token, when it expires as a Unix time); never stored
 _tokens: dict[tuple[str, int], tuple[str, float]] = {}
 _tokens_lock = threading.Lock()
+
+
+def membership_of(found: Any) -> dict[str, Any] | None:
+    """A forge membership in an organisation as the owner check reads it: `{state, role,
+    organization_id, user_id}`, None for none (a `404`). An answer of another shape is no
+    answer (`ForgeUnavailableError`), never a "no": `state` and `role` non-empty strings,
+    `organization.id` and `user.id` numbers (a JSON `true` is none)."""
+    if found is None:
+        return None
+    organization = found.get("organization") if isinstance(found, dict) else None
+    user = found.get("user") if isinstance(found, dict) else None
+    if (
+        not isinstance(organization, dict)
+        or not isinstance(user, dict)
+        or not is_name(found.get("state"))
+        or not is_name(found.get("role"))
+        or not is_id(organization.get("id"))
+        or not is_id(user.get("id"))
+    ):
+        raise forge.ForgeUnavailableError("the forge answered a membership of no shape")
+    return {
+        "state": found["state"],
+        "role": found["role"],
+        "organization_id": organization["id"],
+        "user_id": user["id"],
+    }
+
+
+def is_id(value: Any) -> bool:
+    """Whether a forge id is one: an integer, and not a JSON `true` or `false`."""
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
+def is_name(value: Any) -> bool:
+    """Whether a forge name is one: a string with something in it."""
+    return isinstance(value, str) and value != ""
 
 
 def forget_token(app_id: str, installation_id: int) -> None:

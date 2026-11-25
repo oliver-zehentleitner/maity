@@ -6,14 +6,21 @@ from __future__ import annotations
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, Response
 
-from maity_hub import clock, contract_text, forge
-from maity_hub.access import membership
+from maity_hub import clock, contract_text, errors, forge, forge_access
+from maity_hub.access import Membership, membership
+from maity_hub.auth.caller import Caller
 from maity_hub.deps import AnyCaller, engine_of, reader_of
-from maity_hub.errors import ApiError, invalid, probe_not_configured
+from maity_hub.errors import ApiError, invalid
 from maity_hub.namespace import ProjectRoute
 from maity_hub.routes.tasks import _project_card
 
 router = APIRouter(route_class=ProjectRoute)
+
+
+def _refusal(reason: str, mine: Membership, caller: Caller) -> ApiError:
+    """No source covers the repository: answered by reader (§11.4)."""
+    confirmer = forge_access.is_confirmer(caller, mine.project)
+    return errors.forge_refusal(reason, admin=mine.may("project:admin"), confirmer=confirmer)
 
 
 def _nothing(field: str, reason: str, message: str) -> ApiError:
@@ -36,15 +43,14 @@ def read_contract(slug: str, card_id: str, request: Request, caller: AnyCaller) 
     project = mine.project
     fg = reader_of(request).for_project(project.id)
     if not fg.configured_for(project.repository_url):
-        reason = forge.unread_reason(fg, project.repository_url)
-        raise probe_not_configured(reason if mine.may("project:admin") else None)
+        raise _refusal(forge.unread_reason(fg, project.repository_url), mine, caller)
     # Only the project's own repository (§6.13): the card names a path in it, never another.
     repository = forge.repository_of(project.repository_url)
     branch = project.repository_default_branch or "main"
     try:
         shown = contract_text.read(fg, repository, branch, path, section)
     except forge.NotCoveredError as error:
-        raise probe_not_configured(error.reason if mine.may("project:admin") else None) from None
+        raise _refusal(error.reason, mine, caller) from None
     except forge.ForgeUnavailableError as error:
         held = {"retry_at": clock.rfc3339(error.retry_at)} if error.retry_at is not None else None
         raise ApiError(503, "probe_unavailable", "the forge did not answer", held) from None
@@ -75,14 +81,13 @@ def read_whole_contract(slug: str, request: Request, caller: AnyCaller) -> Respo
     path = (project.settings or {}).get("contract_path") or contract_text.DEFAULT_PATH
     fg = reader_of(request).for_project(project.id)
     if not fg.configured_for(project.repository_url):
-        reason = forge.unread_reason(fg, project.repository_url)
-        raise probe_not_configured(reason if mine.may("project:admin") else None)
+        raise _refusal(forge.unread_reason(fg, project.repository_url), mine, caller)
     repository = forge.repository_of(project.repository_url)
     branch = project.repository_default_branch or "main"
     try:
         shown = dict(contract_text.read_whole(fg, repository, branch, path))
     except forge.NotCoveredError as error:
-        raise probe_not_configured(error.reason if mine.may("project:admin") else None) from None
+        raise _refusal(error.reason, mine, caller) from None
     except forge.ForgeUnavailableError as error:
         held = {"retry_at": clock.rfc3339(error.retry_at)} if error.retry_at is not None else None
         raise ApiError(503, "probe_unavailable", "the forge did not answer", held) from None
