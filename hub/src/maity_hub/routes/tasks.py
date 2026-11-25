@@ -58,7 +58,7 @@ from maity_hub.models import Strict, Written, markdown, title
 from maity_hub.namespace import ProjectRoute
 from maity_hub.policy import CLOSED_STATES, REASON_STATES, keep_the_why_effective
 from maity_hub.routes.members import AREA
-from maity_hub.scopes import in_admin_team, role_tokens
+from maity_hub.scopes import OUTSIDE, in_admin_team, role_tokens
 from maity_hub.views import (
     human_paused,
     paused,
@@ -270,11 +270,12 @@ def _card(conn: Connection, card_id: str) -> Any:
 
 def _project_card(conn: Connection, mine: Membership | access.OutsideReader, card_id: str) -> Any:
     query = select(t.card).where(t.card.c.id == card_id, t.card.c.project_id == mine.project.id)
-    if isinstance(mine, access.OutsideReader):
+    if access.reads_from_outside(mine):
         from maity_hub import public_cards  # the public pages' modules, as `access` reads them
 
         # A not-done `security` card or one under a hold, as on the Board (§2.3), decided in
-        # the statement that reads the row (`public_cards.outside_clause`).
+        # the statement that reads the row (`public_cards.outside_clause`). Also the card a
+        # write of an agent with trust `outside` reads first: `not_found` for it as well.
         query = query.where(public_cards.outside_clause())
     row = conn.execute(query).first()
     if row is None:
@@ -287,7 +288,7 @@ def of_read_card(query: Any, mine: Membership | access.OutsideReader, card_id: A
     notes), for `mine`: for an outsider it reads nothing once the card is one the outsider
     does not read, decided in that statement (`public_cards.outside_card`), not only when
     `_project_card` read the card before it (READ COMMITTED)."""
-    if not isinstance(mine, access.OutsideReader):
+    if not access.reads_from_outside(mine):
         return query
     from maity_hub import public_cards  # the public pages' modules, as `access` reads them
 
@@ -695,7 +696,7 @@ def list_tasks(
         # Keys first: the order's columns of every card the filters let through, the full
         # rows only for the page (tsk-ybc2ma72dzvq, hub/context/persistence.md).
         query = select(*KEYS).where(t.card.c.project_id == mine.project.id)
-        if isinstance(mine, access.OutsideReader):
+        if access.reads_from_outside(mine):
             from maity_hub import public_cards  # the public pages' modules, as `access` reads them
 
             # A not-done `security` card or one under a hold is in no list an outsider reads,
@@ -941,7 +942,7 @@ def _views(
         return []
     ids = [row.id for row in keys]
     full = select(t.card).where(t.card.c.id.in_(ids))
-    if isinstance(mine, access.OutsideReader):
+    if access.reads_from_outside(mine):
         from maity_hub import public_cards  # the public pages' modules, as `access` reads them
 
         full = full.where(public_cards.outside_clause())
@@ -1195,6 +1196,8 @@ def create_card(
     if body.parent is not None:
         _touch_parents(conn, mine, caller, {body.parent}, fg)
     _ping(conn, mine, caller, card, found, "body", before=[])
+    if release_from_outside(conn, card_id, caller.actor(mine.id)):
+        view = task_view(conn, _card(conn, card_id), fg)
     releases.recheck(conn, mine.project.id, fg)  # a release may be ready from the start
     watching = bool(card_watches.watching(conn, [card_id], mine.id))  # by its dependencies
     return idempotency.Outcome(201, "task", card_id, {**view, "watching": watching})
@@ -1496,12 +1499,119 @@ def patch_task(
             ticker.on_release_done(
                 conn, mine.project, _card(conn, card.id), caller.actor(mine.id), mine.principal_id
             )
+        # A label, a status or an assignment that hides the card from an agent with trust
+        # `outside` that holds it or is assigned it ends both (§2.3 "Outside").
+        release_from_outside(conn, card.id, caller.actor(mine.id))
         releases.recheck(conn, mine.project.id, fg)
         return idempotency.Outcome(
             200, "task", card.id, task_view(conn, _card(conn, card.id), fg, mine)
         )
 
     return idempotency.run(engine_of(request), request, caller, action)
+
+
+def release_from_outside(conn: Connection, card_id: str, actor: Actor) -> bool:
+    """A card an agent with trust `outside` holds or is assigned that it no longer reads (§2.3
+    "Outside", §6.5): a `security` card not done, or one under a moderation hold
+    (`public_cards.outside_clause`). Its claim is released and its assignment ends, under the
+    project's lock, each as such a change always is: `task_released` with no reason, as any
+    release, and the `task_updated` of an assignment taken off. Taking the label or the hold
+    off later gives neither back. Called by every write that may hide a card from such an
+    agent: a card's creation and edit, a hold on it. True when anything changed."""
+    from maity_hub import public_cards  # the public pages' modules, as `access` reads them
+
+    seen = case((public_cards.outside_clause(), 1), else_=0).label("seen")
+    found = conn.execute(select(t.card, seen).where(t.card.c.id == card_id)).first()
+    if found is None or found.seen:
+        return False
+    parties = [m for m in (found.claim_holder, found.assigned_to) if m is not None]
+    if not parties:
+        return False
+    outside = set(
+        conn.execute(
+            select(t.membership.c.id).where(
+                t.membership.c.id.in_(parties), t.membership.c.trust == OUTSIDE
+            )
+        ).scalars()
+    )
+    if not outside:
+        return False
+    project = lock_project(conn, found.project_id)
+    card = _card(conn, card_id)  # as of the lock
+    changed = False
+    if card.claim_holder in outside:
+        before = card
+        old_holder = (card.claim_holder, card.claim_instance)
+        conn.execute(
+            update(t.card)
+            .where(t.card.c.id == card.id)
+            .values(
+                claim_holder=None,
+                claim_instance=None,
+                claim_session_id=None,
+                claim_since=None,
+                lease_until=None,
+                status="open" if card.status not in cards.CLOSED else card.status,
+                status_before_block=None,
+                blocked_by_request=None,
+                updated_at=clock.now(),
+                changed_by_credential=None,
+                changed_via=None,
+            )
+        )
+        card = _card(conn, card.id)
+        emit(
+            conn,
+            project.id,
+            "task_released",
+            audience(conn, card, old_holder),
+            {"holder": None, "lease_until": None, "project_state": project.state, "reason": None},
+            actor=actor,
+            subject=("task", card.id),
+        )
+        if card.status != before.status:
+            status_moved(conn, card, project.state, actor)
+        takeovers.reconcile(conn, card.id, actor, decided=False)
+        changed = True
+    if card.assigned_to in outside:
+        before = card
+        unassigned = {"assigned_to": None, "assigned_instance": None}
+        conn.execute(
+            update(t.card)
+            .where(t.card.c.id == card.id)
+            .values(
+                **unassigned,
+                updated_at=clock.now(),
+                changed_by_credential=None,
+                changed_via=None,
+            )
+        )
+        card = _card(conn, card.id)
+        entries = history.record(
+            conn,
+            before,
+            unassigned,
+            actor,
+            shown={"assigned_to": (principal_id(conn, before.assigned_to), None)},
+        )
+        seq = emit(
+            conn,
+            project.id,
+            "task_updated",
+            audience(conn, card, before.assigned_to),
+            {
+                "assigned_to": None,
+                "id": card.id,
+                "fields": ["assigned_to"],
+                "history": entries,
+                "project_state": project.state,
+            },
+            actor=actor,
+            subject=("task", card.id),
+        )
+        history.stamp(conn, entries, seq)
+        changed = True
+    return changed
 
 
 def cancel_by_moderation(conn: Connection, card_id: str, actor: Actor, fg: Forge) -> None:
