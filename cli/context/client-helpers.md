@@ -35,11 +35,12 @@ the coming split of `cli.py` smaller, which is why it lands before it.
 caller's own parameters (its position never mattered to the hub); a JSON file that the decoder
 rejects (any `ValueError`, including `JSONDecodeError` and the integer conversion limit) says
 so with the parser's full message: that is new for `jourfixe statement --file`, `jourfixe
-report --file` and `jourfixe answer --file` (`{exc}` instead of `{exc.msg}`), while
-`--review-file` already used the full message and still maps any decoder `ValueError`; a file
-for `jourfixe answer` that is not a JSON object says "the body is one JSON object" before
-the keys are checked, and its invalid-JSON prefix is `--file: not JSON:` instead of
-`--file is not JSON:`;
+report --file` and `jourfixe answer --file` (`{exc}` instead of `{exc.msg}`), and those three
+now also turn a plain decoder `ValueError` into a usage error, where they used to catch only
+`JSONDecodeError`; `--review-file` already used the full message and already mapped any
+decoder `ValueError`; a file for `jourfixe answer` that is not a JSON object says "the body
+is one JSON object" before the keys are checked, and its invalid-JSON prefix is `--file: not
+JSON:` instead of `--file is not JSON:`;
 `_belongs` still decides in this order: the found pull request is among the card's linked
 pull requests, else the last report's pull request, else the card id in the title, body or
 branch, and `--yes` confirms it. Only the first of those changed: a pr link whose forge URL
