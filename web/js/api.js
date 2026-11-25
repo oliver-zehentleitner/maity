@@ -1045,6 +1045,10 @@ window.Maity = window.Maity || {};
       : authority === "reviewer_and_tester" ? tasksReview(slug) || tasksTest(slug) : tasksAdmin(slug);
     const editor = holds || card.created_by === meId || tasksAdmin(slug);
     if (!editor && !(reviewMove && hasAuthority)) fail(403, "forbidden", "only the holder, the creator or an admin edits a card", path, { scope: "tasks:admin" });
+    // Checked before anything changes, so that a refused PATCH takes no effect at all (§6.4).
+    const outsideErrors = {};
+    openToOutsiders(slug, body, outsideErrors, path);
+    if (Object.keys(outsideErrors).length) fail(400, "invalid", "invalid fields", path, { fields: outsideErrors });
     if ("parent" in body || "related" in body || ("status" in body && card.parent)) {
       subtaskEdges(slug, list, card, body, path, { parent: card.parent || null, status: card.status });
     }
@@ -1095,12 +1099,7 @@ window.Maity = window.Maity || {};
     // A child's closing changes its parent's counts.
     if (card.parent) { const p = list.find((t) => t.id === card.parent); if (p) p.children = childrenOf(list, p.id); }
     ["title", "body", "label", "needs", "area"].forEach((f) => { if (f in body) card[f] = body[f]; });
-    if ("open_to_outsiders" in body) {
-      const errors = {};
-      openToOutsiders(slug, body, errors, path);
-      if (Object.keys(errors).length) fail(400, "invalid", "invalid fields", path, { fields: errors });
-      card.open_to_outsiders = body.open_to_outsiders;
-    }
+    if ("open_to_outsiders" in body) card.open_to_outsiders = body.open_to_outsiders;
     // §6.8: a contract card's file and section, checked as the hub checks them.
     if (body.contract) {
       if (card.kind !== "contract") fail(400, "invalid", "contracts only", path, { fields: { contract: "contracts_only" } });

@@ -1415,9 +1415,10 @@ window.Maity = window.Maity || {};
     const owner = ctx.isOwner;
     const lookingSelect = h("select", { id: "looking-for-coders-select" }, LOOKING_FOR_CODERS().map(([v, l]) => h("option", { value: v }, l)));
     lookingSelect.value = looking;
-    // Only a human owner chooses agent or direct; anyone else keeps the stored value offered, so a save never changes it.
+    // Only a human owner chooses agent or direct: for anyone else both stay shown and switched off, the stored one
+    // selected too, so an unchanged save sends nothing for the field, and human is the one choice left.
     const claimsSelect = h("select", { id: "outside-claims-select" },
-      OUTSIDE_CLAIMS().map(([v, l]) => h("option", { value: v, disabled: owner || v === "human" || v === claims ? null : true }, l)));
+      OUTSIDE_CLAIMS().map(([v, l]) => h("option", { value: v, disabled: owner || v === "human" ? null : true }, l)));
     claimsSelect.value = claims;
     const warning = h("p", { class: "flag", id: "outside-claims-warning", role: "status" });
     const update = () => {
@@ -1440,7 +1441,7 @@ window.Maity = window.Maity || {};
         const policy = {};
         const typed = maxInput.value.trim();
         const n = typed === "" ? null : Number(typed);
-        if (n !== null && (!Number.isInteger(n) || n < 1)) { error.textContent = fieldError("out_of_range"); maxInput.focus(); return; }
+        if (n !== null && (!Number.isSafeInteger(n) || n < 1)) { error.textContent = fieldError("out_of_range"); maxInput.focus(); return; }
         if (lookingSelect.value !== looking) policy.looking_for_coders = lookingSelect.value;
         if (claimsSelect.value !== claims) policy.outside_claims = claimsSelect.value;
         if (n !== max) policy.outside_claims_max = n;
@@ -1448,7 +1449,7 @@ window.Maity = window.Maity || {};
         if (!reason.value.trim()) { reason.focus(); return; }
         save({ policy, reason: reason.value.trim() }, { saved: M.t("settings.outside_claims.saved"), notSaved: M.t("settings.outside_claims.not_saved") }, (err) => {
           const fields = (err.details || {}).fields || {};
-          const said = fieldError((err.details || {}).reason) || fieldError(fields.outside_claims_max);
+          const said = fieldError((err.details || {}).reason) || fieldError(fields.outside_claims_max || fields["policy.outside_claims_max"]);
           if (!said) return false;
           error.textContent = said;
           return true;

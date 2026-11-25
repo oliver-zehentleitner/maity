@@ -271,7 +271,7 @@ window.Maity = window.Maity || {};
   // outside never sets it (outside_trust), so it gets no box. Under all or off the mark decides
   // nothing, and the box says so. Returns {box, el}, or null.
   function outsidersBox(ctx, id, checked) {
-    if (ctx.me.trust === "outside") return null;
+    if (ctx.trust === "outside") return null;
     const box = h("input", { type: "checkbox", id });
     box.checked = checked;
     const looking = (ctx.project.policy || {}).looking_for_coders || "per_card";

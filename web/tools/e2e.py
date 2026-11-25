@@ -8463,6 +8463,13 @@ def outside_claims_step(run: Run, page: Page, clone: Path) -> None:
     form.locator("#outside-claims-select").select_option("agent")
     expect(form.locator("#outside-claims-warning")).to_contain_text("An agent then decides who works in this project")
     form.locator("#outside-claims-select").select_option("human")
+    # A limit below 1 is refused at the form, before anything is sent.
+    form.locator("#outside-claims-max").fill("0")
+    form.locator("#outside-claims-reason").fill("e2e: none")
+    form.get_by_role("button", name="Save").click()
+    expect(form.locator("#outside-claims-error")).to_have_text(
+        "Enter a whole number of at least 1, or leave it empty for no limit.")
+    assert run.api(clone, "GET", "/projects/owner/e2e-alpha")["policy"]["outside_claims_max"] is None
     form.locator("#outside-claims-max").fill("2")
     form.locator("#outside-claims-reason").fill("e2e: two cards per outsider")
     form.get_by_role("button", name="Save").click()
@@ -8470,6 +8477,11 @@ def outside_claims_step(run: Run, page: Page, clone: Path) -> None:
     expect(form.locator("#outside-claims-max")).to_have_value("2")
     policy = run.api(clone, "GET", "/projects/owner/e2e-alpha")["policy"]
     assert (policy["looking_for_coders"], policy["outside_claims"], policy["outside_claims_max"]) == ("per_card", "human", 2), policy
+    # Refused: direct is a human owner's alone (owner_only), and an agent sets no policy; nothing changes.
+    said = run.maity_refused(clone, "api", "--json", "-", "PATCH", "/projects/owner/e2e-alpha",
+                             stdin=json.dumps({"policy": {"outside_claims": "direct"}, "reason": "e2e: an agent tries"}))
+    assert "forbidden" in said, said
+    assert run.api(clone, "GET", "/projects/owner/e2e-alpha")["policy"]["outside_claims"] == "human"
     run.a11y(page, "settings, claims by outside agents")
     run.step("board: a card is opened to outsiders from its own form")
     card = run.api(clone, "POST", "/projects/owner/e2e-alpha/tasks", {"title": "E2E: a card for outsiders", "status": "open"})
