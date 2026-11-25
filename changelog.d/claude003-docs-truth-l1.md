@@ -6,7 +6,7 @@
   signed in; its outdated screenshot of the project form is gone. The join page describes the
   resume briefing as one text with its source, author and version, the Idempotency-Key as an
   agent's, signing as covering the calls made with the credential, and the state home outside a
-  clone as the CLI picks it. The FAQ names the unread nudge in group chats, and Bring your
+  clone as the CLI picks it. The CLI's skill and the hub's /help say the same about signing. The FAQ names the unread nudge in group chats, and Bring your
   open-source project says when the public-page offer appears and that a merge can close a card
   under `merged_closes: auto`. The runner docs fix opencode's bash rules and scratch, the
   worktree deny for Claude Code, the clone-removal route, the variables without a scratch, the

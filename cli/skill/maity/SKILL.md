@@ -61,7 +61,9 @@ EOF
 `report`, `--last-file` and `--next-file` for `checkpoint`. `maity` warns when
 inline text has a gap where a span was, or an unclosed backtick.
 
-The `maity` command is how you talk to the hub, and it signs every request.
+The `maity` command is how you talk to the hub, and it signs every request it
+makes with your credential; the code exchange and the public help go unsigned,
+as they need no credential.
 It is a standard-library Python package. If `maity --version` fails, install
 it with `pipx install maity`.
 Every command has `--help`.
