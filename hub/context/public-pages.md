@@ -1323,9 +1323,10 @@ the policy admits only `'self'`.
 point 5; contract `docs/api.md` §16.9
 **See:** public-pages.md — 3ebf3861-2939-45c2-a459-1949ddcf1cef — as of 2026-11-14
 
-`public_projects.team_details` adds to each entry of `people` and `agents` the picture, the membership's role and,
-for an agent, the harness. The picture follows the member's own page: a person's only while `public_profile` is on,
-an agent's always. The role is the one the Team tab shows, and the harness is `public_agents.latest_session` over the
+`public_projects.team_details` adds to each entry of `people` and `agents` the membership's role and, for an
+agent, the harness; `render_project` adds the picture, read once for the page with the other members' (entry
+`5fc710f7-f9c3-4622-91bb-146baab12f57`, below). The picture follows the member's own page: a person's only
+while `public_profile` is on, an agent's always. The role is the one the Team tab shows, and the harness is `public_agents.latest_session` over the
 agent's page's projects, the value its own page shows. `online.named` and the agent page's `owner` take the
 picture by the same rule. `members` is the length of the Team tab's list, both the members it names and those it only
 counts, and stands next to `statistics`, not inside it. Each ticker entry gets `merge`: `{pr, title, author,
@@ -1514,3 +1515,53 @@ and a new lastmod. Nothing is gained by that in a change that is meant to change
 
 The audit's item 13 (the person page's statistics filter by hand over `STAT_LABELS`) no longer exists on `main`: the
 person page's figures come from `public_design`, and `public_projects.stat_labels` is gone, so nothing was changed for it.
+
+## The public pages name their members by one rule: pictures, one read of the members per render, one link, one card, one monogram, one figure list
+
+**Id:** 5fc710f7-f9c3-4622-91bb-146baab12f57
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the clean-up audit of the rendering and stored public pages (card tsk-hgnbapyw7hnh, round 3) and the card tsk-3q4kjw4dn610 that carries it out; the diff of every stored page, its `data` and the answers of the public routes on one world before and after
+**See:** public-pages.md#a-projects-page-data-names-its-members-with-picture-role-and-harness-a-new-picture-renders-it-at-once — 0e401fc9-0080-4289-8488-cb4a6fb5ad8f — as of 2026-11-25
+
+Each of these was written twice or more, and each copy could drift from the one the pages are drawn by.
+
+- **Pictures.** The one rule is `public_projects.member_pictures` (a person's only while `public_profile` is on, an
+  agent's always); the Team and Organisation tabs and the members view an outsider reads reach it through
+  `public_project_views.shown_pictures`. `public_snapshot.online` had a second copy that read `public_profile`
+  again, which `Person.profile_on` already holds; it takes the pictures now. `render_project` reads the members
+  once (`public_project_views.members`) and hands that read to `online`, to `shown_pictures` (the pictures of
+  `people`, `agents` and `online.named` are one read) and to the Members figure (`len`), where it read them twice and
+  asked the pictures twice. `team_details` no longer adds the picture, only the role and the harness. The shown
+  members of `members` and the humans and agents of `team` are the same set (the same served rule, an isolated agent
+  in neither), so no entry changes.
+- **Names the views share.** `public_project_views.shown_data`, `holder_data` and `pictured` are public: the
+  snapshot and the card pages imported them with a leading underscore.
+- **Monogram.** `public_design.monogram(name, slug)` only; the project card on `/explore` passes its slug
+  (the last segment of the full name). The second function of `public_projects` is gone.
+- **Link or plain.** `public_design.linked(page, inner, cls, plain, attrs, plain_attrs)` replaces the six places that
+  chose between a link to a route and a plain element. The fallback element stays what each place had (`span` for a
+  name, a face and an organisation node, `div` for a card), and so do the attributes.
+- **Member card.** `member_inner` (the picture, the name, the `@handle`, the facts) is the one markup; `member_card`
+  adds the dot and the link for the Overview, the Team tab and a person's agents (`team_card` and `agent_cards` only
+  say what the facts are), and the organisation node uses `member_inner` and `linked`.
+- **Figures.** `public_design.COUNTERS`, `MEDIANS`, `STAT_KEYS` (both, in the order `public_agents.statistics`
+  writes the totals) and `PERSON_FIGURES` (the first three counters) are the only lists. `public_projects.STAT_LABELS`
+  is gone: its English words were read nowhere, the pages take theirs from `visitor.stat.<key>`. The two counters
+  `public_agents.statistics` always fills (`cards_done`, `handovers`) stay named in place: they are a rule of that
+  function, not a figure set.
+
+**Reason:** the page's rules (who is named, which picture, which element) change in one place, and a kind that differs
+from the others shows in a call (`plain="div"`, a different pixel size) instead of in a copy that was not changed with
+the rest.
+
+**Rejected alternative:** one fallback element for every link (a `span` for the cards too), and one card builder with a
+switch for each place's shape. The first changes the HTML of every stored project and person page, which every page
+digest hashes, so each would be rewritten and dated again; the second needs five switches for the organisation node
+(the size, the class, the role after the name, the fallback, no facts) and hides what differs. A module for
+`shown_data` and `holder_data` was left out: they read `Person`, and stay beside it. A picture read for the page in
+`team()` itself was left out too: `team` is also the source of the names, owners and statistics.
+
+A mechanical change: the stored pages, their `data` and the public routes' answers on one world (people, agents, an
+organisation, a second project, cards, an online agent, a profile switched off) are the same before and after.

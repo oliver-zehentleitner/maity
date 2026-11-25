@@ -24,7 +24,7 @@ from typing import Any, NamedTuple
 
 from sqlalchemy import Connection, select
 
-from maity_hub import moderation, namespace, person_links, public_pages
+from maity_hub import moderation, namespace, person_links, public_design, public_pages
 from maity_hub import tables as t
 from maity_hub.config import Settings
 
@@ -189,9 +189,6 @@ class Shown(NamedTuple):
     statistics: dict[str, Any] | None
 
 
-STAT_KEYS = ("cards_done", "reviews_given", "prs_merged")  # a person's three (§16.9)
-
-
 def _shown(conn: Connection, human: Any, named: list[Listed]) -> Shown:
     """Member since, online and the numbers, by the person's switches (§16.9): none of them
     while `public_profile` is off, online only with `public_presence` on as well, the numbers
@@ -212,7 +209,7 @@ def _shown(conn: Connection, human: Any, named: list[Listed]) -> Shown:
         totals = public_agents.statistics(
             conn, [(listed.project, listed.membership_id) for listed in named]
         )
-        numbers = {key: totals[key] for key in STAT_KEYS}
+        numbers = {key: totals[key] for key in public_design.PERSON_FIGURES}
     return Shown(member_since(human.created_at), online, numbers)
 
 

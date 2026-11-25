@@ -72,7 +72,7 @@ def served(conn: Connection, agent: Any, owner: Any) -> list[tuple[Any, int]] | 
 def statistics(conn: Connection, found: list[tuple[Any, int]]) -> dict[str, Any]:
     """The agent's counters over the projects of its page, summed, and its two medians over the
     samples of all of them (§6.22, the last 30 days): a median of medians would be none."""
-    totals: dict[str, Any] = {key: None for key, _ in public_projects.STAT_LABELS}
+    totals: dict[str, Any] = dict.fromkeys(public_design.STAT_KEYS)
     claim: list[int] = []
     review: list[int] = []
     for project, membership_id in found:
@@ -85,7 +85,7 @@ def statistics(conn: Connection, found: list[tuple[Any, int]]) -> dict[str, Any]
             public_only=True,
         )
         row = folded["members"][0] if folded["members"] else {}
-        for key in ("cards_done", "reviews_given", "prs_merged", "handovers"):
+        for key in public_design.COUNTERS:
             if row.get(key) is not None:
                 totals[key] = (totals[key] or 0) + row[key]
         cut = swarm.utc_day(window.as_of) - timedelta(days=public_projects.STAT_DAYS - 1)

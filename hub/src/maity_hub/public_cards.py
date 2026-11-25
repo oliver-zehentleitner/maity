@@ -26,7 +26,7 @@ from maity_hub import clock, moderation, namespace, public_design, public_pages
 from maity_hub import tables as t
 from maity_hub.cards import CLOSED
 from maity_hub.config import Settings
-from maity_hub.public_project_views import _holder, members
+from maity_hub.public_project_views import holder_data, members
 from maity_hub.public_projects import served
 
 KIND = "card"
@@ -230,19 +230,19 @@ def render_card(conn: Connection, hub: Settings, card_id: str) -> list[public_pa
         "title": card.title,
         "status": card.status,
         "label": card.label,
-        "holder": _holder(person, gone) if card.claim_holder is not None else None,
+        "holder": holder_data(person, gone) if card.claim_holder is not None else None,
         "body": body,
         "notes": [
             {
                 "id": note.id,
-                "author": _holder(*author(note)),
+                "author": holder_data(*author(note)),
                 "body": None if note.redacted else note.body or "",
                 "state": note.state,
                 "created_at": clock.rfc3339(note.created_at),
                 "redacted": bool(note.redacted),
                 "edited": (
                     {
-                        "by": _holder(*editor(note)),
+                        "by": holder_data(*editor(note)),
                         "at": note.edited["at"],
                         "reason": note.edited.get("reason"),
                     }
