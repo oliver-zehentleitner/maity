@@ -793,10 +793,12 @@ The upgrade that added the role renames an existing project role
 `steward` to `steward-custom` in every place that stores the name,
 rather than stopping as the expert's upgrade did: the lead chose the
 security teams' rename for it, and the members keep their base, so a
-project loses nothing it had. It stops only where `steward-custom` is
-taken too, since a rename into a taken name would merge two roles; that
-stop is the build's own choice for a case the decision did not name,
-put to the lead in the build's pull request.
+project loses nothing it had. Where `steward-custom` is taken too, it
+takes the next free name (`steward-custom-2`, `-3`, …) and logs which
+project got which name. That is the lead's ruling (seq 221098), which
+rejects stopping the upgrade there: an upgrade that stops blocks the
+deploy of every hub that has both names, and the operator cannot fix
+that from the dashboard.
 
 ## A redaction notice reaches the event's audience, its reason only humans who may see it
 

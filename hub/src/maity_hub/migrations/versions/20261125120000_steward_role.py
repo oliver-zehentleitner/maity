@@ -10,9 +10,10 @@ list itself, a membership, an open or used join and invitation, a card's `needs`
 `to`, a placement's profile, the onboarding's `check_in_with`, a `substitutes` list, the role
 memory and `outside_roles`. A membership's `role_base` is unchanged, so no one's scopes move.
 
-A project that already has a project role `steward-custom` is not renamed by halves: the
-upgrade stops and names each such project, and an admin renames one of the two (§2.3: add the
-new name, move the members, remove the old one) before the upgrade runs again.
+A project that already has a project role `steward-custom` gets the next free name,
+`steward-custom-2`, then `-3` and on (the lead's ruling of 2026-11-25, seq 221098): an upgrade
+that stopped would block the deploy of every hub with both names, and the operator cannot fix
+that from the dashboard. Every rename is logged with the project and the name it got.
 
 The downgrade does nothing: the built-in role and the renamed project role cannot be told
 apart from the name the code before this revision reads.
@@ -25,6 +26,7 @@ Create Date: 2026-11-25
 """
 
 import json
+import logging
 from collections.abc import Sequence
 from typing import Any
 
@@ -36,6 +38,8 @@ revision: str = "20261125120000_steward_role"
 down_revision: str | None = "20261124170513_org_link_check"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
+
+log = logging.getLogger("maity_hub.migrations.steward_role")
 
 OLD = "steward"
 NEW = "steward-custom"
@@ -83,6 +87,16 @@ def _json(value: Any) -> Any:
     return json.loads(value) if isinstance(value, str) else value
 
 
+def free_name(taken: set[str]) -> str:
+    """`steward-custom`, else the first of `steward-custom-2`, `-3`, … the project has not."""
+    if NEW not in taken:
+        return NEW
+    n = 2
+    while f"{NEW}-{n}" in taken:
+        n += 1
+    return f"{NEW}-{n}"
+
+
 def upgrade() -> None:
     conn = op.get_bind()
     rows = conn.execute(
@@ -95,55 +109,54 @@ def upgrade() -> None:
             _project.c.settings,
         ).order_by(_project.c.owner_id, _project.c.slug)
     ).all()
-    named = [(row, _json(row.roles) or []) for row in rows]
-    named = [(row, roles) for row, roles in named if any(r.get("name") == OLD for r in roles)]
-    both = [
-        f"{row.owner_id}/{row.slug}"
-        for row, roles in named
-        if any(r.get("name") == NEW for r in roles)
-    ]
-    if both:
-        raise RuntimeError(
-            "the built-in role `steward` (§2.3) needs the name, and these projects have both a "
-            f"project role `steward` and one named `steward-custom`: {', '.join(both)}. Rename "
-            "one of them (§2.3), then run the upgrade again."
+    for row in rows:
+        roles = _json(row.roles) or []
+        if not any(r.get("name") == OLD for r in roles):
+            continue
+        new = free_name({str(r.get("name")) for r in roles})
+        _rename(conn, row, roles, new)
+        log.warning(
+            "project %s/%s: the project role `%s` is renamed `%s` (the built-in role `steward`, "
+            "docs/api.md §2.3)",
+            row.owner_id,
+            row.slug,
+            OLD,
+            new,
         )
-    for row, roles in named:
-        _rename(conn, row, roles)
 
 
-def _rename(conn: Any, row: Any, roles: list[dict[str, Any]]) -> None:
+def _rename(conn: Any, row: Any, roles: list[dict[str, Any]], new: str) -> None:
     project_id = row.id
     values: dict[str, Any] = {
-        "roles": [{**r, "name": NEW} if r.get("name") == OLD else r for r in roles]
+        "roles": [{**r, "name": new} if r.get("name") == OLD else r for r in roles]
     }
     outside = _json(row.outside_roles)
     if outside is not None and OLD in outside:
-        values["outside_roles"] = [NEW if r == OLD else r for r in outside]
+        values["outside_roles"] = [new if r == OLD else r for r in outside]
     settings = _json(row.settings) or {}
     onboarding = settings.get("onboarding") or {}
     if onboarding.get("check_in_with") == f"role:{OLD}":
         values["settings"] = {
             **settings,
-            "onboarding": {**onboarding, "check_in_with": f"role:{NEW}"},
+            "onboarding": {**onboarding, "check_in_with": f"role:{new}"},
         }
     conn.execute(sa.update(_project).where(_project.c.id == project_id).values(**values))
-    for table, column, old, new in (
-        (_membership, _membership.c.role, OLD, NEW),
-        (_join_link, _join_link.c.role, OLD, NEW),
-        (_invitation, _invitation.c.role, OLD, NEW),
-        (_card, _card.c.needs, OLD, NEW),
-        (_request, _request.c.to_role, f"role:{OLD}", f"role:{NEW}"),
+    for table, column, old_value, new_value in (
+        (_membership, _membership.c.role, OLD, new),
+        (_join_link, _join_link.c.role, OLD, new),
+        (_invitation, _invitation.c.role, OLD, new),
+        (_card, _card.c.needs, OLD, new),
+        (_request, _request.c.to_role, f"role:{OLD}", f"role:{new}"),
     ):
         conn.execute(
             sa.update(table)
-            .where(table.c.project_id == project_id, column == old)
-            .values({column.name: new})
+            .where(table.c.project_id == project_id, column == old_value)
+            .values({column.name: new_value})
         )
     conn.execute(
         sa.update(_memory)
         .where(_memory.c.project_id == project_id, _memory.c.store == "role", _memory.c.role == OLD)
-        .values(role=NEW)
+        .values(role=new)
     )
     members = conn.execute(
         sa.select(_membership.c.id, _membership.c.availability_policy).where(
@@ -154,7 +167,7 @@ def _rename(conn: Any, row: Any, roles: list[dict[str, Any]]) -> None:
         policy = _json(member.availability_policy)
         if not policy or f"role:{OLD}" not in policy.get("substitutes", []):
             continue
-        substitutes = [f"role:{NEW}" if s == f"role:{OLD}" else s for s in policy["substitutes"]]
+        substitutes = [f"role:{new}" if s == f"role:{OLD}" else s for s in policy["substitutes"]]
         conn.execute(
             sa.update(_membership)
             .where(_membership.c.id == member.id)
@@ -171,7 +184,7 @@ def _rename(conn: Any, row: Any, roles: list[dict[str, Any]]) -> None:
             conn.execute(
                 sa.update(_placement)
                 .where(_placement.c.id == placement.id)
-                .values(new_profile={**profile, "role": NEW})
+                .values(new_profile={**profile, "role": new})
             )
 
 

@@ -3639,11 +3639,16 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "trust: a proxy never governs; an admin reviewer does; a guest reviewer reviews nothing");
   // Every role of §2.3, once, with its label and help; a security team holds the scopes of its base.
   const rlT = win.Maity.trust;
-  expect(rlT.ROLES.join() === "coder,reviewer,tester,designer,writer,ops,proxy,manager,red-team,blue-team,purple-team,expert"
+  expect(rlT.ROLES.join() === "coder,reviewer,tester,designer,writer,ops,proxy,manager,red-team,blue-team,purple-team,expert,steward"
     && rlT.roleLabel("red-team") === "Red team" && rlT.roleLabel("manager") === "Manager" && rlT.ROLES.every((r) => rlT.roleHelp(r).length > 10)
-    && rlT.MEMBER_ROLES.join() === "coder,reviewer,tester,designer,writer,manager,red-team,blue-team,purple-team,expert"
-    && !rlT.NEEDS_ROLES.includes("expert") && rlT.tokenWords("role:expert") === "every expert",
+    && rlT.MEMBER_ROLES.join() === "coder,reviewer,tester,designer,writer,manager,red-team,blue-team,purple-team,expert,steward"
+    && !rlT.NEEDS_ROLES.includes("expert") && rlT.tokenWords("role:expert") === "every expert"
+    && !rlT.NEEDS_ROLES.includes("steward") && rlT.tokenWords("role:steward") === "every steward" && rlT.roleLabel("steward") === "Steward",
     "roles: the dashboard's one list holds every role of §2.3 with a label and a help text; a member's own agent gets all but ops and proxy");
+  // The steward (§2.3 "The steward"): no role picker offers it where the memory provider is none.
+  expect(rlT.offered({ project: { memory: { provider: "none" } } }, rlT.ROLES).join() === rlT.ROLES.filter((r) => r !== "steward").join()
+    && rlT.offered({ project: { memory: { provider: "keep-the-why" } } }, rlT.ROLES).includes("steward"),
+    "roles: the steward is offered only where the project has a memory provider");
   expect(rlT.tests({ trust: "member", role: "red-team" }) && !rlT.reviews({ trust: "member", role: "red-team" })
     && rlT.reviews({ trust: "member", role: "purple-team" }) && rlT.releases({ trust: "member", role: "purple-team" })
     && !rlT.tests({ trust: "member", role: "blue-team" }) && !rlT.reviews({ trust: "member", role: "blue-team" }),
@@ -4977,7 +4982,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(byoButton() && !byoButton().disabled && /^\d+ of 10 agents of yours$/.test(text(byoNote())), "own agents: below the limit, Add my agent is on");
   await joinAny(); await tick();
   expect(byId("join-trust") && byId("join-trust").querySelectorAll("option").map((o) => o.getAttribute("value")).join() === "member,guest"
-    && byId("join-role").querySelectorAll("option").map((o) => o.getAttribute("value")).join() === "coder,reviewer,tester,designer,writer,manager,red-team,blue-team,purple-team,expert"
+    && byId("join-role").querySelectorAll("option").map((o) => o.getAttribute("value")).join() === "coder,reviewer,tester,designer,writer,manager,red-team,blue-team,purple-team,expert,steward"
     && byId("join-reports") && byId("join-reports").querySelectorAll("option").map((o) => o.getAttribute("value")).join() === "hum-maintainer"
     && byId("join-reports").value === "hum-maintainer" && !byId("join-areas") && text(main.querySelector(".join-panel")).includes("Join my agent"),
     "own agents: the panel offers only member or guest, every role but ops and proxy, reports to oneself or one's own managers (§3.1), no areas");
@@ -4990,7 +4995,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/agents"); for (let k = 0; k < 6; k++) await tick(); await openAgentCards();
   await joinAny(); for (let k = 0; k < 4; k++) await tick();
   const byoOwnRoles = byId("join-role") ? byId("join-role").querySelectorAll("option").map((o) => o.getAttribute("value")).join() : null;
-  expect(byoOwnRoles === "coder,reviewer,tester,designer,writer,manager,red-team,blue-team,purple-team,expert,popelwerfer",
+  expect(byoOwnRoles === "coder,reviewer,tester,designer,writer,manager,red-team,blue-team,purple-team,expert,steward,popelwerfer",
     "own agents: the project's own roles follow the built-in ones, one on ops not " + byoOwnRoles);
   win.Maity.api.get = byoRolesGet;
   // One's own agent with the role manager is offered as its boss; one on a project role based on
@@ -15301,7 +15306,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && JSON.stringify(ivItems()) === JSON.stringify(["inv-0003:open", "inv-0004:voided", "inv-0002:used", "inv-0001:revoked"])
     && !text(ivBox()).includes("#/invite/"), "invite: Members offers inviting, every trust for an owner; the list with each state, never a link");
   const ivRoles = byId("invite-role").querySelectorAll("option");
-  expect(ivRoles.map((o) => o.getAttribute("value")).join() === "coder,reviewer,tester,designer,writer,ops,manager,red-team,blue-team,purple-team,expert"
+  // The steward is offered here, where the project's memory provider is Keep the Why (§2.3 "The steward").
+  expect(ivRoles.map((o) => o.getAttribute("value")).join() === "coder,reviewer,tester,designer,writer,ops,manager,red-team,blue-team,purple-team,expert,steward"
     && ivRoles.find((o) => o.getAttribute("value") === "purple-team").textContent === "Purple team"
     && text(byId("invite-role-help")) === win.Maity.trust.roleHelp("coder") && byId("invite-role").getAttribute("aria-describedby") === "invite-role-help",
     "invite: every role but proxy (trust member), by its label, the chosen role's help under the picker");

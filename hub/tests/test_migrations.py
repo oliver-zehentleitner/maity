@@ -1577,9 +1577,15 @@ def test_the_steward_migration_renames_a_project_role_named_steward(engine: Engi
     assert other == [legal]
 
 
-def test_the_steward_migration_stops_where_steward_custom_is_taken(engine: Engine) -> None:
-    """20261125120000: no rename by halves; the upgrade names the project and stops."""
-    from sqlalchemy import update
+def test_the_steward_migration_takes_the_next_free_name_and_logs_it(
+    engine: Engine, caplog: pytest.LogCaptureFixture
+) -> None:
+    """20261125120000: where `steward-custom` (and `-2`) are taken, the project role gets the
+    next free name, `steward-custom-3`, and the upgrade logs which project got which name; it
+    never stops (the lead's ruling, seq 221098)."""
+    import logging
+
+    from sqlalchemy import select, update
 
     from maity_hub import tables as t
     from tests import factory
@@ -1590,15 +1596,18 @@ def test_the_steward_migration_stops_where_steward_custom_is_taken(engine: Engin
     before = _before(engine, "20261125120000_steward_role")
     downgrade(engine, before)
     role = {"name": "steward", "base": "coder", "description": "", "guide": "", "guide_by": None}
+    taken = [{**role, "name": "steward-custom"}, {**role, "name": "steward-custom-2"}]
     with engine.begin() as conn:
-        conn.execute(
-            update(t.project)
-            .where(t.project.c.id == shop)
-            .values(roles=[role, {**role, "name": "steward-custom"}])
-        )
-    with pytest.raises(Exception, match=f"named `steward-custom`: {human}/shop\\. Rename"):
+        conn.execute(update(t.project).where(t.project.c.id == shop).values(roles=[role, *taken]))
+    with caplog.at_level(logging.WARNING, logger="maity_hub.migrations.steward_role"):
         migrate(engine)
-    assert current_revision(engine) == before
+    assert current_revision(engine) == head_revision(engine)
+    with engine.connect() as conn:
+        roles = conn.execute(select(t.project.c.roles).where(t.project.c.id == shop)).scalar_one()
+    assert [r["name"] for r in roles] == ["steward-custom-3", "steward-custom", "steward-custom-2"]
+    assert f"project {human}/shop: the project role `steward` is renamed `steward-custom-3`" in (
+        caplog.text
+    )
 
 
 def test_the_invite_by_handle_downgrade_revokes_what_an_older_hub_would_show_as_open(

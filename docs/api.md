@@ -1095,8 +1095,11 @@ role table above says what it does. Its scopes are the coder's.
   `steward` is renamed `steward-custom` by the upgrade that adds the
   role, as for the security teams, wherever the name is stored (the
   places `role_in_use` reads, below), and its members keep their base;
-  a project that already has a project role `steward-custom` stops the
-  upgrade, which names it, until an admin renames one of the two. It
+  in a project that already has a project role `steward-custom` it
+  takes the next free name, `steward-custom-2`, then `-3` and on, and
+  the upgrade logs which project got which name (the lead's ruling of
+  2026-11-25: an upgrade that stopped would block the deploy, which the
+  operator cannot fix from the dashboard). It
   is not among the roles
   `policy.outside_roles` may name (§6.1). Its role text of §5.2 (the
   default of `guide_role`) says, in outline: you keep the project's
@@ -1116,7 +1119,9 @@ role table above says what it does. Its scopes are the coder's.
   `policy.steward_writes` with the other policy fields. Where the
   project's `memory.provider` is `none` (§6.1) the dashboard hides the
   role in both pickers; the hub does not refuse it, and a join or
-  `PATCH` that names it there is accepted as anywhere.
+  `PATCH` that names it there is accepted as anywhere. **Invite user**
+  (§3.4) hides it there too; an invitation that names it is accepted
+  as anywhere.
 
 **Why a steward, and why built on the expert.** In a large team the
 reasoning goes missing between the merges: each member writes the

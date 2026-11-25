@@ -8886,7 +8886,7 @@ SETTINGS_SECTIONS = {
     "Members and agents": ["Members' own agents", "Agents on runners", "Agents of owners who are not members", "Onboarding",
                            "Restricted access", "Agent signing", "Roles"],
     "Way of working": ["Who closes a card", "Approvals for outsiders' work", "Memory", "Keep the Why commitment",
-                       "Keep the Why personal settings", "Jour fixe series"],
+                       "Keep the Why personal settings", "Keep the Why steward", "Jour fixe series"],
     "Moderation": ["Remove a reported message", "Files waiting to be sent"],
     "Runners": [],
     "Mine": ["Your absence"],
