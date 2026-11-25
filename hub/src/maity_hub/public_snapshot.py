@@ -15,13 +15,16 @@ from __future__ import annotations
 import logging
 import threading
 from datetime import timedelta
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import Connection, Engine, select
 
 from maity_hub import clock, moderation, public_pages, worker_runs
 from maity_hub import tables as t
 from maity_hub.config import Settings
+
+if TYPE_CHECKING:
+    from maity_hub.public_project_views import Person
 
 log = logging.getLogger(__name__)
 
@@ -131,14 +134,17 @@ def _merge(payload: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def online(conn: Connection, project_id: str) -> dict[str, Any]:
+def online(
+    conn: Connection, who: dict[int, Person], pictures: dict[str, str | None]
+) -> dict[str, Any]:
     """Who is online at the snapshot: the counts per kind, and those the page names; a
     person whose `public_presence` is off, and a member under a moderation hold, is neither
-    named nor counted (§16.9)."""
+    named nor counted (§16.9). `who` is the project's members (`public_project_views.members`)
+    and `pictures` those of the members it names (`public_project_views.shown_pictures`), both
+    read once by the render that asks."""
     from maity_hub.availability import presences_of
-    from maity_hub.public_project_views import _shown, members
+    from maity_hub.public_project_views import pictured
 
-    who = members(conn, project_id)
     m = t.membership.c
     rows = conn.execute(select(t.membership).where(m.id.in_(list(who))).order_by(m.id)).all()
     up = [mid for mid, presence in presences_of(conn, rows).items() if presence == "online"]
@@ -149,36 +155,11 @@ def online(conn: Connection, project_id: str) -> dict[str, Any]:
         people,
         key=lambda p: (not p.human, p.handle or "", p.id),
     )
-    pictures = _pictures(conn, {row.id: row for row in rows}, named)
     return {
         "humans": sum(1 for p in people if p.human),
         "agents": sum(1 for p in people if not p.human),
-        "named": [{**(_shown(p) or {}), "picture": pictures.get(p.id)} for p in named],
+        "named": [pictured(p, pictures) for p in named],
     }
-
-
-def _pictures(conn: Connection, rows: dict[int, Any], named: list[Any]) -> dict[int, str | None]:
-    """The picture of each one named, by membership id, as their own page shows it (§16.9):
-    a person's only while their `public_profile` is on, an agent's always."""
-    from maity_hub import avatars
-
-    principal = {p.id: rows[p.id].human_id or rows[p.id].agent_id for p in named}
-    humans = [rows[p.id].human_id for p in named if rows[p.id].human_id]
-    chosen = (
-        set(
-            conn.execute(
-                select(t.human.c.id).where(
-                    t.human.c.id.in_(humans), t.human.c.public_profile.is_(True)
-                )
-            ).scalars()
-        )
-        if humans
-        else set()
-    )
-    shown = [rows[p.id].agent_id or rows[p.id].human_id for p in named]
-    shown = [i for i in shown if i not in humans or i in chosen]
-    urls = avatars.public_urls(conn, shown)
-    return {mid: urls.get(i) for mid, i in principal.items()}
 
 
 def _members_of(conn: Connection, project_ids: list[str]) -> list[tuple[str, str]]:

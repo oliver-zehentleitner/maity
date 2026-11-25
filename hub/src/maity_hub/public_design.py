@@ -145,7 +145,14 @@ VIEWS = (
     ("/organisation", "nav.organisation"),
     ("/why", "nav.why"),
 )
+# The figures of the last 30 days (§6.22, §16.9), named once: an agent's four counters, the two
+# medians its page's `statistics` carries besides them, in the order `public_agents.statistics`
+# writes them, and a person's three, which are the first three counters (never the handovers or
+# the medians). The English words of the figures are `visitor.stat.<key>` of `WORDS`.
 COUNTERS = ("cards_done", "reviews_given", "prs_merged", "handovers")
+MEDIANS = ("claim_to_done_median_seconds", "review_to_done_median_seconds")
+STAT_KEYS = COUNTERS + MEDIANS
+PERSON_FIGURES = COUNTERS[:3]
 NOTE_STATES = ("incorporated", "dismissed")
 # A Keep the Why status as the export writes it, and its word's key (web/js/why.js).
 WHY_STATUS = {
@@ -238,6 +245,25 @@ def is_route(page: Any) -> bool:
     return isinstance(page, str) and page.startswith("/") and landing.safe_target(page)
 
 
+def linked(
+    page: Any,
+    inner: str,
+    cls: str | None = None,
+    *,
+    plain: str = "span",
+    attrs: str = "",
+    plain_attrs: str | None = None,
+) -> str:
+    """`inner` in a link to `page` when that is a route of the site, else in a `plain` element
+    that is no link (a member whose page the hub does not name). `cls` is the class of either,
+    `attrs` (already escaped, with its leading space) follows the `href`, and `plain_attrs`, by
+    default the same, the plain element's own."""
+    c = f' class="{cls}"' if cls else ""
+    if is_route(page):
+        return f'<a{c} href="{_e(page)}"{attrs}>{inner}</a>'
+    return f"<{plain}{c}{attrs if plain_attrs is None else plain_attrs}>{inner}</{plain}>"
+
+
 def safe_url(url: Any) -> str | None:
     return url if isinstance(url, str) and url and landing.safe_target(url) else None
 
@@ -248,9 +274,7 @@ def external(url: Any, label: str) -> str | None:
 
 
 def who(person: dict[str, Any]) -> str:
-    name = _e(person.get("name") or "")
-    page = person.get("page")
-    return f'<a href="{_e(page)}">{name}</a>' if is_route(page) else f"<span>{name}</span>"
+    return linked(person.get("page"), _e(person.get("name") or ""))
 
 
 def holder_label(holder: Any) -> str | None:
@@ -328,10 +352,8 @@ def right_now(d: dict[str, Any]) -> str:
     for p in named[:STACK]:
         pic = face(p, "ag" if p.get("page") in bots else "hu", 30)
         name = _e(p.get("name") or "")
-        if is_route(p.get("page")):
-            faces.append(f'<a href="{_e(p["page"])}" title="{name}" aria-label="{name}">{pic}</a>')
-        else:
-            faces.append(f'<span role="img" title="{name}" aria-label="{name}">{pic}</span>')
+        tip = f' title="{name}" aria-label="{name}"'
+        faces.append(linked(p.get("page"), pic, attrs=tip, plain_attrs=' role="img"' + tip))
     more = len(named) - STACK
     if more > 0:
         label = _e(t("visitor.now.more.label", count=more))
@@ -438,25 +460,41 @@ def tab_section(kind: str, title: str, note: str | None, parts: str) -> str:
     )
 
 
-def member_card(p: dict[str, Any], kind: str, online: bool) -> str:
-    facts = ""
-    if p.get("role"):
-        facts += f'<span class="chip role">{_e(word_of("role", p["role"]))}</span>'
-    if kind == "ag" and p.get("harness"):
-        facts += f'<span class="h">{_e(p["harness"])}</span>'
-    inner = (
-        face(p, kind, 44)
+def role_chip(role: Any) -> str:
+    return f'<span class="chip role">{_e(word_of("role", role))}</span>'
+
+
+def member_inner(p: dict[str, Any], kind: str, px: int, facts: str = "") -> str:
+    """What every member card holds: the picture at `px`, the name, the `@handle` and, under
+    them, the `facts` (roles, harness) where there are any."""
+    return (
+        face(p, kind, px)
         + f'<span class="mc-t"><b>{_e(p.get("name") or "")}</b>'
         + f'<small>@{_e(p.get("handle") or "")}</small>'
         + (f'<span class="mc-m">{facts}</span>' if facts else "")
         + "</span>"
     )
+
+
+def member_card(
+    p: dict[str, Any], kind: str, facts: str = "", online: bool = False, attrs: str = ""
+) -> str:
+    """A member as a card of the Overview, the Team tab and a person's agents: the picture, the
+    name, the `facts` under them, the dot while they are `online`, and a link to their page
+    where the hub names one (`attrs` go on the card)."""
+    inner = member_inner(p, kind, 44, facts)
     if online:
         word = _e(t("visitor.online"))
         inner += f'<i class="dot" role="img" aria-label="{word}" title="{word}"></i>'
-    if is_route(p.get("page")):
-        return f'<a class="mcard" href="{_e(p["page"])}">{inner}</a>'
-    return f'<div class="mcard">{inner}</div>'
+    return linked(p.get("page"), inner, "mcard", plain="div", attrs=attrs)
+
+
+def team_card(p: dict[str, Any], kind: str, online: bool) -> str:
+    """A member of the project's team: their role in it and, for an agent, its harness."""
+    facts = role_chip(p["role"]) if p.get("role") else ""
+    if kind == "ag" and p.get("harness"):
+        facts += f'<span class="h">{_e(p["harness"])}</span>'
+    return member_card(p, kind, facts, online)
 
 
 def team_section(d: dict[str, Any], base: str) -> str:
@@ -473,7 +511,7 @@ def team_section(d: dict[str, Any], base: str) -> str:
         if isinstance(members, int) and not isinstance(members, bool)
         else ""
     )
-    cards = "".join(member_card(p, kind, p.get("page") in up) for p, kind in everyone[:TEAM_CARDS])
+    cards = "".join(team_card(p, kind, p.get("page") in up) for p, kind in everyone[:TEAM_CARDS])
     return (
         '<section class="sec team-cards"><div class="wrap"><div class="sec-h">'
         f'<h2>{_e(t("nav.members"))}</h2><p class="muted">{_e(line or "")}</p>{more}</div>'
@@ -568,18 +606,14 @@ def team(d: dict[str, Any]) -> str:
     people = sum(1 for _, kind in named if kind == "hu")
     others = d.get("others") or []
     parts = (
-        f'<div class="mgrid">{"".join(member_card(p, k, False) for p, k in named)}</div>'
+        f'<div class="mgrid">{"".join(team_card(p, k, False) for p, k in named)}</div>'
         if named
         else ""
     )
     if others:
         parts += (
             f'<h3>{_e(t("visitor.others"))}</h3><ul class="role-counts">'
-            + "".join(
-                f'<li><b>{_e(o["count"])}</b>'
-                f'<span class="chip role">{_e(word_of("role", o["role"]))}</span></li>'
-                for o in others
-            )
+            + "".join(f'<li><b>{_e(o["count"])}</b>' f'{role_chip(o["role"])}</li>' for o in others)
             + "</ul>"
         )
     return tab_section("team", t("nav.members"), headcount(people, len(named) - people), parts)
@@ -592,19 +626,13 @@ def organisation(d: dict[str, Any]) -> str:
         return [n for n in nodes if n.get("reports_to") == index]
 
     def card(n: dict[str, Any]) -> str:
-        role = f'<span class="chip role">{_e(word_of("role", n.get("role")))}</span>'
+        role = role_chip(n.get("role"))
         p = n.get("person")
         if not p:
             return f'<span class="onode anon">{role}</span>'
         agent = bool(AGENT_PAGE.match(p.get("page") or ""))
-        inner = (
-            face(p, "ag" if agent else "hu", 30)
-            + f'<span class="mc-t"><b>{_e(p.get("name") or "")}</b>'
-            + f'<small>@{_e(p.get("handle") or "")}</small></span>{role}'
-        )
-        if is_route(p.get("page")):
-            return f'<a class="onode" href="{_e(p["page"])}">{inner}</a>'
-        return f'<span class="onode">{inner}</span>'
+        inner = member_inner(p, "ag" if agent else "hu", 30) + role
+        return linked(p.get("page"), inner, "onode")
 
     def tree(found: list[dict[str, Any]], seen: frozenset[int]) -> str:
         """A line back to a node already drawn is not followed: the answer is data."""
@@ -724,7 +752,6 @@ def card(d: dict[str, Any]) -> str:
 # The networks in the order the dashboard names them (web/js/visitor.js, NETWORKS).
 NETWORKS = ("github", "gitlab", "x", "mastodon", "bluesky", "linkedin", "discord")
 REL_ME = "me nofollow"
-PERSON_FIGURES = ("cards_done", "reviews_given", "prs_merged")
 
 
 def socials(social: Any) -> str:
@@ -764,12 +791,7 @@ def profile_hero(kind: str, d: dict[str, Any], path: str) -> str:
     o = d.get("owner") if agent else None
     if isinstance(o, dict):
         inner = face(o, "hu", 22) + f'<b>{_e(o.get("name") or "")}</b>'
-        link = (
-            f'<a href="{_e(o["page"])}">{inner}</a>'
-            if is_route(o.get("page"))
-            else f"<span>{inner}</span>"
-        )
-        owner = f'<p class="owner">{_e(t("visitor.agent_of"))} {link}</p>'
+        owner = f'<p class="owner">{_e(t("visitor.agent_of"))} {linked(o.get("page"), inner)}</p>'
     website = safe_url(d.get("website")) if not agent else None
     shown_web = re.sub(r"/$", "", re.sub(r"^https://", "", website)) if website else ""
     facts = (
@@ -834,11 +856,7 @@ def project_cards(projects: Any) -> str:
             f'<a class="pcard" href="/{_e(full)}">'
             f'<span class="pmark sm" aria-hidden="true">{_e(monogram(p.get("name"), slug))}</span>'
             f'<span class="mc-t"><b>{_e(p.get("name") or "")}</b><small>{_e(full)}</small></span>'
-            + (
-                f'<span class="chip role">{_e(word_of("role", p["role"]))}</span>'
-                if p.get("role")
-                else ""
-            )
+            + (role_chip(p["role"]) if p.get("role") else "")
             + "</a>"
         )
     return (
@@ -857,23 +875,11 @@ def agent_cards(d: dict[str, Any]) -> str:
     cards = []
     for a in agents:
         roles = a.get("roles") if isinstance(a.get("roles"), list) else []
-        facts = "".join(f'<span class="chip role">{_e(word_of("role", r))}</span>' for r in roles)
+        facts = "".join(role_chip(r) for r in roles)
         if a.get("harness"):
             facts += f'<span class="h">{_e(a["harness"])}</span>'
-        inner = (
-            face(a, "ag", 44)
-            + f'<span class="mc-t"><b>{_e(a.get("name") or "")}</b>'
-            + f'<small>@{_e(a.get("handle") or "")}</small>'
-            + (f'<span class="mc-m">{facts}</span>' if facts else "")
-            + "</span>"
-        )
         handle = _e(a.get("handle") or "")
-        if is_route(a.get("page")):
-            cards.append(
-                f'<a class="mcard" href="{_e(a["page"])}" data-agent="{handle}">{inner}</a>'
-            )
-        else:
-            cards.append(f'<div class="mcard" data-agent="{handle}">{inner}</div>')
+        cards.append(member_card(a, "ag", facts, attrs=f' data-agent="{handle}"'))
     said = t("visitor.agents_of", count=len(agents), name=d.get("name") or "")
     return (
         '<section class="sec alt profile-agents"><div class="wrap">'
