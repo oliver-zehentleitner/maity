@@ -1651,7 +1651,7 @@ window.Maity = window.Maity || {};
   // its place among the tabs (dragged and moved as they are) and carries a filled star whose
   // button takes the star off; this session's own tab carries an empty star that stars it, once
   // the project's view gave its id. The star is a button beside the link, not inside it: a
-  // link holds no other control.
+  // link holds no other control. Both sit in one dashed outline (`.outsider-tab`).
   function outsiderTab(ctx, p) {
     const movable = !!p.starred;
     const link = h("a", {

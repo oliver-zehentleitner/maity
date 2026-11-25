@@ -486,7 +486,13 @@ nav.views a:focus-visible { outline-offset: -2px; }
 /* Positioned, so its visually-hidden words stay inside it: a session tab is not draggable, and
    only a[draggable="true"] is positioned above (390 px was 125 px wider without it). */
 .switcher a.outsider { border-style: dashed; position: relative; }
-.switcher .outsider-tab { display: inline-flex; align-items: center; gap: 2px; flex: none; }
+/* With its star, the box draws the dashed pill around both, star right of the name (tsk-q8s9dfjmjsxy). */
+.switcher .outsider-tab { display: inline-flex; align-items: center; gap: 0; flex: none;
+  border: 1px dashed var(--border); border-radius: 999px; padding-inline-end: 2px; }
+.switcher .outsider-tab > a.outsider { border: 0; padding-inline-end: 4px; }
+.switcher .outsider-tab:has(> a.outsider[aria-current="page"]) { border-color: var(--accent); background: var(--surface-2); }
+.switcher .outsider-tab > a.outsider[aria-current="page"] { background: transparent; }
+.switcher .outsider-tab > a.drop-after::after { inset-inline-end: -32px; }
 .switcher .tab-star { display: inline-flex; align-items: center; justify-content: center; min-width: 24px; min-height: 24px;
   padding: 0; border: 1px solid transparent; border-radius: 999px; background: transparent; color: var(--accent); cursor: pointer; }
 .switcher .tab-star:hover { border-color: var(--border); background: var(--surface-2); }
