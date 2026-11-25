@@ -1472,7 +1472,8 @@ a.button { display: inline-block; padding: 6px 14px; border-radius: var(--radius
 @media (max-width: 600px) {
   main { --main-pad: 12px; }
   /* The row wraps by the tabs' full width, so the tabs menu fell to a line of its own. Here the tabs
-     take the room the menu leaves and scroll; the menu keeps the row's right end (tsk-2a56j80p3p9h). */
+     take the room the menu leaves and scroll; the menu keeps the row's end, or the spot just before the
+     Explore link where it is shown (tsk-2a56j80p3p9h). */
   .switcher-row .switcher { flex: 1 1 0; }
   /* Explore's link keeps its compass and its name for a screen reader, so the tabs keep their room. */
   .switcher-row .explore-link { position: relative; min-width: 24px; min-height: 24px; padding: 3px 6px; }

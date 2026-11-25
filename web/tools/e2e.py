@@ -70,6 +70,8 @@ from playwright.sync_api import Page, expect, sync_playwright
 WEB = Path(__file__).resolve().parent.parent
 OWNER = "owner"
 OWNER_PASSWORD = "e2e owner password"
+# The scenario's change_password sets this; on the main hub, a round after the scenario signs the owner in with it.
+OWNER_CHANGED_PASSWORD = "e2e changed password, long enough"
 OWNER_EMAIL = "owner@e2e.example"  # `owner create --email` stores it as verified (§2.1)
 TIMEOUT_MS = 25_000  # one step in the browser; the feed reads every 15 s
 COUNTS_MS = 70_000  # counts of other projects: /me is re-read every 60 s
@@ -5854,8 +5856,9 @@ def explore_tab_round(run: Run, browser) -> None:
     other.close()
     no_problems(run, "explore tab")
     context.close()
-    # A member: the card opens the project as its own tab, solid, at its inbox.
-    context, page = signed_in_page(run, browser)
+    # A member: the card opens the project as its own tab, solid, at its inbox. The scenario changed the
+    # owner's password long before this round.
+    context, page = signed_in_page(run, browser, password=OWNER_CHANGED_PASSWORD)
     expect(page.locator("header .me")).to_be_visible()
     page.goto(run.base + "/explore")
     expect(page.locator(EXPLORE_TAB)).to_have_attribute("aria-current", "page")
@@ -8896,7 +8899,7 @@ def project_tabs_step(run: Run, page: Page) -> None:
     assert 0 <= gap[0] <= 24 and gap[1], f"the tabs menu is not right after the tabs: {gap}"
     # The tabs menu is drawn as the row's last tab (tsk-qa2r972wjsws): the tabs' height, top, pill and gap, light and
     # dark, at 1280 and 390 px; still a menu button, not a tab; outside the tabs, so no drag or key moves it, and on a
-    # phone it keeps the row's right end while the tabs scroll.
+    # phone it keeps the row's end, or the spot just before the Explore link where it is shown, while the tabs scroll.
     like_tab = ("(() => { const ts = Array.from(document.querySelectorAll('nav.switcher a[data-project]')); const t = ts[ts.length - 1];"
                 " const b = document.querySelector('.tabs-menu-box .menu-button'); const r = (e) => e.getBoundingClientRect();"
                 " const s = (e) => { const c = getComputedStyle(e); return [c.borderTopLeftRadius, c.paddingTop, c.paddingLeft, c.fontSize,"
@@ -9291,7 +9294,7 @@ def dormant_step(run: Run, page: Page) -> None:
 def change_password(run: Run, page: Page) -> None:
     """docs/api.md §2.1: the new password works, the old one does not, other sessions end."""
     run.step("account: change the password; another session ends; sign in with the new one")
-    new_password = "e2e changed password, long enough"
+    new_password = OWNER_CHANGED_PASSWORD
     other = page.context.browser.new_context()
     second = other.new_page()
     second.goto(run.base + "/")
