@@ -317,9 +317,15 @@ class Session:
         self.save()
         return joined
 
-    def project_path(self, *parts: str) -> str:
-        owner, slug = self.project.split("/", 1)
+    @staticmethod
+    def path_in(full_name: str, *parts: str) -> str:
+        """`/projects/<owner>/<slug>/<parts>` of a project named in full, `<owner>/<slug>`: for
+        the one name a resume packet gives before it is kept in state."""
+        owner, slug = full_name.split("/", 1)
         return "/".join(["", "projects", *map(hub.segment, (owner, slug, *parts))])
+
+    def project_path(self, *parts: str) -> str:
+        return self.path_in(self.project, *parts)
 
     def _moved(self, path: str, timeout: float | None) -> str | None:
         """Where `path` is now, when the project answered `not_found` because it has a new
@@ -338,7 +344,7 @@ class Session:
             me = self.client.call("GET", "/me", timeout=timeout)
         except hub.HubError:
             return None
-        projects = [p for p in (_field(me, "projects") or []) if isinstance(p, dict)]
+        projects = [p for p in (onboarding.get(me, "projects") or []) if isinstance(p, dict)]
         now = projects[0].get("full_name") if len(projects) == 1 else None
         if not isinstance(now, str) or not _FULL_NAME.fullmatch(now) or now == full_name:
             return None
@@ -393,8 +399,7 @@ def _resume(session: Session, args: argparse.Namespace, first: bool = False) -> 
         raise hub.HubError("the resume packet is not a JSON object")
     # Rendered before the cursor is saved: a packet the text cannot show never acknowledges
     # the events in it.
-    field = onboarding.get
-    expected = field(packet, "project", "repository", "url")
+    expected = onboarding.get(packet, "project", "repository", "url")
     if first and isinstance(expected, str) and expected:
         mismatch = gitfacts.repository_mismatch(Path.cwd(), expected)
         if mismatch:
@@ -403,24 +408,23 @@ def _resume(session: Session, args: argparse.Namespace, first: bool = False) -> 
                 f"{onboarding.inline(expected)}. The join is kept; check the clone before working."
             )
     board_empty = False
-    name_for_board = field(packet, "project", "full_name")
+    name_for_board = onboarding.get(packet, "project", "full_name")
     if (
         not args.json
         and isinstance(name_for_board, str)
         and _FULL_NAME.fullmatch(name_for_board) is not None
         and onboarding.is_admin(packet)
-        and not field(packet, "membership", "briefing")
-        and not field(packet, "membership", "paused")
-        and not field(packet, "membership", "isolated")  # the board would answer `isolated`
+        and not onboarding.get(packet, "membership", "briefing")
+        and not onboarding.get(packet, "membership", "paused")
+        and not onboarding.get(
+            packet, "membership", "isolated"
+        )  # the board would answer `isolated`
         and not packet.get("claims")
         and not packet.get("assigned")
     ):
         try:
-            owner, slug = name_for_board.split("/", 1)
             board = session.client.call(
-                "GET",
-                f"/projects/{hub.segment(owner)}/{hub.segment(slug)}/tasks",
-                query=[("limit", "1")],
+                "GET", Session.path_in(name_for_board, "tasks"), query=[("limit", "1")]
             )
             board_empty = isinstance(board, dict) and board.get("items") == []
         except hub.HubError:
@@ -431,14 +435,16 @@ def _resume(session: Session, args: argparse.Namespace, first: bool = False) -> 
         if args.json
         else onboarding.render(packet, first=first, board_empty=board_empty, full=full)
     )
-    session_id = field(packet, "session", "id")
+    session_id = onboarding.get(packet, "session", "id")
     if isinstance(session_id, str):
         session.data["session_id"] = session_id
-    slug = field(packet, "project", "slug")
-    member_id = field(packet, "me", "member_id")
+    slug = onboarding.get(packet, "project", "slug")
+    member_id = onboarding.get(packet, "me", "member_id")
     if isinstance(slug, str):
         session.data["project"] = slug
-    full_name = field(packet, "project", "full_name")  # refreshed every resume: renames (§6.25)
+    full_name = onboarding.get(
+        packet, "project", "full_name"
+    )  # refreshed every resume: renames (§6.25)
     if isinstance(full_name, str) and _FULL_NAME.fullmatch(full_name):
         session.data["full_name"] = full_name
     # Where `report` asks gh for the pull request (a fork's clone, tsk-k0x4jn4y4ykg); each
@@ -449,27 +455,27 @@ def _resume(session: Session, args: argparse.Namespace, first: bool = False) -> 
         session.data.pop("repository", None)
     if isinstance(member_id, str):
         session.data["member_id"] = member_id
-    owner_id = field(packet, "me", "owner", "id")
+    owner_id = onboarding.get(packet, "me", "owner", "id")
     if isinstance(owner_id, str):
         session.data["owner_id"] = owner_id
-    instance = field(packet, "me", "instance")  # §5.2
+    instance = onboarding.get(packet, "me", "instance")  # §5.2
     if isinstance(instance, str):
         session.data["instance"] = instance
-    cursor = field(packet, "events", "cursor")
+    cursor = onboarding.get(packet, "events", "cursor")
     if isinstance(cursor, int):
         session.data["cursor"] = cursor
-    _warn_old_cli(field(packet, "hints", "cli_version"))
+    _warn_old_cli(onboarding.get(packet, "hints", "cli_version"))
     # Each resume replaces the hint: a valid one is kept, anything else (missing, null, not a
     # positive whole number) removes the old one, so `wait` falls back to 600 as §13 says
     # rather than keep an earlier packet's value (review of #1491).
-    wait_timeout = field(packet, "hints", "wait_timeout")
+    wait_timeout = onboarding.get(packet, "hints", "wait_timeout")
     if _positive_int(wait_timeout):
         session.data["wait_timeout"] = wait_timeout
     else:
         session.data.pop("wait_timeout", None)
     # §6.23: what `maity report` checks locally until the next resume says otherwise.
     session.data["keep_the_why_required"] = (
-        field(packet, "keep_the_why", "commitment") == "required"
+        onboarding.get(packet, "keep_the_why", "commitment") == "required"
     )
     session.data["board_empty"] = board_empty  # the board check `--full` cannot repeat
     session.save()
@@ -819,7 +825,7 @@ def _chat_rules(session: Session, chat: str, budget: float | None = None) -> lis
         )
     except hub.HubError:
         return []
-    return onboarding.chat_rules_lines(_field(view, "chat_rules"), chats=False)
+    return onboarding.chat_rules_lines(onboarding.get(view, "chat_rules"), chats=False)
 
 
 def _chat_suffix(event: dict[str, Any]) -> str:
@@ -1215,13 +1221,13 @@ def _unread_note(session: Session, budget: float) -> None:
         return
     counts = [
         (c.get("unread"), c.get("mentions_unread") or 0)
-        for c in (_field(page, "items") or []) if isinstance(c, dict)
+        for c in (onboarding.get(page, "items") or []) if isinstance(c, dict)
     ]  # fmt: skip
     unread = [(n, m) for n, m in counts if isinstance(n, int) and n > 0 and isinstance(m, int)]
     if unread:
         total, mentions = sum(n for n, _ in unread), sum(m for _, m in unread)
         # One page only, within the budget: past it the counts are a floor.
-        more = "at least " if _field(page, "next_cursor") else ""
+        more = "at least " if onboarding.get(page, "next_cursor") else ""
         _err(
             f"unread chats: {more}{total} in {more}{len(unread)} chats "
             f"({more}{mentions} mentions): maity chats"
@@ -1540,6 +1546,18 @@ def _pr_key(url: Any, number: Any = None) -> tuple[str, int] | None:
     return match.group(1).lower(), int(number if isinstance(number, int) else match.group(2))
 
 
+def _linked_prs(card: Any) -> set[tuple[str, int]]:
+    """The pull requests a card links (`links` of kind `pr`), each as `_pr_key` reads it; a link
+    whose forge URL names no pull request is left out."""
+    links = card.get("links") if isinstance(card, dict) else None
+    return {
+        key
+        for link in (links if isinstance(links, list) else [])
+        if isinstance(link, dict) and link.get("kind") == "pr"
+        if (key := _pr_key(link.get("forge_url"), link.get("number"))) is not None
+    }
+
+
 _SHA = re.compile(r"^[0-9a-f]{40}$")
 PROBED_LINKS_MAX = 5  # a card links one or two pull requests; more are not read one by one
 
@@ -1565,15 +1583,7 @@ def _probed_pr(
     only; the hub may still answer from a read up to 30 s old (`FORCED_FLOOR`, §11.4), so a
     head pushed since then refuses rather than files another commit.
     The head is compared whole: the pushed head, or for a deleted branch the local HEAD."""
-    links = card.get("links") if isinstance(card, dict) else None
-    linked = sorted(
-        {
-            key
-            for link in (links if isinstance(links, list) else [])
-            if isinstance(link, dict) and link.get("kind") == "pr"
-            if (key := _pr_key(link.get("forge_url"), link.get("number"))) is not None
-        }
-    )
+    linked = sorted(_linked_prs(card))
     if len(linked) > PROBED_LINKS_MAX:
         _err(
             f"the card links {len(linked)} pull requests; the hub's probe is asked about the "
@@ -1616,11 +1626,8 @@ def _belongs(card: Any, facts: gitfacts.Facts, card_id: str) -> bool:
     if pr is None:
         return True
     found = _pr_key(pr.url, pr.number)
-    links = card.get("links") if isinstance(card, dict) else None
-    for link in links if isinstance(links, list) else []:
-        if isinstance(link, dict) and link.get("kind") == "pr":
-            if _pr_key(link.get("forge_url"), link.get("number")) == found:
-                return True
+    if found in _linked_prs(card):
+        return True
     before = onboarding.get(onboarding.get(card, "report"), "pr")
     if isinstance(before, dict) and _pr_key(before.get("url"), before.get("number")) == found:
         return True
@@ -1675,13 +1682,7 @@ def _card_pr_mismatch(card: Any, facts: gitfacts.Facts, card_id: str) -> str | N
         f"check out that pull request's branch (`git switch <branch>`; after a merge with the "
         f"branch deleted, `git switch -c <branch> <merged head>`) and report {card_id} from there"
     )
-    links = card.get("links") if isinstance(card, dict) else None
-    linked = {
-        key
-        for link in (links if isinstance(links, list) else [])
-        if isinstance(link, dict) and link.get("kind") == "pr"
-        if (key := _pr_key(link.get("forge_url"), link.get("number"))) is not None
-    }
+    linked = _linked_prs(card)
     if found is not None:  # links to another repository of the owner say nothing about this one
         linked = {key for key in linked if key[0] == found[0]}
     if linked and found not in linked:
@@ -1744,11 +1745,11 @@ def _hub_role(root: Path, opened: clonecheck.Opened | None) -> str | None:
         if not (isinstance(project, str) and _FULL_NAME.fullmatch(project)):
             raise ghpr.Refused("the placement's state names no project; run `maity resume`")
         me = session.client.call("GET", "/me")
-        if _field(me, "membership", "isolated") is not None:
+        if onboarding.get(me, "membership", "isolated") is not None:
             raise ghpr.Refused("an isolated member runs no lead command")
-        member = _field(me, "member", "id")
+        member = onboarding.get(me, "member", "id")
         listed = [
-            p for p in (_field(me, "projects") or [])
+            p for p in (onboarding.get(me, "projects") or [])
             if isinstance(p, dict) and p.get("full_name") == project
         ]  # fmt: skip
         if not isinstance(member, str) or len(listed) != 1:
@@ -1756,9 +1757,9 @@ def _hub_role(root: Path, opened: clonecheck.Opened | None) -> str | None:
         view = session.client.call("GET", session.project_path("members", member))
     except (state.StateError, hub.HubError, sign.CredentialFormatError) as exc:
         raise ghpr.Refused(f"the hub did not say this member's role: {exc}") from None
-    if _field(view, "id") != member:
+    if onboarding.get(view, "id") != member:
         raise ghpr.Refused("the hub's member view is not the member /me named")
-    base = _field(view, "role_base")
+    base = onboarding.get(view, "role_base")
     return base if isinstance(base, str) else None
 
 
@@ -1911,8 +1912,8 @@ def cmd_ack(args: argparse.Namespace) -> int:
         else:
             print("this project does not require Keep the Why: nothing to confirm")
         return EXIT_OK
-    when = onboarding.inline(_field(answer, "acknowledged_at") or "?")
-    instance = _field(answer, "instance")
+    when = onboarding.inline(onboarding.get(answer, "acknowledged_at") or "?")
+    instance = onboarding.get(answer, "instance")
     of = f" for instance {onboarding.inline(instance)}" if instance else ""
     return _done(args, answer, f"confirmed Keep the Why{of} at {when}")
 
@@ -1924,7 +1925,7 @@ def cmd_dormant(args: argparse.Namespace) -> int:
     session = Session()
     answer = session.client.call("PATCH", "/me", body={"dormant": not args.off})
     mine = session.data.get("instance")
-    instances = _field(answer, "instances")
+    instances = onboarding.get(answer, "instances")
     item = next(
         (i for i in instances if isinstance(i, dict) and i.get("id") == mine),
         None,
@@ -1936,7 +1937,7 @@ def cmd_dormant(args: argparse.Namespace) -> int:
              "it is dormant")  # fmt: skip
         return EXIT_OK
     given = item.get("label")
-    label = given if isinstance(given, str) else f"{_field(answer, 'handle') or '?'}#{mine}"
+    label = given if isinstance(given, str) else f"{onboarding.get(answer, 'handle') or '?'}#{mine}"
     if not item.get("dormant"):
         return _done(args, answer, "awake")
     return _done(args, answer, f"dormant: only @{onboarding.inline(label)} wakes this instance")
@@ -2038,7 +2039,7 @@ def cmd_ask(args: argparse.Namespace) -> int:
     if "to" in body:
         body["to"] = _address(session, body["to"])
     request = session.client.call("POST", session.project_path("requests"), body=body)
-    rid, rclass, rstatus = (_field(request, k) for k in ("id", "class", "status"))
+    rid, rclass, rstatus = (onboarding.get(request, k) for k in ("id", "class", "status"))
     return _done(args, request, f"asked {rid} ({rclass}, {rstatus})")
 
 
@@ -2076,14 +2077,6 @@ def _done(args: argparse.Namespace, result: Any, line: str | list[str]) -> int:
     else:
         print("\n".join(onboarding.inline(x) for x in ([line] if isinstance(line, str) else line)))
     return EXIT_OK
-
-
-def _field(data: Any, *keys: str) -> Any:
-    for key in keys:
-        if not isinstance(data, dict):
-            return None
-        data = data.get(key)
-    return data
 
 
 def _text(value: str, what: str) -> str:
@@ -2128,14 +2121,14 @@ def cmd_claim(args: argparse.Namespace) -> int:
             )
             return EXIT_ERROR
         task, note = session.client.call("GET", path), " (it was already yours)"
-    lease = _field(task, "claim", "lease_until")
+    lease = onboarding.get(task, "claim", "lease_until")
     return _done(args, task, f"claimed {args.card}{note}; lease until {lease}")
 
 
 def cmd_unclaim(args: argparse.Namespace) -> int:
     session = Session()
     task = session.client.call("POST", session.project_path("tasks", args.card, "release"), body={})
-    return _done(args, task, f"gave {args.card} back; it is {_field(task, 'status')} again")
+    return _done(args, task, f"gave {args.card} back; it is {onboarding.get(task, 'status')} again")
 
 
 def cmd_watch(args: argparse.Namespace) -> int:
@@ -2324,7 +2317,7 @@ def _refused(exc: BaseException) -> bool:
 
 
 def _attachment_line(att: Any) -> str:
-    a = _obj(att)
+    a = onboarding.obj(att)
     return (
         f"{onboarding.inline(a.get('id'))}  {onboarding.inline(a.get('name'))}  "
         f"{onboarding.inline(a.get('size'))} bytes  {onboarding.inline(a.get('type'))}"
@@ -2574,20 +2567,11 @@ NO_HARD_LINKS = (errno.EPERM, errno.ENOTSUP, errno.EOPNOTSUPP, errno.ENOSYS)
 
 
 def _conversations(session: Session) -> list[dict[str, Any]]:
-    items: list[dict[str, Any]] = []
-    seen: set[str] = set()
-    cursor: str | None = None
-    while True:
-        query = [("limit", "50")] + ([("cursor", cursor)] if cursor else [])
-        page = session.client.call("GET", session.project_path("conversations"), query=query)
-        items.extend(c for c in (_field(page, "items") or []) if isinstance(c, dict))
-        cursor = _next_cursor(page, seen)
-        if cursor is None:
-            return items
+    return _all_pages(session, session.project_path("conversations"), [], limit=50)
 
 
 def _handles(conversation: dict[str, Any]) -> dict[str, str]:
-    people = [_obj(p) for p in conversation.get("participants") or []]
+    people = [onboarding.obj(p) for p in conversation.get("participants") or []]
     shown = onboarding.shown_names(
         (p.get("member_id"), p.get("kind"), p.get("handle"), p.get("name")) for p in people
     )
@@ -2624,7 +2608,7 @@ def cmd_chats(args: argparse.Namespace) -> int:
 
 
 def _seq(message: Any) -> int | None:
-    seq = _field(message, "seq")
+    seq = onboarding.get(message, "seq")
     return seq if isinstance(seq, int) and not isinstance(seq, bool) else None
 
 
@@ -2634,7 +2618,7 @@ def _messages(
     page = session.client.call(
         "GET", session.project_path("conversations", conversation, "messages"), query=query
     )
-    items = [m for m in (_field(page, "items") or []) if isinstance(m, dict) and _seq(m)]
+    items = [m for m in (onboarding.get(page, "items") or []) if isinstance(m, dict) and _seq(m)]
     return items, page
 
 
@@ -2645,7 +2629,7 @@ def _back(
     start of the chat without `earlier`; that is refused rather than shown as history."""
     query = [("before", str(before)), ("limit", str(limit))]
     items, page = _messages(session, conversation, query)
-    if "earlier" not in _obj(page) or any((_seq(m) or 0) >= before for m in items):
+    if "earlier" not in onboarding.obj(page) or any((_seq(m) or 0) >= before for m in items):
         raise CommandError(
             f"the hub does not page back in {conversation} yet (`before`, §9.1); "
             f"read it with --after"
@@ -2739,7 +2723,7 @@ def cmd_chat(args: argparse.Namespace) -> int:
     rules = _chat_rules(session, conversation) if group and not args.json else []
     if args.before is not None:
         items, page = _back(session, conversation, args.before, limit)
-        earlier = _field(page, "earlier")
+        earlier = onboarding.get(page, "earlier")
         if isinstance(earlier, int):
             notes.append(f"earlier: maity chat {conversation} --before {earlier}")
     elif args.after is not None:
@@ -2806,7 +2790,7 @@ def cmd_say(args: argparse.Namespace) -> int:
         session = Session()
         path = session.project_path("conversations", args.chat, "messages")
         message = _post_with(session, attach, lambda ids: _chat_post(session, path, text, ids))
-        return _done(args, message, f"said in {args.chat} (seq {_field(message, 'seq')})")
+        return _done(args, message, f"said in {args.chat} (seq {onboarding.get(message, 'seq')})")
     if args.type == "update" and args.task is None:
         raise UsageError("--type update needs --task: the card whose watchers it reaches (§6.4)")
     if args.type == "update" and args.to is None:
@@ -2878,7 +2862,7 @@ def cmd_say(args: argparse.Namespace) -> int:
             raise state.StateError("this agent's member id is not known yet; run `maity resume`")
         path = session.project_path("conversations", member_id, "messages")
         message = _post_with(session, attach, lambda ids: _chat_post(session, path, text, ids))
-        return _done(args, message, f"said to your human (seq {_field(message, 'seq')})")
+        return _done(args, message, f"said to your human (seq {onboarding.get(message, 'seq')})")
     if args.type is None:
         raise UsageError(
             f"--type is required when writing to {to}: {', '.join(SAY_TYPES)} "
@@ -2906,7 +2890,7 @@ def _say_event(
         return session.client.call("POST", session.project_path("events"), body=sent)
 
     event = _post_with(session, attach, post)
-    return _done(args, event, f"{said} (seq {_field(event, 'seq')})")
+    return _done(args, event, f"{said} (seq {onboarding.get(event, 'seq')})")
 
 
 def _review_clone() -> Path:
@@ -2937,20 +2921,13 @@ def _chat_post(session: Session, path: str, text: str, ids: list[str]) -> Any:
 
 # --- project messages (§8.8) --------------------------------------------------------------------
 
-MESSAGE_TYPES = SAY_TYPES  # §8.4 without `chat`, which §9 reads
-
 
 def _handle_map(session: Session) -> dict[str, str]:
-    answer = session.client.call("GET", session.project_path("members"))
-    members = [m for m in (_field(answer, "items") or []) if isinstance(m, dict)]
+    members = _members(session)
     shown = onboarding.shown_names(
         (m.get("id"), m.get("kind"), m.get("handle"), m.get("name")) for m in members
     )
-    return {
-        str(m["id"]): shown.get(m["id"]) or str(m["id"])
-        for m in members
-        if isinstance(m.get("id"), str)
-    }
+    return {m["id"]: shown.get(m["id"]) or m["id"] for m in members}
 
 
 def _printable_cursor(cursor: Any) -> str | None:
@@ -2961,6 +2938,12 @@ def _printable_cursor(cursor: Any) -> str | None:
         _err("the hub's next cursor is not printable ASCII; not offering it")
         return None
     return cursor
+
+
+def _more_line(argv_prefix: list[str], cursor: str) -> str:
+    """The `more:` line a paged command prints: its own command line with the flags the cursor
+    is bound to, then `--cursor`."""
+    return f"more: {shlex.join([*argv_prefix, '--cursor', cursor])}"
 
 
 def _seq_arg(value: str) -> int:
@@ -2984,7 +2967,7 @@ def cmd_messages(args: argparse.Namespace) -> int:
     if args.json:
         _print_json(page)
         return EXIT_OK
-    items = [m for m in (_field(page, "items") or []) if isinstance(m, dict)]
+    items = [m for m in (onboarding.get(page, "items") or []) if isinstance(m, dict)]
     handles = _handle_map(session) if items else {}
     show = onboarding.inline
 
@@ -3004,7 +2987,7 @@ def cmd_messages(args: argparse.Namespace) -> int:
         print("no messages")
     for m in items:
         if m.get("redacted"):
-            by = who(_obj(m.get("redaction")).get("by"))
+            by = who(onboarding.obj(m.get("redaction")).get("by"))
             print(f"{show(m.get('seq'))}  {show(m.get('sent_at'))}  {sender(m)}  "
                   f"removed by {by}")  # fmt: skip
             continue
@@ -3018,16 +3001,16 @@ def cmd_messages(args: argparse.Namespace) -> int:
         for line in onboarding.quote(m.get("body") or ""):
             print(line)
         for att in m.get("attachments") or []:
-            a = _obj(att)
+            a = onboarding.obj(att)
             size = show(a.get("size"))
             print(f"  attachment {show(a.get('id'))}  {show(a.get('name'))}  {size} bytes")
-    cursor = _printable_cursor(_field(page, "next_cursor"))
+    cursor = _printable_cursor(onboarding.get(page, "next_cursor"))
     if cursor:
         again = ["maity", "messages", *[w for t in args.type or [] for w in ("--type", t)]]
         again += ["--after", str(args.after)] if args.after is not None else []
         again += ["--before", str(args.before)] if args.before is not None else []
         again += ["--limit", str(args.limit)] if args.limit != CHAT_DEFAULT else []
-        print(f"more: {shlex.join([*again, '--cursor', cursor])}")
+        print(_more_line(again, cursor))
     return EXIT_OK
 
 
@@ -3038,19 +3021,8 @@ _TAG = re.compile(r"[a-z0-9-]{1,32}", re.ASCII)
 
 
 def _memory_entries(session: Session, query: list[tuple[str, str]]) -> list[dict[str, Any]]:
-    items: list[dict[str, Any]] = []
-    seen: set[str] = set()
-    cursor: str | None = None
-    while True:  # every page: a store holds at most 64 KiB of live entries (§19.2)
-        page = session.client.call(
-            "GET",
-            session.project_path("memory"),
-            query=[*query, ("limit", "200"), *([("cursor", cursor)] if cursor else [])],
-        )
-        items.extend(e for e in (_field(page, "items") or []) if isinstance(e, dict))
-        cursor = _next_cursor(page, seen)
-        if cursor is None:
-            return items
+    # every page: a store holds at most 64 KiB of live entries (§19.2)
+    return _all_pages(session, session.project_path("memory"), query, limit=200)
 
 
 def _print_memory(items: list[dict[str, Any]], empty: str) -> None:
@@ -3128,7 +3100,7 @@ def cmd_memory_add(args: argparse.Namespace) -> int:
             "reason": _text(args.reason, "--reason"),
         }
         request = session.client.call("POST", "/me/soul/proposals", body=proposal)
-        rid = onboarding.inline(_field(request, "id"))
+        rid = onboarding.inline(onboarding.get(request, "id"))
         line = f"proposed your soul; request {rid} waits for your owner"
         return _done(args, request, line)
     if args.reason is not None:
@@ -3147,12 +3119,12 @@ def cmd_memory_add(args: argparse.Namespace) -> int:
         body["tags"] = tags
     answer = session.client.call("POST", session.project_path("memory"), body=body)
     if store == "community":  # an agent proposes; a human with project:admin confirms (§19.2)
-        rid = onboarding.inline(_field(answer, "id"))
+        rid = onboarding.inline(onboarding.get(answer, "id"))
         line = f"proposed for the community memory; request {rid}"
         return _done(args, answer, line)
-    added = onboarding.inline(_field(answer, "id"))
+    added = onboarding.inline(onboarding.get(answer, "id"))
     if store == "role":  # written freely by the role's members (§19.2)
-        role = onboarding.inline(_field(answer, "role") or "your role")
+        role = onboarding.inline(onboarding.get(answer, "role") or "your role")
         return _done(args, answer, f"added {added} to the memory of {role}")
     return _done(args, answer, f"added {added} to your team's memory")
 
@@ -3177,7 +3149,7 @@ TAKEOVER_ACTIONS = ("accept", "object", "withdraw", "escalate", "list")
 
 
 def _instance(party: Any) -> str:
-    p = _obj(party)
+    p = onboarding.obj(party)
     member = onboarding.inline(p.get("member_id") or "?")
     return f"{member}#{onboarding.inline(p['instance'])}" if p.get("instance") else member
 
@@ -3191,13 +3163,13 @@ def _takeover_lines(t: dict[str, Any]) -> list[str]:
     )
     if status == "open":
         line += f"  window until {show(t.get('window_ends_at'))}"
-    outcome = _obj(t.get("outcome"))
+    outcome = onboarding.obj(t.get("outcome"))
     if outcome:
         line += f"  ({show(outcome.get('how'))})"
     out = [line, "  reason:", *("  " + q for q in onboarding.quote(t.get("reason") or ""))]
-    objection = _obj(t.get("objection"))
+    objection = onboarding.obj(t.get("objection"))
     if objection:
-        by = _obj(objection.get("by"))
+        by = onboarding.obj(objection.get("by"))
         who = f"{show(by.get('kind'))} {show(by.get('member_id') or by.get('id'))}"
         out += [
             f"  objected by {who}:",
@@ -3213,7 +3185,7 @@ def _takeover_call(session: Session, method: str, path: str, body: Any = None) -
         if (
             exc.code == "forbidden"
             and path.endswith("/respond")
-            and not _field(exc.details, "reason")
+            and not onboarding.get(exc.details, "reason")
         ):
             raise CommandError(
                 f"{exc}\nmost likely another instance of your team holds the card: only the "
@@ -3240,7 +3212,7 @@ def cmd_takeover(args: argparse.Namespace) -> int:
     if args.json:
         _print_json(takeover)
     else:
-        print("\n".join(_takeover_lines(_obj(takeover))))
+        print("\n".join(_takeover_lines(onboarding.obj(takeover))))
     return EXIT_OK
 
 
@@ -3251,7 +3223,7 @@ def _check_holder(session: Session, tid: str, takeover: dict[str, Any]) -> None:
     me = session.me  # a bridge answers for the card its served agent holds (§6.19)
     if not isinstance(me, str):
         raise state.StateError("this agent's member id is not known yet; run `maity resume`")
-    holder = _obj(takeover.get("from"))
+    holder = onboarding.obj(takeover.get("from"))
     mine = session.my_instance
     other_instance = isinstance(mine, str) and holder.get("instance") not in (None, mine)
     if holder.get("member_id") != me or other_instance:
@@ -3277,19 +3249,7 @@ def _takeover_action(session: Session, args: argparse.Namespace) -> int:
             raise UsageError("`takeover list` takes --status all and --card only")
         query = [("status", "all")] if args.status == "all" else []
         query += [("task_id", args.card)] if args.card else []
-        items: list[dict[str, Any]] = []
-        seen: set[str] = set()
-        cursor: str | None = None
-        while True:
-            page = session.client.call(
-                "GET",
-                session.project_path("takeovers"),
-                query=[*query, *([("cursor", cursor)] if cursor else [])],
-            )
-            items.extend(t for t in (_field(page, "items") or []) if isinstance(t, dict))
-            cursor = _next_cursor(page, seen)
-            if cursor is None:
-                break
+        items = _all_pages(session, session.project_path("takeovers"), query)
         if args.json:
             _print_json(items)
             return EXIT_OK
@@ -3313,7 +3273,7 @@ def _takeover_action(session: Session, args: argparse.Namespace) -> int:
             body: dict[str, Any] = {"accept": True}
         else:
             body = {"object": {"reasons": _text(args.reasons or "", "--reasons")}}
-        _check_holder(session, tid, _obj(session.client.call("GET", path)))
+        _check_holder(session, tid, onboarding.obj(session.client.call("GET", path)))
         answer = _takeover_call(session, "POST", f"{path}/respond", body)
     else:
         if args.reasons is not None:
@@ -3323,7 +3283,7 @@ def _takeover_action(session: Session, args: argparse.Namespace) -> int:
     if args.json:
         _print_json(answer)
     else:
-        print("\n".join(_takeover_lines(_obj(answer))))
+        print("\n".join(_takeover_lines(onboarding.obj(answer))))
     return EXIT_OK
 
 
@@ -3341,7 +3301,9 @@ def cmd_answer(args: argparse.Namespace) -> int:
         body["on_behalf_of"] = _member_id(session, args.on_behalf_of)
     path = session.project_path("requests", args.request, "answer")
     request = session.client.call("POST", path, body=body)
-    return _done(args, request, f"answered {args.request}; it is {_field(request, 'status')}")
+    return _done(
+        args, request, f"answered {args.request}; it is {onboarding.get(request, 'status')}"
+    )
 
 
 CLOSED = ("done", "cancelled")
@@ -3350,13 +3312,32 @@ CLOSED = ("done", "cancelled")
 def _next_cursor(page: Any, seen: set[str]) -> str | None:
     """The page's `next_cursor`, or None on the last page. A cursor that comes back would
     loop for ever: that is an error, never another round."""
-    cursor = _field(page, "next_cursor")
+    cursor = onboarding.get(page, "next_cursor")
     if not isinstance(cursor, str) or not cursor:
         return None
     if cursor in seen:
         raise CommandError("the hub sent the same page cursor twice; stopping")
     seen.add(cursor)
     return cursor
+
+
+def _all_pages(
+    session: Session, path: str, query: list[tuple[str, str]], limit: int | None = None
+) -> list[dict[str, Any]]:
+    """`GET path` with `query` (and `limit`, where the hub's default page is not wanted), every
+    page: the `items` that are objects, in the hub's order."""
+    items: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    cursor: str | None = None
+    while True:
+        page_query = [*query, *([("limit", str(limit))] if limit else [])]
+        page = session.client.call(
+            "GET", path, query=[*page_query, *([("cursor", cursor)] if cursor else [])]
+        )
+        items.extend(i for i in (onboarding.get(page, "items") or []) if isinstance(i, dict))
+        cursor = _next_cursor(page, seen)
+        if cursor is None:
+            return items
 
 
 # --- cards and subtasks (§6.4) ------------------------------------------------------------------
@@ -3411,16 +3392,7 @@ BOARD_STATUSES = "proposed,open,in_progress,blocked,review"
 
 def _cards(session: Session, query: list[tuple[str, str]]) -> list[dict[str, Any]]:
     """`GET …/tasks` with `query`, every page."""
-    items: list[dict[str, Any]] = []
-    seen: set[str] = set()
-    cursor: str | None = None
-    while True:
-        page_query = [("limit", "200"), *query] + ([("cursor", cursor)] if cursor else [])
-        page = session.client.call("GET", session.project_path("tasks"), query=page_query)
-        items.extend(c for c in (_field(page, "items") or []) if isinstance(c, dict))
-        cursor = _next_cursor(page, seen)
-        if cursor is None:
-            return items
+    return _all_pages(session, session.project_path("tasks"), query, limit=200)
 
 
 def _card_line(card: dict[str, Any]) -> str:
@@ -3428,7 +3400,7 @@ def _card_line(card: dict[str, Any]) -> str:
     show = onboarding.inline
     line = f"{show(card.get('id'))} [{show(card.get('status'))}] {show(card.get('title'))}"
     line += onboarding.imported_mark(card)
-    children = _obj(card.get("children"))
+    children = onboarding.obj(card.get("children"))
     if isinstance(children.get("total"), int) and children["total"] > 0:
         line += f" ({show(children.get('open'))}/{show(children['total'])} open)"
     return line
@@ -3464,7 +3436,7 @@ def cmd_task_show(args: argparse.Namespace) -> int:
     """`GET …/tasks/{id}`, then its children (`?parent=`, every status). `--json` is the
     hub's card as it came."""
     session = Session()
-    card = _obj(session.client.call("GET", session.project_path("tasks", args.card)))
+    card = onboarding.obj(session.client.call("GET", session.project_path("tasks", args.card)))
     if args.json:
         _print_json(card)
         return EXIT_OK
@@ -3475,17 +3447,17 @@ def cmd_task_show(args: argparse.Namespace) -> int:
     for key in ("kind", "label", "needs", "area", "assigned_to", "assigned_instance"):
         if card.get(key):
             print(f"  {key.replace('_', ' ')}: {show(card[key])}")
-    holder = _obj(card.get("claim")).get("holder")
+    holder = onboarding.obj(card.get("claim")).get("holder")
     if holder:
         print(f"  held by: {show(holder)}")
-    branch = _obj(card.get("checkpoint")).get("branch")
+    branch = onboarding.obj(card.get("checkpoint")).get("branch")
     if branch:
         print(f"  branch: {show(branch)}")
     print(f"  parent: {show(card.get('parent')) if card.get('parent') else 'none'}")
     if isinstance(card.get("watching"), bool):
         print(f"  watching: {'yes' if card['watching'] else 'no'}")
     if kids:
-        counts = _obj(card.get("children"))
+        counts = onboarding.obj(card.get("children"))
         print(f"  children: {show(counts.get('open'))}/{show(counts.get('total'))} open")
         for kid in kids:
             print("    " + _card_line(kid))
@@ -3517,7 +3489,7 @@ def cmd_task_create(args: argparse.Namespace) -> int:
         card = session.client.call("POST", session.project_path("tasks"), body=body)
     except hub.HubError as exc:
         raise _subtask_hint(exc, assign=bool(args.assign)) from None
-    status, card_id = _field(card, "status"), _field(card, "id")
+    status, card_id = onboarding.get(card, "status"), onboarding.get(card, "id")
     under = f" under {onboarding.inline(args.parent)}" if args.parent else ""
     return _done(
         args,
@@ -3538,7 +3510,7 @@ def cmd_task_edit(args: argparse.Namespace) -> int:
     elif args.parent is not None:
         patch["parent"] = args.parent
     if args.related or args.unrelated:
-        card = _obj(session.client.call("GET", session.project_path("tasks", args.card)))
+        card = onboarding.obj(session.client.call("GET", session.project_path("tasks", args.card)))
         current = [r for r in card.get("related") or [] if isinstance(r, str)]
         wanted = [r for r in dict.fromkeys([*current, *args.related]) if r not in args.unrelated]
         patch["related"] = wanted
@@ -3598,7 +3570,7 @@ def _restricted_path(session: Session, card: str) -> str:
 
 
 def _restricted_who(value: Any) -> str:
-    who = _obj(value)
+    who = onboarding.obj(value)
     handle = who.get("handle")
     return "@" + onboarding.inline(handle) if handle else "a deleted account"
 
@@ -3615,7 +3587,7 @@ def _restricted_state(state: dict[str, Any]) -> str:
 def cmd_task_restricted_show(args: argparse.Namespace) -> int:
     """`GET …/tasks/{id}/restricted`; the text quoted as data, its escapes as `maity wait`'s."""
     session = Session()
-    state = _obj(session.client.call("GET", _restricted_path(session, args.card)))
+    state = onboarding.obj(session.client.call("GET", _restricted_path(session, args.card)))
     if args.json:
         _print_json(state)
         return EXIT_OK
@@ -3663,7 +3635,7 @@ def _restricted_write(args: argparse.Namespace, method: str, text: str | None) -
     current version and who changed it are read again and said, never the text."""
     session = Session()
     path = _restricted_path(session, args.card)
-    version = _obj(session.client.call("GET", path)).get("version")
+    version = onboarding.obj(session.client.call("GET", path)).get("version")
     if not isinstance(version, int):
         raise CommandError("the hub sent no version for the restricted text")
     try:
@@ -3679,13 +3651,13 @@ def _restricted_write(args: argparse.Namespace, method: str, text: str | None) -
             ) from None
         if exc.code != "conflict":
             raise
-        now = _obj(session.client.call("GET", path))
+        now = onboarding.obj(session.client.call("GET", path))
         raise CommandError(
             f"not written: the restricted text of {onboarding.inline(args.card)} changed after "
             f"it was read; it is now {_restricted_state(now)}. Read it with `maity task "
             "restricted show` and write again if it should still change"
         ) from None
-    state = _obj(state)
+    state = onboarding.obj(state)
     if args.json:
         _print_json(state)
         return EXIT_OK
@@ -3725,7 +3697,7 @@ def _releases(session: Session) -> list[dict[str, Any]]:
 def _release_card(session: Session, card: str | None) -> dict[str, Any]:
     if card:
         task = session.client.call("GET", session.project_path("tasks", card))
-        if _field(task, "kind") != "release":
+        if onboarding.get(task, "kind") != "release":
             raise CommandError(f"{card} is not a release card")
         return dict(task)
     current = [r for r in _releases(session) if r.get("status") not in CLOSED]
@@ -3774,10 +3746,6 @@ def _grace(value: str) -> int:
     return seconds
 
 
-def _obj(value: Any) -> dict[str, Any]:
-    return value if isinstance(value, dict) else {}
-
-
 def _placements(session: Session) -> list[dict[str, Any]]:
     answer = session.client.call("GET", session.project_path("placements"))
     items = answer.get("items") if isinstance(answer, dict) else None
@@ -3811,8 +3779,8 @@ def _placement(session: Session, which: str) -> dict[str, Any]:
         return exact[0]
     name, _, instance = which.partition("#")
     member = resolve_member(_members(session), name, strict=False)
-    if member != name or any(_obj(p.get("agent")).get("id") == name for p in placements):
-        found = [p for p in placements if _obj(p.get("agent")).get("id") == member]
+    if member != name or any(onboarding.obj(p.get("agent")).get("id") == name for p in placements):
+        found = [p for p in placements if onboarding.obj(p.get("agent")).get("id") == member]
         if instance:
             found = [p for p in found if p.get("instance") == instance]
         if len(found) > 1:
@@ -3826,7 +3794,7 @@ def _placement(session: Session, which: str) -> dict[str, Any]:
             raise CommandError(f"no single active placement for {named} in this project")
         return found[0]
     # No member has that name: the placements' own handles, still refusing two matches.
-    return _one(placements, which, (lambda p: _obj(p.get("agent")).get("handle"),),
+    return _one(placements, which, (lambda p: onboarding.obj(p.get("agent")).get("handle"),),
                 "active placement")  # fmt: skip
 
 
@@ -3934,9 +3902,9 @@ def _member_id(session: Session, which: str) -> str:
 
 def _placement_line(p: dict[str, Any]) -> str:
     show = onboarding.inline
-    agent = _obj(p.get("agent"))
-    runner = _obj(p.get("runner"))
-    reported = _obj(p.get("reported"))
+    agent = onboarding.obj(p.get("agent"))
+    runner = onboarding.obj(p.get("runner"))
+    reported = onboarding.obj(p.get("reported"))
     state_ = str(reported.get("state") or "not reported")
     if reported.get("reason"):
         state_ += f"/{reported['reason']}"
@@ -3984,8 +3952,8 @@ def cmd_placement_start(args: argparse.Namespace) -> int:
     if args.clone or args.branch:
         body["workspace"] = {k: v for k, v in (("clone", args.clone), ("branch", args.branch)) if v}
     placement = session.client.call("POST", session.project_path("placements"), body=body)
-    approval = _obj(_field(placement, "approval"))
-    line = f"placement {onboarding.inline(_field(placement, 'id'))} created"
+    approval = onboarding.obj(onboarding.get(placement, "approval"))
+    line = f"placement {onboarding.inline(onboarding.get(placement, 'id'))} created"
     if approval.get("status") == "pending":
         line += f"; waiting for consent (request {onboarding.inline(approval.get('request_id'))})"
     return _done(args, placement, line)
@@ -4027,8 +3995,10 @@ def cmd_runners(args: argparse.Namespace) -> int:
     if not items:
         print("no runners attached to this project")
     for item in items:
-        runner = _obj(item.get("runner")) or item  # the attachment carries the runner view
-        caps = _obj(runner.get("capabilities"))
+        runner = (
+            onboarding.obj(item.get("runner")) or item
+        )  # the attachment carries the runner view
+        caps = onboarding.obj(runner.get("capabilities"))
         tools = ", ".join(
             onboarding.inline(h.get("id"))
             for h in caps.get("harnesses") or []
@@ -4055,7 +4025,7 @@ def cmd_roles(args: argparse.Namespace) -> int:
     if args.json:
         _print_json(answer)
         return EXIT_OK
-    answer = _obj(answer)
+    answer = onboarding.obj(answer)
 
     def entries(key: str) -> list[dict[str, Any]]:
         return [r for r in answer.get(key) or [] if isinstance(r, dict)]
@@ -4125,8 +4095,8 @@ def cmd_profile_avatar(args: argparse.Namespace) -> int:
 
 
 def _avatar_line(answer: Any) -> str:
-    url = _field(answer, "avatar_url")
-    source = _field(answer, "avatar_source")
+    url = onboarding.get(answer, "avatar_url")
+    source = onboarding.get(answer, "avatar_source")
     if url is None:
         return "no image (the generated avatar is shown)"
     return f"{onboarding.inline(url)} ({onboarding.inline(source or 'unknown source')})"
@@ -4190,7 +4160,7 @@ def cmd_limit(args: argparse.Namespace) -> int:
     if args.reason:
         body["reason"] = _text(args.reason, "--reason")
     answer = Session().client.call("POST", "/me/limit", body=body)
-    until = _field(answer, "availability", "until") or body["until"]
+    until = onboarding.get(answer, "availability", "until") or body["until"]
     return _done(args, answer, f"limited until {onboarding.inline(until)}")
 
 
@@ -4201,33 +4171,23 @@ def cmd_note_add(args: argparse.Namespace) -> int:
     session = Session()
     path = session.project_path("tasks", args.card, "notes")
     note = session.client.call("POST", path, body={"body": _text(args.body, "the note")})
-    return _done(args, note, f"note {onboarding.inline(_field(note, 'id'))} on {args.card}")
+    return _done(args, note, f"note {onboarding.inline(onboarding.get(note, 'id'))} on {args.card}")
 
 
 def cmd_note_list(args: argparse.Namespace) -> int:
     session = Session()
     state_ = "all" if args.all else args.state
-    items: list[dict[str, Any]] = []
-    cursor: str | None = None
-    seen: set[str] = set()
-    while True:  # every page: a card holds at most 200 notes (§6.16)
-        query = [("state", state_), ("limit", "200")]
-        if cursor:
-            query.append(("cursor", cursor))
-        page = session.client.call(
-            "GET", session.project_path("tasks", args.card, "notes"), query=query
-        )
-        items.extend(n for n in (_field(page, "items") or []) if isinstance(n, dict))
-        cursor = _next_cursor(page, seen)
-        if not cursor:
-            break
+    # every page: a card holds at most 200 notes (§6.16)
+    items = _all_pages(
+        session, session.project_path("tasks", args.card, "notes"), [("state", state_)], limit=200
+    )
     if args.json:
         _print_json(items)
         return EXIT_OK
     if not items:
         print(f"no {'' if args.all else state_ + ' '}notes on {args.card}")
     for note in items:
-        author = _obj(note.get("author"))
+        author = onboarding.obj(note.get("author"))
         print(
             f"{onboarding.inline(note.get('id'))}  {onboarding.inline(note.get('state'))}  "
             f"{onboarding.label(author)}  "
@@ -4275,21 +4235,21 @@ def cmd_link_add(args: argparse.Namespace) -> int:
     session = Session()
     link = session.client.call("POST", session.project_path("tasks", args.card, "links"), body=body)
     return _done(
-        args, link, f"linked {kind} {onboarding.inline(_field(link, 'id'))} to {args.card}"
+        args, link, f"linked {kind} {onboarding.inline(onboarding.get(link, 'id'))} to {args.card}"
     )
 
 
 def cmd_link_list(args: argparse.Namespace) -> int:
     session = Session()
     card = session.client.call("GET", session.project_path("tasks", args.card))
-    links = [link for link in _field(card, "links") or [] if isinstance(link, dict)]
+    links = [link for link in onboarding.get(card, "links") or [] if isinstance(link, dict)]
     if args.json:
         _print_json(links)
         return EXIT_OK
     if not links:
         print(f"no links on {args.card}")
     for link in links:
-        seen = _obj(link.get("observed"))
+        seen = onboarding.obj(link.get("observed"))
         if link.get("kind") == "url":
             label = onboarding.inline(link.get("label") or "")
             what = f"{label}  {onboarding.inline(link.get('url'))}"
@@ -4339,17 +4299,12 @@ def cmd_ticker(args: argparse.Namespace) -> int:
     if args.json:
         _print_json(page)
         return EXIT_OK
-    items = [i for i in (_field(page, "items") or []) if isinstance(i, dict)]
+    items = [i for i in (onboarding.get(page, "items") or []) if isinstance(i, dict)]
     if not items:
         print("no ticker items")
     for item in items:
         print("\n".join(onboarding.ticker_lines(item)))
-    cursor = _field(page, "next_cursor")
-    if not isinstance(cursor, str) or not cursor:
-        cursor = None
-    elif not (cursor.isascii() and cursor.isprintable()):  # it goes into a command line
-        _err("the hub's next cursor is not printable ASCII; not offering it")
-        cursor = None
+    cursor = _printable_cursor(onboarding.get(page, "next_cursor"))  # it goes into a command line
     if cursor:
         # The same filter set, `--since` as the time it resolved to: a cursor is valid for
         # one filter set only, and a duration would move.
@@ -4358,7 +4313,7 @@ def cmd_ticker(args: argparse.Namespace) -> int:
         again += ["--area", args.area] if args.area else []
         again += ["--since", since] if since else []
         again += ["--limit", str(args.limit)] if args.limit != TICKER_LIMIT else []
-        print(f"more: {shlex.join([*again, '--cursor', cursor])}")
+        print(_more_line(again, cursor))
     return EXIT_OK
 
 
@@ -4396,8 +4351,8 @@ def cmd_ticker_post(args: argparse.Namespace) -> int:
         body["deploy"] = deploy
     session = Session()
     event = session.client.call("POST", session.project_path("ticker"), body=body)
-    seq = _field(event, "seq")
-    item = _field(event, "id") or (f"tck-{seq}" if seq is not None else "?")
+    seq = onboarding.get(event, "seq")
+    item = onboarding.get(event, "id") or (f"tck-{seq}" if seq is not None else "?")
     return _done(args, event, f"posted {onboarding.inline(item)} (seq {onboarding.inline(seq)})")
 
 
@@ -4423,11 +4378,13 @@ def cmd_ticker_subscription(args: argparse.Namespace) -> int:
         _print_json(answer)
         return EXIT_OK
     for which in ("follow", "mute"):
-        lists = _obj(_field(answer, which))
+        lists = onboarding.obj(onboarding.get(answer, which))
         areas = ", ".join(onboarding.inline(a) for a in lists.get("areas") or []) or "-"
         types = ", ".join(onboarding.inline(t) for t in lists.get("types") or []) or "-"
         print(f"{which}: areas {areas}; types {types}")
-    follow, mute = _obj(_field(answer, "follow")), _obj(_field(answer, "mute"))
+    follow, mute = onboarding.obj(onboarding.get(answer, "follow")), onboarding.obj(
+        onboarding.get(answer, "mute")
+    )
     for key in ("areas", "types"):
         for value in [v for v in follow.get(key) or [] if v in (mute.get(key) or [])]:
             print(f"{onboarding.inline(value)}: followed and muted — listed for you, never woken")
@@ -4450,7 +4407,7 @@ ANONYMITY_LIMITS = (
 
 
 def _jour_fixe(session: Session) -> dict[str, Any]:
-    return _obj(session.client.call("GET", session.project_path("jour-fixe")))
+    return onboarding.obj(session.client.call("GET", session.project_path("jour-fixe")))
 
 
 def _open_step(round_: dict[str, Any]) -> dict[str, Any]:
@@ -4484,14 +4441,14 @@ def _my_answer(session: Session, round_id: str) -> dict[str, Any] | None:
     """The caller's own answer while the hub shows it (§20.3, §20.4), or None."""
     try:
         page = session.client.call(
-            "GET", session.project_path("jour-fixe", "rounds", round_id, "answers"),
+            "GET", _round_path(session, round_id, "answers"),
             query=[("mine", "true")],
         )  # fmt: skip
     except hub.HubError as exc:
         if exc.code == "not_found":
             return None
         raise
-    items = [a for a in (_field(page, "items") or []) if isinstance(a, dict)]
+    items = [a for a in (onboarding.get(page, "items") or []) if isinstance(a, dict)]
     return items[0] if items else None
 
 
@@ -4517,7 +4474,7 @@ def _my_part(session: Session, round_: dict[str, Any]) -> str:
 
 
 def _report_lines(round_: dict[str, Any]) -> list[str]:
-    report = _obj(round_.get("report"))
+    report = onboarding.obj(round_.get("report"))
     when = onboarding.inline(round_.get("reported_at") or "?")
     lines = [f"Last report: {onboarding.inline(round_.get('id'))}, {when}"]
     if report.get("summary"):
@@ -4553,13 +4510,13 @@ def _series_lines(session: Session, entry: dict[str, Any]) -> list[str]:
     pending = [onboarding.inline(m) for m in _member_ids(entry.get("pending_moderators"))]
     line = f"  Moderators: {', '.join(moderators) if moderators else 'nobody'}"
     lines.append(line + (f" (pending: {', '.join(pending)})" if pending else ""))
-    current = _obj(entry.get("current_round"))
+    current = onboarding.obj(entry.get("current_round"))
     if current:
         lines.append(f"  Current round {onboarding.inline(current.get('id'))}: {_phase(current)}")
         lines.append(f"    {_my_part(session, current)}")
     else:
         lines.append("  No round open")
-    last = _obj(entry.get("last_round"))
+    last = onboarding.obj(entry.get("last_round"))
     if last:
         lines += ["  " + x for x in _report_lines(last)]
     mine = []
@@ -4577,18 +4534,7 @@ def cmd_jourfixe(args: argparse.Namespace) -> int:
     every page."""
     session = Session()
     if args.all:
-        rounds: list[dict[str, Any]] = []
-        seen: set[str] = set()
-        cursor: str | None = None
-        while True:
-            query = [("limit", "50")] + ([("cursor", cursor)] if cursor else [])
-            page = session.client.call(
-                "GET", session.project_path("jour-fixe", "rounds"), query=query
-            )
-            rounds.extend(r for r in (_field(page, "items") or []) if isinstance(r, dict))
-            cursor = _next_cursor(page, seen)
-            if cursor is None:
-                break
+        rounds = _all_pages(session, _round_path(session), [], limit=50)
         if args.json:
             _print_json(rounds)
             return EXIT_OK
@@ -4615,12 +4561,8 @@ def _answer_body(args: argparse.Namespace) -> dict[str, Any]:
     the flags, which replace the file's field (§13)."""
     given: dict[str, Any] = {}
     if args.file is not None:
-        raw = _stdin_text() if args.file == "-" else _read_text_file(args.file, "--file")
-        try:
-            data = json.loads(raw)
-        except json.JSONDecodeError as exc:
-            raise UsageError(f"--file is not JSON: {exc.msg}") from None
-        if not isinstance(data, dict) or set(data) - set(JOUR_FIXE_FIELDS):
+        data = _json_file(args.file, "--file")
+        if set(data) - set(JOUR_FIXE_FIELDS):
             keys = ", ".join(JOUR_FIXE_FIELDS)
             raise UsageError(f"--file holds one JSON object with any of the keys {keys}")
         if not all(isinstance(v, str) for v in data.values()):
@@ -4642,7 +4584,7 @@ def cmd_jourfixe_answer(args: argparse.Namespace) -> int:
     if body["anonymous"]:
         for line in ANONYMITY_LIMITS:
             _err(line)
-    path = session.project_path("jour-fixe", "rounds", current["id"], "answers")
+    path = _round_path(session, current["id"], "answers")
     try:
         answer = session.client.call("POST", path, body=body)
     except hub.HubError as exc:
@@ -4652,7 +4594,7 @@ def cmd_jourfixe_answer(args: argparse.Namespace) -> int:
                 "round, and a withdrawn answer still counts"
             ) from None
         raise
-    named = _field(answer, "id")
+    named = onboarding.get(answer, "id")
     return _done(args, answer, f"answered {onboarding.inline(named)}" if named else "answered")
 
 
@@ -4663,7 +4605,7 @@ def _to_answer(session: Session) -> dict[str, Any]:
     me = session.me
     open_ = [
         r
-        for r in (_obj(e.get("current_round")) for e in _series(_jour_fixe(session)))
+        for r in (onboarding.obj(e.get("current_round")) for e in _series(_jour_fixe(session)))
         if r.get("status") == "answering" and isinstance(r.get("id"), str)
     ]
     if not open_:
@@ -4682,10 +4624,14 @@ def _round_for(session: Session, given: str | None) -> str:
         return given
     series = _series(_jour_fixe(session))
     for entry in series:
-        found = _field(entry, "current_round", "id")
+        found = onboarding.get(entry, "current_round", "id")
         if isinstance(found, str):
             return found
-    last = [_obj(e.get("last_round")) for e in series if _obj(e.get("last_round")).get("id")]
+    last = [
+        onboarding.obj(e.get("last_round"))
+        for e in series
+        if onboarding.obj(e.get("last_round")).get("id")
+    ]
     if last:
         return str(max(last, key=lambda r: str(r.get("reported_at") or ""))["id"])
     raise UsageError("there is no jour fixe round yet")
@@ -4696,10 +4642,8 @@ def cmd_jourfixe_answers(args: argparse.Namespace) -> int:
     session = Session()
     round_id = _round_for(session, args.round)
     query = [("mine", "true")] if args.mine else []
-    page = session.client.call(
-        "GET", session.project_path("jour-fixe", "rounds", round_id, "answers"), query=query
-    )
-    items = [a for a in (_field(page, "items") or []) if isinstance(a, dict)]
+    page = session.client.call("GET", _round_path(session, round_id, "answers"), query=query)
+    items = [a for a in (onboarding.get(page, "items") or []) if isinstance(a, dict)]
     if args.json:
         _print_json(items)  # other members' text
         return EXIT_OK
@@ -4723,30 +4667,32 @@ def cmd_jourfixe_withdraw(args: argparse.Namespace) -> int:
     session = Session()
     round_id = _round_for(session, args.round)
     mine = _my_answer(session, round_id)  # read first: a withdrawn anonymous one is gone
-    answer = session.client.call(
-        "DELETE", session.project_path("jour-fixe", "rounds", round_id, "answers", "mine")
-    )
+    answer = session.client.call("DELETE", _round_path(session, round_id, "answers", "mine"))
     line = "withdrawn"
     if mine is not None and mine.get("anonymous"):
         line += "; the moderator may already have read it"
     return _done(args, answer, line)
 
 
-def _json_file(path: str, flag: str) -> dict[str, Any]:
-    """A request body from FILE, or stdin with `-`: one JSON object, sent as its parsed
-    fields."""
+def _json_file(path: str, flag: str, *, object_only: bool = True, stdin_used: bool = False) -> Any:
+    """JSON from FILE, or stdin with `-`, parsed and returned as it is: a request body is one
+    JSON object (`object_only`, the default), `--review-file`'s review is checked by the hub.
+    Stdin is read once: `stdin_used` says another input of the command has it already."""
+    if path == "-" and stdin_used:
+        raise UsageError(f"the message and {flag} cannot both come from stdin: put one in a file")
     raw = _stdin_text() if path == "-" else _read_text_file(path, flag)
     try:
         data = json.loads(raw)
     except json.JSONDecodeError as exc:
-        raise UsageError(f"{flag}: not JSON: {exc.msg}") from None
-    if not isinstance(data, dict):
+        raise UsageError(f"{flag}: not JSON: {exc}") from None
+    if object_only and not isinstance(data, dict):
         raise UsageError(f"{flag}: the body is one JSON object")
     return data
 
 
-def _round_path(session: Session, round_id: str, *rest: str) -> str:
-    return session.project_path("jour-fixe", "rounds", round_id, *rest)
+def _round_path(session: Session, *rest: str) -> str:
+    """`…/jour-fixe/rounds`, then `rest`: a round's id and what hangs off it (§20)."""
+    return session.project_path("jour-fixe", "rounds", *rest)
 
 
 def cmd_jourfixe_statement(args: argparse.Namespace) -> int:
@@ -4755,7 +4701,7 @@ def cmd_jourfixe_statement(args: argparse.Namespace) -> int:
     body = _json_file(args.file, "--file")
     session = Session()
     round_ = session.client.call("POST", _round_path(session, args.round, "statement"), body=body)
-    topics = [x for x in _field(round_, "statement", "topics") or [] if isinstance(x, dict)]
+    topics = [x for x in onboarding.get(round_, "statement", "topics") or [] if isinstance(x, dict)]
     lines = [f"statement posted to {onboarding.inline(args.round)}"]
     for topic in topics:
         ids = [onboarding.inline(s.get("id")) for s in topic.get("proposals") or []
@@ -4776,7 +4722,7 @@ def cmd_jourfixe_post(args: argparse.Namespace) -> int:
     if args.reply_to:
         body["in_reply_to"] = list(args.reply_to)
     post = session.client.call("POST", _round_path(session, args.round, "posts"), body=body)
-    return _done(args, post, f"posted {onboarding.inline(_field(post, 'id'))}")
+    return _done(args, post, f"posted {onboarding.inline(onboarding.get(post, 'id'))}")
 
 
 def cmd_jourfixe_step(args: argparse.Namespace) -> int:
@@ -4790,7 +4736,7 @@ def cmd_jourfixe_step(args: argparse.Namespace) -> int:
     if args.topic:
         body["topics"] = list(args.topic)
     round_ = session.client.call("POST", _round_path(session, args.round, "steps"), body=body)
-    steps = [s for s in _field(round_, "steps") or [] if isinstance(s, dict)]
+    steps = [s for s in onboarding.get(round_, "steps") or [] if isinstance(s, dict)]
     added = steps[-1] if steps else {}
     line = f"further step added to {onboarding.inline(args.round)}"
     if not added.get("opened_at"):
@@ -4804,12 +4750,12 @@ def cmd_jourfixe_report(args: argparse.Namespace) -> int:
     body = _json_file(args.file, "--file")
     session = Session()
     answer = session.client.call("POST", _round_path(session, args.round, "report"), body=body)
-    round_ = _obj(_field(answer, "round"))
+    round_ = onboarding.obj(onboarding.get(answer, "round"))
     lines = [f"reported {onboarding.inline(args.round)}"]
-    report = _obj(round_.get("report"))
+    report = onboarding.obj(round_.get("report"))
     for proposal in [x for x in report.get("proposals") or [] if isinstance(x, dict)]:
         title, triage = (onboarding.inline(proposal.get(k)) for k in ("title", "triage"))
-        decision = _obj(proposal.get("decision")).get("outcome")
+        decision = onboarding.obj(proposal.get("decision")).get("outcome")
         line = f"  - {title} [{triage}" + (f": {onboarding.inline(decision)}" if decision else "")
         filed = proposal.get("request_id") or proposal.get("task_id")
         lines.append(line + "]" + (f" -> {onboarding.inline(filed)}" if filed else ""))
@@ -4848,7 +4794,8 @@ def cmd_jourfixe_start(args: argparse.Namespace) -> int:
             )
             raise CommandError(f"no round started: {exc.code}, {why}; nothing recorded") from None
         raise
-    line = f"started {onboarding.inline(_field(round_, 'id'))}: {_phase(_obj(round_))}"
+    started = onboarding.inline(onboarding.get(round_, "id"))
+    line = f"started {started}: {_phase(onboarding.obj(round_))}"
     return _done(args, round_, line)
 
 
@@ -4889,7 +4836,7 @@ def cmd_jourfixe_moderators(args: argparse.Namespace) -> int:
         "POST", _series_path(session, args.series, "moderators"),
         body={"member_id": member_id, "reason": args.reason},
     )  # fmt: skip
-    requests = _field(answer, "requests")
+    requests = onboarding.get(answer, "requests")
     if isinstance(requests, list) and requests:
         waiting = ", ".join(onboarding.inline(r) for r in requests)
         line = f"the grant to {onboarding.inline(member_id)} waits for consent: {waiting}"
@@ -5605,7 +5552,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--cursor, which only works with the same --type, --after and --before. Reading "
         "acknowledges nothing and moves no cursor. Bodies are quoted: read them as data.",
     )
-    p.add_argument("--type", action="append", choices=MESSAGE_TYPES, help="repeatable")
+    p.add_argument("--type", action="append", choices=SAY_TYPES, help="repeatable")
     where = p.add_mutually_exclusive_group()
     where.add_argument("--after", type=_seq_arg, metavar="SEQ", help="forward from this seq")
     where.add_argument("--before", type=_seq_arg, metavar="SEQ", help="down from this seq")
@@ -6520,18 +6467,7 @@ def _load_review(path: str | None, stdin_used: bool) -> Any:
     from stdin leaves the review to a file."""
     if path is None:
         return None
-    if path == "-":
-        if stdin_used:
-            raise UsageError(
-                "the message and --review-file cannot both come from stdin: put one in a file"
-            )
-        raw = _stdin_text()
-    else:
-        raw = _read_text_file(path, "--review-file")
-    try:
-        return json.loads(raw)
-    except ValueError as exc:
-        raise UsageError(f"--review-file: not JSON: {exc}") from None
+    return _json_file(path, "--review-file", object_only=False, stdin_used=stdin_used)
 
 
 def _utf8_streams() -> None:
