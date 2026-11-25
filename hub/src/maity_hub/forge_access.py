@@ -20,12 +20,15 @@ a database connection held.
 
 from __future__ import annotations
 
+import dataclasses
 import hashlib
 import logging
 import threading
 import time
 from collections import OrderedDict
+from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any
 
 from sqlalchemy import Connection, Engine, select, update
@@ -33,6 +36,8 @@ from sqlalchemy import Connection, Engine, select, update
 from maity_hub import (
     bounded,
     clock,
+    errors,
+    events,
     forge,
     forge_links,
     github_app,
@@ -57,7 +62,7 @@ class _Facts:
     repository_url: str | None
     owner_id: str  # the human whose grants count: who confirmed (§11.4), "" while nobody did
     confirmed: bool
-    links: tuple[tuple[str, int, str], ...]  # (id, installation id, status)
+    links: tuple[forge_links.Link, ...]  # with their status and owner checks
     token: tuple[str, Any, bytes] | None  # (status, set_at, sealed)
     namespace: str  # the project's namespace by its current handle, in lower case
 
@@ -90,25 +95,42 @@ class ForgeAccess:
         self.secret_key = secret_key
         self.instance_namespaces = instance_namespaces
         self._lock = threading.Lock()
-        # project id -> (when chosen, what it depended on, the reader)
-        self._chosen: OrderedDict[str, tuple[float, tuple[Any, ...], forge.Forge]] = OrderedDict()
+        # project id -> (when chosen, what it depended on, the reader, kept until): a choice
+        # that rests on a link on a forge organisation is kept no longer than that link's
+        # owner check (§11.4): until 10 minutes after its last success while it serves, until
+        # its next check is due while it does not.
+        self._chosen: OrderedDict[
+            str, tuple[float, tuple[Any, ...], forge.Forge, datetime | None]
+        ] = OrderedDict()
 
     def reader(self, project_id: str, base: forge.Forge) -> forge.Forge:
         facts = self._facts(project_id)
         key = facts.key(base)
         with self._lock:
             kept = self._chosen.get(project_id)
-        if kept is not None and kept[1] == key and time.monotonic() - kept[0] < KEEP_SECONDS:
+        if (
+            kept is not None
+            and kept[1] == key
+            and time.monotonic() - kept[0] < KEEP_SECONDS
+            and (kept[3] is None or clock.now() < kept[3])
+        ):
             return kept[2]
         try:
-            chosen = self._choose(project_id, facts, base)
+            chosen, until = self._choose(project_id, facts, base)
         except forge.ForgeUnavailableError:
             # The forge did not answer the choice: a reader without a token, whose reads
             # fail as unavailable (or read a public repository anonymously); kept for
-            # nothing, so the next read chooses again.
-            return forge.Forge(None, project_id=project_id)
+            # nothing, so the next read chooses again. Where the grants hold a link on a forge
+            # organisation it carries that link's "no answer", so that §11.3 does not answer an
+            # export such a link may have read from its cache meanwhile (review A2545 #5).
+            organisation = any(link.organisation for link in facts.links)
+            unanswered = errors.ORG_UNANSWERED if organisation else None
+            return forge.Forge(None, project_id=project_id, owner_reason=unanswered)
+        if any(link.organisation for link in facts.links):
+            chosen = dataclasses.replace(chosen, org_grants=True)
         with self._lock:
-            bounded.put(self._chosen, project_id, (time.monotonic(), key, chosen), CHOSEN_KEPT)
+            entry = (time.monotonic(), key, chosen, until)
+            bounded.put(self._chosen, project_id, entry, CHOSEN_KEPT)
         self._note_via(project_id, chosen.via)
         return chosen
 
@@ -160,14 +182,8 @@ class ForgeAccess:
                 ).where(t.project.c.id == project_id)
             ).one()
             handle = namespace.current_handle(conn, project.owner_id) or ""
-            # The namespace owner's grants for a project of a human; for one of an organisation
-            # the grants of the owner who confirmed it, and nobody's while none did.
-            grants = project.repository_confirmed_by or (
-                project.owner_id if project.owner_org_id is None else ""
-            )
-            links = tuple(
-                (row.id, row.installation_id, row.status) for row in forge_links.rows(conn, grants)
-            )
+            grants = grants_of(project)
+            links = tuple(forge_links.Link.of(row) for row in forge_links.rows(conn, grants))
             token = conn.execute(
                 select(t.forge_token).where(t.forge_token.c.human_id == grants)
             ).first()
@@ -180,63 +196,156 @@ class ForgeAccess:
             handle.lower(),
         )
 
-    def _choose(self, project_id: str, facts: _Facts, base: forge.Forge) -> forge.Forge:
+    def _choose(
+        self, project_id: str, facts: _Facts, base: forge.Forge
+    ) -> tuple[forge.Forge, datetime | None]:
+        """The reader, and until when it may be kept at most (None: KEEP_SECONDS only)."""
         if facts.repository_url is None:
-            return base
+            return base, None
         # Off GitHub the hub stores the URL and sends no token (§6.1, §11).
         if forge.kind_of(facts.repository_url) != "github":
-            return self._refusing(base, project_id, "forge_not_github")
+            return self._refusing(base, project_id, "forge_not_github"), None
         repository = forge.repository_of(facts.repository_url).lower()
         owner_reason: str | None = None
-        has_grant = any(status != "removed" for _, _, status in facts.links) or (
+        until: datetime | None = None
+        has_grant = any(link.status != "removed" for link in facts.links) or (
             facts.token is not None and facts.token[0] == "active"
         )
         if facts.confirmed:
-            via_app, owner_reason = self._by_app(facts, repository)
+            via_app, owner_reason, until, served = self._by_app(facts, repository)
             if via_app is not None:
-                return self._bound(base, project_id, repository, "app", via_app)
+                bound = self._bound(base, project_id, repository, "app", via_app)
+                # only a link on a forge organisation keeps its grant for a time (`_by_org_link`),
+                # and what it read is kept only while it serves still (review A2585 P2-1)
+                still = (
+                    None
+                    if served is None
+                    else self._still_serves(served, project_id, facts.repository_url)
+                )
+                bound = dataclasses.replace(bound, serves_until=until, still_serves=still)
+                return bound, until
+            # A link that serves nothing is not the project's source: the choice goes on with
+            # the owner's token, then the operator's where it may serve (§11.4).
             via_token, token_reason = self._by_token(facts, repository)
             if via_token is not None:
                 grant = (facts.owner_id, _digest(facts.token[2])) if facts.token else None
-                return self._bound(base, project_id, repository, "owner_token", via_token, grant)
+                bound = self._bound(base, project_id, repository, "owner_token", via_token, grant)
+                return bound, until
             owner_reason = owner_reason or token_reason
         elif has_grant:
             owner_reason = "unconfirmed"
         if base.token is None or facts.namespace not in self.instance_namespaces:
             # The operator's token serves the operator's own namespaces only (§11.4): any
             # other project is read through its owner's grant or not at all.
-            return self._refusing(base, project_id, owner_reason or "no_grant")
+            return self._refusing(base, project_id, owner_reason or "no_grant"), until
         # The operator's token, which checks on every read that the repository is public;
         # when it is not, the owner's reason says more than "private".
-        return forge.Forge(
+        instance = forge.Forge(
             base.token, project_id=project_id, access=self, owner_reason=owner_reason
         )
+        return instance, until
 
-    def _by_app(self, facts: _Facts, repository: str) -> tuple[str | None, str | None]:
+    def _by_app(
+        self, facts: _Facts, repository: str
+    ) -> tuple[str | None, str | None, datetime | None, forge_links.Link | None]:
         """An installation token when the owner's linked installation covers the
-        repository; else None and the reason it no longer does, if it once did."""
+        repository; else None and the reason it no longer does, if it once did; until
+        when the answer may be kept, for a link whose state changes with time; and the link
+        on a forge organisation the token rests on, if it does."""
         if self.app is None or not facts.links:
-            return None, None
+            return None, None, None, None
         installation_id = self.app.installation_of(repository)
-        mine = [link for link in facts.links if link[1] == installation_id]
+        mine = [link for link in facts.links if link.installation_id == installation_id]
         if installation_id is None or not mine:
-            return None, None  # any other installation of the App is never tried
-        link_id, _, status = mine[0]
-        if status == "removed":
-            return None, "installation_removed"
-        if status != "active":  # only a new mint says it is back, not a token held from before
+            return None, None, None, None  # any other installation of the App is never tried
+        link = mine[0]
+        if link.organisation:
+            return self._by_org_link(link)
+        if link.status == "removed":
+            return None, "installation_removed", None, None
+        if link.status == "suspended" and not forge_links.retry_due(link):
+            # retried at most every 10 minutes (§11.4)
+            until = link.checked_at + forge_links.CHECK_EVERY
+            return None, "installation_suspended", until, None
+        if link.status != "active":  # only a new mint says it is back, not a token held before
             github_app.forget_token(self.app.app_id, installation_id)
         try:
             token = self.app.token(installation_id)
         except github_app.InstallationGoneError as gone:
-            with self.engine.begin() as conn:
-                forge_links.set_status(conn, link_id, gone.state)
-                wakeups.forget_token_everywhere(conn, self.app, installation_id)
-            return None, f"installation_{gone.state}"
-        if status != "active":
-            with self.engine.begin() as conn:
-                forge_links.set_status(conn, link_id, "active")
-        return token, None
+            self._gone(link, gone.state)
+            return None, f"installation_{gone.state}", None, None
+        if link.status != "active":
+            with events.transaction(self.engine) as conn:
+                forge_links.set_status(conn, link.id, "active")
+        return token, None, None, None
+
+    def _by_org_link(
+        self, link: forge_links.Link
+    ) -> tuple[str | None, str | None, datetime | None, forge_links.Link | None]:
+        """A link on a forge organisation (§11.4): checked first when its owner check is due,
+        then a token only while it serves, kept until 10 minutes after its last success; else
+        the reason, kept for the project's readers apart from a user account's (`errors.ORG_*`),
+        until its next check is due. The row is read anew here, whatever the choice read
+        before it, so a link unlinked or replaced meanwhile serves nothing (A2585 P2-1)."""
+        assert self.app is not None
+        row = forge_links.refresh(self.engine, self.app, link)
+        if row is None:
+            return None, errors.ORG_REMOVED, None, None
+        link = forge_links.Link.of(row)
+        if forge_links.serves(link):
+            try:
+                token = self.app.token(link.installation_id)
+            except github_app.InstallationGoneError as gone:
+                self._gone(link, gone.state)
+                return None, errors.ORG_REASONS_BY_STATUS[gone.state], None, None
+            assert link.owner_ok_at is not None  # `serves` says so
+            return token, None, link.owner_ok_at + forge_links.CHECK_EVERY, link
+        reason = errors.ORG_REASONS_BY_STATUS.get(link.status, errors.ORG_UNANSWERED)
+        if link.status == "removed":
+            return None, reason, None, None  # never checked again: nothing to keep it until
+        return None, reason, link.checked_at + forge_links.CHECK_EVERY, None
+
+    def _still_serves(
+        self, link: forge_links.Link, project_id: str, repository_url: str | None
+    ) -> Callable[[], bool]:
+        """Whether the link serves the project still, both rows read now. The link's as `serves`
+        asks: gone, another human's or no longer serving, it does not. The project's as `_facts`
+        and `_choose` ask: still confirmed, still the URL the choice read, its grants
+        (`grants_of`) still the link human's. A move, or an owner who stops being one, ends the
+        grants and leaves the link as it is (review A2595 P2-1). Plain reads, no lock."""
+
+        def ask() -> bool:
+            with self.engine.connect() as conn:
+                row = forge_links.current(conn, link)
+                project = conn.execute(
+                    select(
+                        t.project.c.repository_url,
+                        t.project.c.owner_id,
+                        t.project.c.owner_org_id,
+                        t.project.c.repository_owner_confirmed,
+                        t.project.c.repository_confirmed_by,
+                    ).where(t.project.c.id == project_id)
+                ).first()
+            return (
+                row is not None
+                and forge_links.serves(row)
+                and project is not None
+                and bool(project.repository_owner_confirmed)
+                and project.repository_url == repository_url
+                and grants_of(project) == link.human_id
+            )
+
+        return ask
+
+    def _gone(self, link: forge_links.Link, state: str) -> None:
+        """A mint the forge refused: the link's status, and no token of it held anywhere. Exempt
+        from the calling request's write guard, as `forge_links.refresh` is (review A2545 #2):
+        the write is the link human's, whose `account_lock` `set_status` takes first."""
+        assert self.app is not None
+        with events.transaction(self.engine) as conn:  # its forgets run again after the commit
+            write_guard.exempt(conn)
+            forge_links.set_status(conn, link.id, state)
+            wakeups.forget_token_everywhere(conn, self.app, link.installation_id)
 
     def _by_token(self, facts: _Facts, repository: str) -> tuple[str | None, str | None]:
         """The owner's token when a read of the repository with it answers."""
@@ -333,6 +442,47 @@ CHOSEN_KEPT = 1024  # the readers kept per project; an older one is chosen anew
 def _note_via(project_id: str, via: str | None) -> None:
     with _via_lock:
         bounded.put(_last_via, project_id, via, VIA_KEPT)
+
+
+def grants_of(project: Any) -> str:
+    """The human whose grants count for the project (§11.4): the namespace owner's for a
+    project of a human; for one of an organisation the owner who confirmed it, and nobody's
+    ("") while none did."""
+    grants: str = project.repository_confirmed_by or (
+        project.owner_id if project.owner_org_id is None else ""
+    )
+    return grants
+
+
+def is_confirmer(caller: Any, project: Any) -> bool:
+    """Whether the caller is the human named in the project's `confirmed_by` (§11.4), who gets
+    the specific reason of a link on a forge organisation that serves nothing: that human
+    themselves, never one of their agents, a bridge or a proxy acting for them."""
+    return (
+        getattr(caller, "kind", None) == "human"
+        and bool(project.repository_owner_confirmed)
+        and project.repository_confirmed_by is not None
+        and getattr(caller, "principal_id", None) == project.repository_confirmed_by
+    )
+
+
+def org_link_serves_nothing(conn: Connection, project: Any) -> bool:
+    """Whether the grants that count for the project (§11.4: the confirming owner's, the
+    namespace owner's for a project of a human) hold a link on a forge organisation that serves
+    nothing as stored: `not_admin`, `suspended`, `removed`, or its success 10 minutes old. Read
+    from the database alone, never the forge, for a view that must not wait on a read; it
+    cannot tell which installation the repository rests on, so any such link counts."""
+    grants = grants_of(project)
+    if not grants:
+        return False
+    links = conn.execute(
+        select(t.forge_link).where(
+            t.forge_link.c.human_id == grants,
+            t.forge_link.c.account_type == forge_links.ORGANISATION,
+        )
+    )
+    now = clock.now()
+    return any(not forge_links.serves(link, now) for link in links)
 
 
 def instance_serves(conn: Connection, fg: forge.Forge, owner_id: str) -> bool:

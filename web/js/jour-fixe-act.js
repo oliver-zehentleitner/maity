@@ -30,11 +30,14 @@ window.Maity = window.Maity || {};
     not_addressed: () => M.t("jfa.refused.not_addressed"), not_a_participant: () => M.t("jfa.refused.not_a_participant"),
     unknown_topic: () => M.t("jfa.refused.unknown_topic"),
   };
-  // The hub's refusal in words: its code, its reason, or the reason of a field.
-  function said(err) {
+  // The hub's refusal in words: its code, its reason, or the reason of a field. answer: true for the
+  // answer form, whose limits (4 KiB each, 12 KiB together) are the ones jfa.refused.too_long names;
+  // the other forms have limits of their own (§20), so their too_long says only that (A2568).
+  function said(err, answer) {
     const d = err.details || {};
     const field = d.fields && Object.values(d.fields)[0];
     const key = [d.reason, field, err.code].find((k) => k && Object.hasOwn(REFUSALS, k));
+    if (key === "too_long" && !answer) return { message: M.t("jfa.refused.too_long_other") };
     if (key) return { message: REFUSALS[key]() };
     // A scope the caller lacks (a redaction needs events:admin, §20.8), said by its name.
     if (err.code === "forbidden" && d.scope) return { message: M.t("jfa.refused.scope", { scope: d.scope }) };
@@ -127,7 +130,7 @@ window.Maity = window.Maity || {};
         if (!texts.some(Boolean)) { error.textContent = M.t("jfa.refused.empty"); inputs[0].area.focus(); return; }
         if (texts.some((t) => bytes(t) > TEXT_MAX) || bytes(texts.join("")) > ALL_MAX) { error.textContent = M.t("jfa.refused.too_long"); return; }
         status.busy(M.t("jfa.answer.sending"));
-        try { await M.api.post(path, body); reload(); } catch (err) { status.fail(M.t("jfa.failed"), said(err)); }
+        try { await M.api.post(path, body); reload(); } catch (err) { status.fail(M.t("jfa.failed"), said(err, true)); }
       },
     }, inputs.map((x) => x.nodes), h("p", { class: "check" }, anonymous, h("label", { for: "jfa-anonymous" }, " " + M.t("jfa.answer.anonymous"))), limits, error,
     h("button", { type: "submit" }, M.t("jfa.answer.send")), status.el));

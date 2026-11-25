@@ -12,6 +12,7 @@ import threading
 import time
 from collections import OrderedDict
 from dataclasses import replace
+from datetime import timedelta
 from typing import Any
 
 import pytest
@@ -41,6 +42,7 @@ class FakeForge:
         self.gone: str | None = None  # the installation was suspended or removed
         self.owner_token_status = 200
         self.sent: list[tuple[str | None, str]] = []
+        self.mints = 0
 
     def send(self, fg: forge.Forge, path: str, query: Any = None) -> Any:
         self.sent.append((fg.token, path))
@@ -56,7 +58,8 @@ class FakeForge:
             return {"commit": {"sha": "a" * 40}}
         return None
 
-    def token(self, _app: Any, installation_id: int) -> str:
+    def token(self, _app: Any, installation_id: int, keep: bool = True) -> str:
+        self.mints += 1
         if self.gone is not None:
             raise github_app.InstallationGoneError(self.gone)
         return f"ghs_installation_{installation_id}"
@@ -69,7 +72,9 @@ def fake(monkeypatch: pytest.MonkeyPatch) -> FakeForge:
         forge.Forge, "_send", lambda self, path, query=None: fg.send(self, path, query)
     )
     monkeypatch.setattr(github_app.GitHubApp, "installation_of", lambda _app, repo: fg.installation)
-    monkeypatch.setattr(github_app.GitHubApp, "token", lambda _app, i: fg.token(_app, i))
+    monkeypatch.setattr(
+        github_app.GitHubApp, "token", lambda _app, i, keep=True: fg.token(_app, i, keep)
+    )
     monkeypatch.setattr(forge, "_public", {})
     monkeypatch.setattr(forge_access, "_last_via", OrderedDict())
     monkeypatch.setattr(probe.Worker, "start", lambda self: None)  # the tests read themselves
@@ -100,7 +105,14 @@ def _project_id(engine: Engine) -> str:
     return project_id
 
 
-def _link(engine: Engine, human_id: str, installation_id: int = 7, status: str = "active") -> None:
+def _link(
+    engine: Engine,
+    human_id: str,
+    installation_id: int = 7,
+    status: str = "active",
+    checked: timedelta = timedelta(0),
+) -> None:
+    """A link on a user account, last checked `checked` ago."""
     now = clock.now()
     with engine.begin() as conn:
         conn.execute(
@@ -114,8 +126,8 @@ def _link(engine: Engine, human_id: str, installation_id: int = 7, status: str =
                 account_type="User",
                 repository_selection="selected",
                 status=status,
-                linked_at=now,
-                checked_at=now,
+                linked_at=now - checked,
+                checked_at=now - checked,
             )
         )
 
@@ -370,10 +382,11 @@ def test_a_suspended_link_asks_for_a_new_mint_not_for_a_token_held_from_before(
     owner: flow.Human, migrated: Engine, fake: FakeForge, settings: Settings
 ) -> None:
     """Another replica found it suspended; a token held here must not turn it `active` again:
-    only a mint that succeeds says the installation is back."""
+    only a mint that succeeds says the installation is back. Retried 10 minutes after the last
+    check, not before (test_a_suspended_link_on_a_user_account_is_retried_every_10_minutes)."""
     assert settings.github_app is not None
     held = (settings.github_app.app_id, 7)
-    _link(migrated, owner.id, status="suspended")
+    _link(migrated, owner.id, status="suspended", checked=timedelta(minutes=10))
     _confirm(owner)
     github_app._tokens[held] = ("from before", time.time() + 3000)
     try:
@@ -381,6 +394,26 @@ def test_a_suspended_link_asks_for_a_new_mint_not_for_a_token_held_from_before(
         assert held not in github_app._tokens  # the fake mints without storing
     finally:
         github_app._tokens.clear()
+
+
+def test_a_suspended_link_on_a_user_account_is_retried_every_10_minutes(
+    owner: flow.Human, migrated: Engine, fake: FakeForge
+) -> None:
+    """§11.4: the hub retries a suspended installation at most every 10 minutes: within them no
+    mint is made and the reason stays `installation_suspended`; once they passed a mint that
+    succeeds sets it `active` again (A2509 2b)."""
+    _link(migrated, owner.id, status="suspended", checked=timedelta(minutes=9, seconds=59))
+    _confirm(owner)
+    with pytest.raises(forge.NotCoveredError) as raised:
+        _reader(migrated).branch(REPO, "main")
+    assert raised.value.reason == "installation_suspended"
+    assert fake.mints == 0
+    with migrated.begin() as conn:
+        conn.execute(update(t.forge_link).values(checked_at=clock.now() - timedelta(minutes=10)))
+    assert _reader(migrated).via == "app"
+    assert fake.mints == 1
+    with migrated.connect() as conn:
+        assert conn.execute(select(t.forge_link.c.status)).scalar_one() == "active"
 
 
 def test_a_new_url_takes_the_grant_away_at_once(

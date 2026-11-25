@@ -1497,7 +1497,12 @@ class _CountingCache(ktw.Cache):
         self.reads, self.go = reads, go
 
     def _read(
-        self, reader: forge.Forge, project_id: str, repository_url: str | None, last: Any
+        self,
+        reader: forge.Forge,
+        project_id: str,
+        repository_url: str | None,
+        last: Any,
+        generation: tuple[int, int],
     ) -> Any:
         self.reads.append(self.bind)
         if self.go is not None:

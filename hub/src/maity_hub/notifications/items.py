@@ -529,7 +529,7 @@ def records_without_item() -> Any:
         c.type == "forge_access_changed",
         or_(
             c.data["change"].as_string().is_(None),
-            c.data["change"].as_string().not_in(records.FORGE_ADDED),
+            c.data["change"].as_string().not_in(records.FORGE_SECURITY),
         ),
     )
 
@@ -872,7 +872,8 @@ def _record_items(conn: Connection, where: Scope, now: datetime, rows: Sequence[
                 )
             )
         elif row.type == "forge_access_changed":
-            if data.get("change") not in records.FORGE_ADDED:
+            change = data.get("change")
+            if change not in records.FORGE_SECURITY:
                 continue  # a record, no notification (§18.1)
             items.append(
                 Item(
@@ -881,7 +882,7 @@ def _record_items(conn: Connection, where: Scope, now: datetime, rows: Sequence[
                     record=row.n,
                     title=_cut(
                         where.say(
-                            "forge_added",
+                            "forge_not_admin" if change == "not_admin" else "forge_added",
                             login=data.get("login") or where.say("an_account"),
                             source=data.get("source"),
                         )

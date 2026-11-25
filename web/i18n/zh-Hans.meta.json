@@ -7092,8 +7092,8 @@
     "text": "6ec9166a12fa1285"
   },
   "jf.intro": {
-    "en": "8946ce507f70e21f",
-    "text": "f85478695b26330f"
+    "en": "b19edf3528050e9c",
+    "text": "ae0602dee40a5969"
   },
   "jf.missed_slots": {
     "en": "f746d03d76f572b9",
@@ -7168,8 +7168,8 @@
     "text": "20637aad3f8dbcc1"
   },
   "jf.reason": {
-    "en": "593e46ec9a5cc394",
-    "text": "3b78edb7f8d54765"
+    "en": "dafc3476fe7d3275",
+    "text": "499506a536ab7705"
   },
   "jf.reason.placeholder": {
     "en": "83f4bb1802392e52",
@@ -7372,8 +7372,8 @@
     "text": "37a4f190f14c28e5"
   },
   "jfa.answer.hint": {
-    "en": "8665bc254daaa231",
-    "text": "811e13d5a8c2a6ba"
+    "en": "99edfe528814399f",
+    "text": "13ab7c98a1f58058"
   },
   "jfa.answer.no_second": {
     "en": "a4b70dd11b5f8933",
@@ -7420,8 +7420,8 @@
     "text": "42ab451bbaa69453"
   },
   "jfa.answers.hint": {
-    "en": "da4fcfa8d9c02dbc",
-    "text": "1a4cdd99377d64a2"
+    "en": "89c27656b2edb711",
+    "text": "eb7fcad9870f015e"
   },
   "jfa.answers.none": {
     "en": "0585f089b5ed29f3",
@@ -7544,8 +7544,8 @@
     "text": "e492dbeee43dd064"
   },
   "jfa.refused.not_addressed": {
-    "en": "7432eeadade6ed38",
-    "text": "5c24a2f06bc8e94a"
+    "en": "2fe1919a49750514",
+    "text": "e089f219cfd5f442"
   },
   "jfa.refused.not_an_answerer": {
     "en": "a06b4eb3e6359a1b",
@@ -7583,6 +7583,10 @@
     "en": "5c1b133a4c566f61",
     "text": "9c48885ff9a8d6e8"
   },
+  "jfa.refused.too_long_other": {
+    "en": "13ddfec9407cf26f",
+    "text": "2f98ad362c3bf065"
+  },
   "jfa.refused.too_many_proposals": {
     "en": "ae321b84fa5ec86e",
     "text": "b53ebccb45b6f32f"
@@ -7608,8 +7612,8 @@
     "text": "00be0c72d9f958a6"
   },
   "jfa.report.hint": {
-    "en": "0be732ff16afb41d",
-    "text": "951aea755de92c74"
+    "en": "4ff90718ef994267",
+    "text": "52eb1d1f8fdd31d0"
   },
   "jfa.report.redact_title": {
     "en": "5bce72f14f4edc12",
@@ -7820,8 +7824,8 @@
     "text": "405443441eebfc6c"
   },
   "jfs.hint": {
-    "en": "f496ad7da5050f5b",
-    "text": "2731d5438dafdb59"
+    "en": "fc916c2a1b9600fe",
+    "text": "36340e7dd72504ca"
   },
   "jfs.kept_on_page": {
     "en": "dbcf6830b5d345c6",
@@ -7896,16 +7900,20 @@
     "text": "4c10d63db81c2f01"
   },
   "jfs.refused.not_series_keeper": {
-    "en": "07a2183011bdfaef",
-    "text": "0dde1aa37c8c4415"
+    "en": "f62952709064812e",
+    "text": "2789dfeb58cb7444"
+  },
+  "jfs.refused.not_starter": {
+    "en": "6357b733dcb5fba3",
+    "text": "0f8d3e129b771bf2"
   },
   "jfs.report.add": {
     "en": "c469a99179f2f746",
     "text": "5bb9c53628a959f9"
   },
   "jfs.report.list": {
-    "en": "2a02593f7be97842",
-    "text": "9e789a79e1e0df40"
+    "en": "679bfd74649ecaf1",
+    "text": "423965bcf51ed30c"
   },
   "jfs.report.nobody": {
     "en": "13a30320263f9d87",

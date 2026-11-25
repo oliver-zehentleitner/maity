@@ -647,7 +647,10 @@ def _leave_projects(conn: Connection, human_id: str) -> None:
 
 def _forget_confirmations(conn: Connection, human_id: str) -> None:
     """The repositories it confirmed are not confirmed any more: their grants end with the
-    account (§11.4); another owner of the organisation confirms again."""
+    account (§11.4); another owner of the organisation confirms again. Nothing read with those
+    grants is answered after the deletion: each project's reads are forgotten, now and again
+    after the commit (`wakeups.forget_repository_everywhere`). These are every project the
+    account's grants served, as a grant counts only for the human who confirmed."""
     for project_id in _ids(
         conn,
         select(t.project.c.id)
@@ -660,6 +663,7 @@ def _forget_confirmations(conn: Connection, human_id: str) -> None:
             .where(t.project.c.id == project_id, t.project.c.repository_confirmed_by == human_id)
             .values(repository_owner_confirmed=False, repository_confirmed_by=None)
         )
+        wakeups.forget_repository_everywhere(conn, project_id)
 
 
 def _end_access(conn: Connection, hub: Settings, human_id: str) -> None:

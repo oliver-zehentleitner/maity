@@ -12,14 +12,14 @@ from typing import Any
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse, Response
 
-from maity_hub import access, clock, forge, ktw, ktw_reads
+from maity_hub import access, clock, errors, forge, forge_access, ktw, ktw_reads
+from maity_hub.auth.caller import Caller
 from maity_hub.deps import AnyCaller, engine_of, reader_of, settings_of
 from maity_hub.errors import (
     ApiError,
     ktw_not_configured,
     ktw_unavailable,
     not_found,
-    probe_not_configured,
 )
 from maity_hub.namespace import ProjectRoute
 
@@ -81,6 +81,58 @@ def _outside_reader(request: Request, project: Any, max_age: int) -> forge.Forge
     return reader
 
 
+def _org_link_serves(
+    base: forge.Forge, project: Any, mine: access.Membership | access.OutsideReader, caller: Caller
+) -> forge.Forge:
+    """§11.3 asks on every call, as §11.5 does, whether the project's source still covers its
+    repository where a link on a forge organisation is involved (§11.4): a cached export never
+    outlives that link's last successful owner check. A link that serves nothing, with no other
+    source covering the repository, is answered by reader as §11.5 answers it, with no
+    `details.last`; so is a choice that had no answer for owner grants holding such a link, and
+    a visibility the operator's token cannot read after such a link (`ktw_unavailable`,
+    `forge_unavailable`, as §11.5 answers a forge that does not answer). Every other state is
+    served as before, from the cache. The reader chosen here is the one the cache reads with,
+    so the call chooses once.
+
+    Where the grants hold such a link (`org_grants`) but the choice did not reach it — the
+    forge no longer names its installation for the repository, or it was unlinked or replaced
+    meanwhile on another replica — a refusal is answered by reader too, and the operator's
+    token is asked first as above, never the cache (review A2573 F2, A2574 P2-2)."""
+    if forge.kind_of(project.repository_url) != "github":
+        return base
+    fg = base.for_project(project.id)
+    if fg.token is None and fg.refused is None and fg.owner_reason in errors.ORG_REASONS:
+        # The choice itself had no answer (`ForgeAccess.reader`): whether such a link covers
+        # the repository is unknown, and an export it read must not be answered meanwhile.
+        raise ktw_unavailable("forge_unavailable")
+    reason = fg.refused
+    org = fg.owner_reason in errors.ORG_REASONS or fg.org_grants
+    if reason is not None and fg.org_grants:
+        confirmer = forge_access.is_confirmer(caller, project)
+        admin = mine.may("project:admin")
+        raise errors.forge_refusal(reason, admin=admin, confirmer=confirmer, views=True)
+    if reason is None and fg.granted is None and org:
+        try:  # the operator's token after such a link: only while the repository is public
+            fg.require_covered(forge.repository_of(project.repository_url))
+        except forge.NotCoveredError as error:
+            # Any refusal, `repository_moved` included, which keeps its own reason: by reader,
+            # never the cache (review A2574 P2-2).
+            confirmer = forge_access.is_confirmer(caller, project)
+            admin = mine.may("project:admin")
+            raise errors.forge_refusal(
+                error.reason, admin=admin, confirmer=confirmer, views=True
+            ) from None
+        except forge.ForgeUnavailableError as error:
+            if error.retry_at is not None:
+                raise _spent(error.retry_at) from None
+            raise ktw_unavailable("forge_unavailable") from None
+    if reason in errors.ORG_REASONS:
+        confirmer = forge_access.is_confirmer(caller, project)
+        admin = mine.may("project:admin")
+        raise errors.forge_refusal(reason, admin=admin, confirmer=confirmer, views=True)
+    return fg
+
+
 @router.get("/projects/{owner}/{slug}/keep-the-why")
 @access.outside_read
 def read_keep_the_why(
@@ -98,6 +150,8 @@ def read_keep_the_why(
     reader, cache = reader_of(request), ktw.CACHE
     if outside:  # never the members' cache, which a grant may fill
         reader, cache = _outside_reader(request, project, max_age), ktw_reads.OUTSIDE_CACHE
+    else:
+        reader = _org_link_serves(reader, project, mine, caller)
     try:
         entry, fresh = cache.get(reader, project.id, project.repository_url, max_age)
     except ktw.Busy:
@@ -147,6 +201,7 @@ def _views_read(
     canonical: str | None,
     root: str | None,
     max_age: int,
+    caller: Caller,
 ) -> Response:
     """One of §11.5's reads, for the reader its endpoint read (`access.reader`). The caller is
     authorized before `If-None-Match` is compared, so one without `project:read`, or an
@@ -208,7 +263,10 @@ def _views_read(
             max_age,
         )
     except forge.NotCoveredError as error:
-        raise probe_not_configured(error.reason if admin else None) from None
+        confirmer = forge_access.is_confirmer(caller, project)
+        raise errors.forge_refusal(
+            error.reason, admin=admin, confirmer=confirmer, views=True
+        ) from None
     except forge.ForgeUnavailableError as error:
         if error.retry_at is None:
             raise ktw_unavailable("forge_unavailable") from None
@@ -235,7 +293,7 @@ def read_keep_the_why_export(
 ) -> Response:
     with engine_of(request).begin() as conn:
         mine = access.reader(conn, caller, slug)
-    return _views_read("state", mine, request, canonical, root, max_age)
+    return _views_read("state", mine, request, canonical, root, max_age, caller)
 
 
 @router.get("/projects/{owner}/{slug}/keep-the-why/bodies")
@@ -250,4 +308,4 @@ def read_keep_the_why_bodies(
 ) -> Response:
     with engine_of(request).begin() as conn:
         mine = access.reader(conn, caller, slug)
-    return _views_read("bodies", mine, request, canonical, root, max_age)
+    return _views_read("bodies", mine, request, canonical, root, max_age, caller)

@@ -59,7 +59,7 @@ each member's last good export.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** card tsk-7865c6c2gszb (the hub's in-process structures without a bound), the lead's ruling, 2026-10-29; the reviews of #672 (the windows of a lock in use, a read without the lock; `forget` keeping an old repository's reads); `hub/src/maity_hub/bounded.py`; `hub/tests/test_bounded.py`
+**Source:** card tsk-7865c6c2gszb (the hub's in-process structures without a bound), the lead's ruling, 2026-10-29; the reviews of #672 (the windows of a lock in use, a read without the lock; `forget` keeping an old repository's reads); `hub/src/maity_hub/bounded.py`; `hub/tests/test_bounded.py`; the generation per project from the reviews A2585 P2-2 and A2586 of #2192 (card tsk-2m5jbwemb21x) and the lead's go (seqs 216757, 217024), 2026-11-24, `hub/tests/test_forge_org_links.py`
 **Revisit when:** the load test (tsk-ryas52q9k53z) or prod's memory curve shows a bound too small (projects read anew too often) or too large; or projects can be deleted for good, so that their entries could go at once
 
 The hub keeps several caches per project in the process. Each gained a
@@ -98,6 +98,75 @@ What a dropped key held is read or computed again on its next use. For
   that a read still running writes after `forget` is never used for
   another repository. Only the project's lock stays while it is in use.
   Dropping for room spares a project in use entirely.
+- **A read that outlives a forget keeps nothing.** `forget` runs for more
+  than a changed URL: an unlinked or replaced link on a forge
+  organisation forgets too, and the read under way at that moment may
+  have been made through that link. Each `forget` of a project in use
+  counts up that project's generation (`Refresh.forgotten`, dropped with
+  its last user), and `forget_all` a cache-wide one; a read notes both
+  when `Cache.get` starts it, which is after §11.3 and §11.5 chose their
+  source with `for_project`, and keeps its entry, a member's last good
+  read or the mark that it read only while both are unchanged. A change
+  that commits between that choice and `Cache.get` leaves the
+  generation as it is; what covers it is `still_serves`, asked once the
+  read is done (next bullet).
+  Otherwise its own request gets it, as it was made for that request,
+  and no later one does (review A2585 P2-2, A2586). The same holds for
+  a read whose link no longer serves once it is done (`still_serves`):
+  its `forge_unavailable` entry is marked `keep=False`, so the next
+  request chooses its source again instead of meeting that error
+  (review A2592). Rejected: asking
+  the stored link before every cached answer (one database read per
+  project in a list, and an unlinked link leaves no row to ask);
+  shortening `until` (it only narrows the window); and taking the
+  project's lock in `forget` (an unlink would wait for a family read).
+- **A forget runs twice: in the writing transaction and after its
+  commit.** `wakeups.forget_repository_everywhere` forgets at once and
+  again through `events.on_commit`, on every engine (on PostgreSQL the
+  pod's own notice forgets after the commit as well); so does
+  `forget_token_everywhere` for a token. A read that starts between the
+  first forget and the commit would otherwise keep its entry (review
+  A2591 P2-3, A2592). The writers that forget open their transaction with
+  `events.transaction`: the unlink, the link and its replacement
+  (`routes/forge_links`), the owner check's result
+  (`forge_links.refresh`), and a status a mint or a listing found
+  (`forge_access`, `routes/forge_links`). The writers that end the
+  grants without touching a link forget the same way, per project they
+  change: a move to another namespace owner (`project_names.move_to`,
+  on the transfer and on its request's `go`), an organisation owner who
+  confirmed the repository and stops being one
+  (`org_projects.forget_confirmation`), an account deletion
+  (`account_deletion._forget_confirmations`, which covers every project
+  the account's grants served, as a grant counts only for the human
+  who confirmed), a confirmation replaced by another owner of the
+  organisation (`routes/projects.confirm_repository`, before its reply,
+  which shows the project; review A2606 P2-1), and a confirmation
+  cleared by a change of the repository's URL (the project's `PATCH`).
+  Each runs in an `events.transaction` already. A replaced confirmation
+  must forget there and then: the forgets that follow the replaced
+  owner's link look for projects by `repository_confirmed_by`, which no
+  longer names them.
+  Such a writer leaves the link serving, so a request that chose the
+  link before the change and reaches `Cache.get` after its commit would
+  find the generation unchanged. `still_serves` therefore reads the
+  project's row too: two plain statements on one connection, the link's
+  and the project's, with no lock. The project must still be
+  confirmed, still carry the URL the choice read, and its grants
+  (`forge_access.grants_of`, the rule `_facts` uses) must still be the
+  link human's. A read that fails it keeps nothing (review A2595 P2-1).
+  Under READ COMMITTED the two statements may see different moments.
+  That is enough: each change they look for only ends grants, so a
+  change either commits before the statement that reads its row and is
+  seen, or commits later and its after-commit forget catches the read. Each clause has a
+  case that only it catches (review A2605 P3-2).
+  The second forget is registered only inside an `events.transaction`,
+  and a forget on a plain `engine.begin()` raises instead of running
+  only before the commit (review A2595 P3-1). Rejected: noting the
+  generation only at `Cache.get` (a change between the choice and the
+  read leaves it unchanged); a generation kept in the database (one
+  more query per §11.3 call); and SQLAlchemy's `commit` event, which
+  fires before the database has committed, so a step run there could
+  forget before the change is visible.
 - **Lock order.** In `ktw`, a project's lock first, then `guard`, never
   the other way round: under `guard` no project lock is taken, only
   looked up. In `images`, the gate first, then `_guard`; the gate is

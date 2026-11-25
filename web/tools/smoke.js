@@ -10967,7 +10967,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     const jfRecipients = () => text(jfBlock("jfs-0001").querySelector(".jf-recipients"));
     jfCalls.length = 0;
     expect(jfPart("hum-maintainer") && jfPart("agt-b") && !jfPart("hum-nobody") && text(jfPart("hum-maintainer")).includes("taking part") && !jfBlock("jfs-0002").querySelector("li.jf-part[data-member=\"hum-x\"]")
-      && jfRecipients() === "Also on the report list: Agent A", "jour fixe: the caller's part in a series, their agents' and, for a keeper, the report list");
+      && jfRecipients() === "On the report list: Agent A", "jour fixe: the caller's part in a series, their agents' and, for a keeper, the report list");
     await jfPress("hum-maintainer", ".jf-optout");
     expect(jfCalls.length === 1 && jfCalls[0][0] === "PUT" && jfCalls[0][1] === "/jfs-0001/opt-out" && text(jfPart("hum-maintainer")).includes("opted out")
       && text(jfPart("hum-maintainer")).includes("Take part again") && text(jfPart("agt-b")).includes("taking part"), "jour fixe: opted out of a series");
@@ -10984,7 +10984,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     await jfPress("agt-c", ".jf-report-toggle");
     expect(jfCalls[5][1] === "/jfs-0001/report?member=agt-c" && jfRecipients().includes("Agent C"), "jour fixe: an owner puts an agent of theirs on the report list");
     await jfPress("agt-c", ".jf-report-toggle"); await jfPress("hum-maintainer", ".jf-report-toggle");
-    expect(jfCalls[6][0] === "DELETE" && jfCalls[7][0] === "DELETE" && jfRecipients() === "Also on the report list: Agent A" && !text(jfPart("hum-maintainer")).includes("gets the report"),
+    expect(jfCalls[6][0] === "DELETE" && jfCalls[7][0] === "DELETE" && jfRecipients() === "On the report list: Agent A" && !text(jfPart("hum-maintainer")).includes("gets the report"),
       "jour fixe: taken off the report list again");
     // An agent of another owner is not the caller's to switch: the hub refuses, the refusal is said.
     expect(!jfPart("agt-s2") && (await win.Maity.api.put("/projects/maintainer/sample/jour-fixe/series/jfs-s1/opt-out?member=agt-s2").catch((err) => err.code)) === "forbidden",
@@ -11027,6 +11027,13 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     byId("jfa-anonymous").checked = true; byId("jfa-anonymous").dispatch("change");
     expect(!byId("jfa-limits").hidden && text(byId("jfa-limits")).includes("Small rounds"), "jour fixe answer: answering anonymously shows what anonymity does not cover, first");
     byId("jfa-went_well").value = "The board is clear.";
+    // The hub's too_long on an answer names the answer's limits (A2568).
+    const raPost0 = win.Maity.api.post;
+    win.Maity.api.post = (p) => Promise.reject(new win.Maity.api.ApiError("x", 400, p, "invalid", { fields: { went_well: "too_long" } }));
+    raForm().dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+    const raTooLong = text(main);
+    win.Maity.api.post = raPost0;
+    expect(raTooLong.includes("at most 4 KiB each, 12 KiB together"), "jour fixe answer: the hub's too_long names the answer's limits");
     raForm().dispatch("submit"); for (let k = 0; k < 10; k++) await tick();
     expect(JSON.stringify(raLast()) === JSON.stringify([opened.id + "/answers", { anonymous: true, went_well: "The board is clear." }])
       && text(main).includes("Your anonymous answer") && text(main).includes("The board is clear.") && !raForm(),
@@ -11059,6 +11066,14 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     await go("#/maintainer/sample/jour-fixe/jfx-s2"); for (let k = 0; k < 8; k++) await tick();
     const raPostForm = () => main.querySelector("form.jfa-post-form");
     byId("jfa-post-t1").value = "A second reviewer would help."; byId("jfa-post-t1-to-agt-s1").checked = true;
+    // A post has limits of its own: the hub's too_long there says only that, not the answer's 4 and 12 KiB (A2568).
+    const raPost1 = win.Maity.api.post;
+    win.Maity.api.post = (p) => Promise.reject(new win.Maity.api.ApiError("x", 400, p, "invalid", { fields: { body: "too_long" } }));
+    raPostForm().dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+    const raPostTooLong = text(main);
+    win.Maity.api.post = raPost1;
+    expect(raPostTooLong.includes("too long for the hub's size limit") && !raPostTooLong.includes("12 KiB together"),
+      "jour fixe post: the hub's too_long says the post is too long, without the answer's limits");
     raPostForm().dispatch("submit"); for (let k = 0; k < 10; k++) await tick();
     expect(JSON.stringify(raLast()) === JSON.stringify(["jfx-s2/posts", { step: "response", topic_id: "t1", body: "A second reviewer would help.", to: ["agt-s1"] }])
       && !raPostForm() && text(main).includes("You posted on “Reviews wait” in this step."), "jour fixe post: once per topic in the open step, addressed; then said as done");

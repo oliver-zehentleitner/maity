@@ -100,6 +100,7 @@
   "notify.asks_you": "{who} vraagt je: {title}",
   "notify.chat": "{who} in {chat}",
   "notify.forge_added": "Forge-toegang toegevoegd: {login} ({source})",
+  "notify.forge_not_admin": "Forge-toegang gestopt: geen eigenaar meer van {login}",
   "notify.jf_no_moderator": "Vast overleg overgeslagen, niemand om te modereren: {topic}",
   "notify.jf_reported": "Rapport van vast overleg: {topic}",
   "notify.mail_disabled": "E-mail naar {address} uitgeschakeld na 3 mislukte pogingen",
