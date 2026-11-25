@@ -2322,11 +2322,12 @@ unknown key anywhere in it, named by its path (`landing.enabeld`,
 values of the wrong kind, refuse their part (the hub's preview names
 the field). The landing part carries the page's `variants` and
 `campaigns` too, as the landing editor's import does; a file that leaves
-them out keeps the saved ones. **Export** reads the five settings
-(landing, legal, registration, site values, sign-in and sign-up pages)
-again first (copy, or **Download as a file**), so an edit saved in
-another section since the page opened is in the file; registration is
-left out when the environment sets every field. It stands folded at the top
+them out keeps the saved ones. **Export** reads the five settings again
+first (copy, or **Download as a file**) and writes the landing, legal,
+sign-in and sign-up pages and registration, so an edit saved there since
+the page opened is in the file; the site values are not part of the file,
+and registration is left out when the environment (or, for the terms,
+the legal pages) sets every field. It stands folded at the top
 of the **Pages** tab, and `/admin/pages/site` opens it.
 **Check the file** checks each part with the call its section uses (the
 landing page's and each legal page's preview, the sign-in and sign-up
