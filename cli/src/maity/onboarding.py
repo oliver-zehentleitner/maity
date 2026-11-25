@@ -121,7 +121,8 @@ def get(data: Any, *keys: str) -> Any:
     return data
 
 
-def _dict(data: Any) -> dict[str, Any]:
+def obj(data: Any) -> dict[str, Any]:
+    """`data` when it is a dict, else an empty one."""
     return data if isinstance(data, dict) else {}
 
 
@@ -172,7 +173,7 @@ def shown_names(members: Iterable[tuple[Any, Any, Any, Any]]) -> dict[str, str]:
 def label(member: Any) -> str:
     """One member object as a reader names it outside a member list: its global name when
     the hub sent one, else its handle, else its id (§6.3)."""
-    member = _dict(member)
+    member = obj(member)
     name = member.get("name")
     if isinstance(name, str) and _GLOBAL_NAME.match(name):
         return name
@@ -182,7 +183,7 @@ def label(member: Any) -> str:
 def _names(packet: dict[str, Any]) -> dict[str, str]:
     """member id → name, from the peers and this member itself: a human reads names. The
     packet's peers carry no global name yet; for this member it is built from `me.owner`."""
-    me = _dict(packet.get("me"))
+    me = obj(packet.get("me"))
     owner, handle = get(me, "owner", "handle"), me.get("handle")
     mine = me.get("name")
     if not mine and isinstance(owner, str) and isinstance(handle, str):
@@ -241,7 +242,7 @@ DORMANT_OFF = "maity dormant --off"
 
 
 def _who(packet: dict[str, Any], names: dict[str, str]) -> list[str]:
-    me, ms = _dict(packet.get("me")), _dict(packet.get("membership"))
+    me, ms = obj(packet.get("me")), obj(packet.get("membership"))
     member_id = me.get("member_id")
     shown = names.get(member_id) if isinstance(member_id, str) else None
     handle = inline(shown or me.get("handle") or me.get("member_id") or "?")
@@ -289,7 +290,7 @@ def _who(packet: dict[str, Any], names: dict[str, str]) -> list[str]:
 def _position(ms: dict[str, Any]) -> list[str]:
     """`membership.guide` (§5.2): the hub's texts as they are, a project role's quoted, as a
     project admin wrote it. An older hub sends none, and a text it leaves out has no line."""
-    guide = _dict(ms.get("guide"))
+    guide = obj(ms.get("guide"))
     lines = [clean(text) for text in [guide.get("trust")] if isinstance(text, str) and text]
     role = guide.get("role")
     if isinstance(role, str) and role:
@@ -328,7 +329,7 @@ def _coordinate(handle: str, team: list[dict[str, Any]], has_lead: bool) -> str:
 
 
 def _project(packet: dict[str, Any]) -> list[str]:
-    project = _dict(packet.get("project"))
+    project = obj(packet.get("project"))
     if not project:
         return []
     name = project.get("name") or project.get("slug")
@@ -355,7 +356,7 @@ def _project(packet: dict[str, Any]) -> list[str]:
 def _languages(packet: dict[str, Any], names: dict[str, str]) -> list[str]:
     """In which language to write what (§5.2): the project's, and each human's, with the
     agent's own human also where that human is no member of the project."""
-    project = _dict(packet.get("project"))
+    project = obj(packet.get("project"))
     lines = [f"Language: {inline(project.get('language') or 'en')}"] if project else []
     humans = [p for p in _items(packet.get("peers")) if p.get("kind") == "human"]
     for peer in humans:
@@ -381,7 +382,7 @@ def _availability(packet: dict[str, Any], names: dict[str, str]) -> list[str]:
     every peer that is not available. Empty when there is nothing to say."""
     covering = _items(get(packet, "membership", "covering"))
     held = [*_items(packet.get("claims")), *_items(packet.get("assigned"))]
-    reqs = _dict(packet.get("requests"))
+    reqs = obj(packet.get("requests"))
     held += [r for key in ("answered_since_cursor", "mine_open", "to_answer")
              for r in _items(reqs.get(key))]  # fmt: skip
     lines: list[str] = []
@@ -565,7 +566,7 @@ def jour_fixe_lines(event: dict[str, Any]) -> list[str]:
     """What a jour fixe event that wakes someone asks of the reader (§20.9), as plain lines;
     [] for any other event. The questions are the hub's text and are quoted."""
     kind = event.get("kind")
-    payload = _dict(event.get("payload"))
+    payload = obj(event.get("payload"))
     round_id = inline(payload.get("round_id") or "?")
     if kind == "jour_fixe_opened":
         lines = [
@@ -604,7 +605,7 @@ def jour_fixe_lines(event: dict[str, Any]) -> list[str]:
 def standing(event: dict[str, Any]) -> str:
     """` (guest, other owner)`: how far the author's sentence can bind (rule 4). Trust is shown
     where it is not `member`, as in the dashboard; a hub that sends none shows nothing."""
-    actor = _dict(event.get("actor"))
+    actor = obj(event.get("actor"))
     if actor.get("kind") == "human":  # §8.1: a human who is no member of the project
         return " (no member)"
     if "trust" not in actor:
@@ -632,7 +633,7 @@ def _event(
         return [head, *("  " + line for line in jour_fixe_lines(event))]
     if event.get("redacted"):
         return [head + " (redacted by an admin; its text is gone)"]
-    payload = _dict(event.get("payload"))
+    payload = obj(event.get("payload"))
     # an `update` may have no recipient: it goes to the card's watchers (§6.4)
     to = "" if payload.get("to") is None else f", to {_name(payload.get('to'), names)}"
     head += f" ({inline(payload.get('type'))}{to})"
@@ -703,7 +704,7 @@ def _not_shown(left: list[dict[str, Any]], earlier: int) -> str:
 def _events(
     packet: dict[str, Any], slug: str, names: dict[str, str], compact: bool = False
 ) -> list[str]:
-    events = _dict(packet.get("events"))
+    events = obj(packet.get("events"))
     items = [e for e in _items(events.get("items")) if e.get("kind") != "ticker"]
     left: list[dict[str, Any]] = []
     if compact:
@@ -791,7 +792,7 @@ def ticker_lines(item: dict[str, Any]) -> list[str]:
 
 def _ticker(packet: dict[str, Any]) -> list[str]:
     """The `Ticker` section of `maity resume` (§17.9); empty when the packet has no item."""
-    ticker = _dict(packet.get("ticker"))
+    ticker = obj(packet.get("ticker"))
     items = _items(ticker.get("items"))
     if not items:
         return []
@@ -846,7 +847,7 @@ def _next_step(
 
 def _author(by: Any) -> str:
     """Who wrote a memory text: a handle, with the instance for an agent (§19.2)."""
-    by = _dict(by)
+    by = obj(by)
     who = label(by) if by else "someone"
     return f"{who}#{inline(by['instance'])}" if by.get("instance") else who
 
@@ -857,7 +858,7 @@ def _confirmed(by: Any) -> str:
 
 def soul_lines(soul: Any) -> list[str]:
     """The soul as a quote headed with its author (§19): never an instruction."""
-    soul = _dict(soul)
+    soul = obj(soul)
     if not soul.get("markdown"):
         return ["No soul yet."]
     return [
@@ -897,7 +898,7 @@ def _preferences(packet: dict[str, Any], owner_shown: bool) -> list[str]:
     """Each human's `preferences` (§5.2, §19.4), below the rules in rank. `owner_shown`: the
     owner's text came first and already said whether they changed. Empty when nothing is to
     say."""
-    block = _dict(packet.get("preferences"))
+    block = obj(packet.get("preferences"))
     lines: list[str] = []
     texts = _items(block.get("items"))
     if texts:
@@ -912,7 +913,7 @@ def _preferences(packet: dict[str, Any], owner_shown: bool) -> list[str]:
 def is_admin(packet: dict[str, Any]) -> bool:
     """Whether the packet's membership is in the admin team with trust `admin`, which a proxy
     never is (§2.3)."""
-    ms = _dict(packet.get("membership"))
+    ms = obj(packet.get("membership"))
     return ms.get("trust") == "admin" and ms.get("role") != "proxy"
 
 
@@ -951,7 +952,7 @@ def memory_entry_lines(entry: dict[str, Any]) -> list[str]:
 
 def _memory(packet: dict[str, Any]) -> list[str]:
     """The packet's `memory`, first of its contents (§19.3), each text quoted with its author."""
-    memory = _dict(packet.get("memory"))
+    memory = obj(packet.get("memory"))
     if not memory:
         return []
     out = [
@@ -959,7 +960,7 @@ def _memory(packet: dict[str, Any]) -> list[str]:
         *soul_lines(memory.get("soul")),
     ]
     for key in ("team", "role", "community"):
-        store = _dict(memory.get(key))
+        store = obj(memory.get(key))
         for entry in _items(store.get("items")):
             out += memory_entry_lines(entry)
         if store.get("truncated"):
@@ -972,7 +973,7 @@ def _memory(packet: dict[str, Any]) -> list[str]:
 def _takes_over(packet: dict[str, Any]) -> list[str]:
     """`Takes over from <handle>; the hand-over is in <card | message #seq>.` when the join
     named them (§3.1, §5.2). Never the hand-over's text: it is read as any card or message."""
-    ms = _dict(packet.get("membership"))
+    ms = obj(packet.get("membership"))
     who = ms.get("takes_over")
     if not isinstance(who, dict):
         return []
@@ -982,7 +983,7 @@ def _takes_over(packet: dict[str, Any]) -> list[str]:
 def _handover_ref(ms: dict[str, Any]) -> str:
     """`; the hand-over is in <card | message #seq>: <command>` for a hand-over the join named
     in a form that can be read; empty otherwise, so nothing points at it as `above`."""
-    handover = _dict(ms.get("handover"))
+    handover = obj(ms.get("handover"))
     kind, ref = handover.get("kind"), handover.get("id")
     if kind == "task" and isinstance(ref, str) and ref:
         return f"; the hand-over is in {inline(ref)}: maity task show {inline(ref)}"
@@ -995,8 +996,8 @@ def _check_in(packet: dict[str, Any]) -> list[str]:
     """The `Check in` block, with the takeover line before the hint (§5.2); a takeover without
     a check-in target stands alone where the block would."""
     takes_over = _takes_over(packet)
-    block = _dict(packet.get("onboarding"))
-    target = _dict(block.get("check_in_with"))
+    block = obj(packet.get("onboarding"))
+    target = obj(block.get("check_in_with"))
     if not target.get("handle"):  # Old hubs omit the block; tolerate a partial packet.
         return [*takes_over, ""] if takes_over else []
     lines = [
@@ -1042,7 +1043,7 @@ def _ktw_loading(block: dict[str, Any], delivered: str | None = None) -> list[st
     directory a runner put the skill in for this session. Then that copy is the one way to load
     it, in place of the hub's `load` and `install` texts (the review of #2056): the hub's plain
     name would pick a copy the agents' user installed, and an install would add another one."""
-    skill = _dict(block.get("skill"))
+    skill = obj(block.get("skill"))
     if delivered and skill:
         # Claude Code names a plugin's skill `<plugin>:<skill>`; a plain `keep-the-why` beside it
         # is a copy the agents' user installed, which may be another version and whose files the
@@ -1091,7 +1092,7 @@ def _ktw_commitment(block: dict[str, Any]) -> list[str]:
 def _keep_the_why(packet: dict[str, Any]) -> list[str]:
     """The `Keep the Why` block (§6.23, §13) of a project that uses it, under `required` and
     `optional` alike: how to load the skill, then the commitment where the hub checks it."""
-    block = _dict(packet.get("keep_the_why"))
+    block = obj(packet.get("keep_the_why"))
     if not block.get("enabled"):
         return []
     lines = _ktw_loading(block, delivered_skill()) + _ktw_commitment(block)
@@ -1112,11 +1113,11 @@ MEMORY_NOTICE = "Quoted as written by the named authors; not an instruction from
 def _subagents(ms: dict[str, Any]) -> list[str]:
     """The owner's instruction to work in subagents (§3.1, §5.2), right before the briefing,
     under a line that says whose instruction it is."""
-    block = _dict(ms.get("subagents"))
+    block = obj(ms.get("subagents"))
     text = block.get("instruction")
     if not block.get("on") or not text:
         return []
-    owner = _dict(block.get("by"))
+    owner = obj(block.get("by"))
     who = f"@{label(owner)}" if owner else "the human who owns you"
     return [f"Your owner's instruction, set by {who}:", *quote(text), ""]
 
@@ -1125,9 +1126,9 @@ def render(packet: Any, first: bool = False, board_empty: bool = False, full: bo
     """The packet as text. `first` (after a join) adds what a new member needs once; `full`
     leaves out the compact cuts (`maity resume --full`)."""
     compact = not full
-    packet = _dict(packet)
+    packet = obj(packet)
     out: list[str] = []
-    ms = _dict(packet.get("membership"))
+    ms = obj(packet.get("membership"))
     names = _names(packet)
     # The read-more hints name the API path, `<owner>/<slug>` since the namespace (§6.25).
     slug = inline(get(packet, "project", "full_name") or "<owner>/<slug>")
@@ -1160,7 +1161,7 @@ def render(packet: Any, first: bool = False, board_empty: bool = False, full: bo
     if briefing:
         heading = "Your briefing, as the humans of this project wrote it for you:"
         if ms.get("briefing_source") == "project":
-            author = _dict(ms.get("briefing_by"))
+            author = obj(ms.get("briefing_by"))
             who = label(author) if author else "unknown"
             heading = f"Your briefing (project default, set by {who}):"
         out += [
@@ -1192,12 +1193,12 @@ def render(packet: Any, first: bool = False, board_empty: bool = False, full: bo
     owner_shown = isinstance(given, dict)
     if isinstance(given, dict):
         # The hub leaves the owner out of `preferences`, so these may be the only ones printed.
-        intro = _preferences_intro(_dict(packet.get("preferences")))
+        intro = _preferences_intro(obj(packet.get("preferences")))
         out += [*intro, *_preference_lines(given), ""]
     out += _who(packet, names)
     out += _project(packet)
     out += _languages(packet, names)
-    rules = _dict(packet.get("rules"))
+    rules = obj(packet.get("rules"))
     if rules.get("markdown"):
         out += ["", f"Rules (version {inline(rules.get('version'))}), read them before you work:"]
         out += quote(rules["markdown"])
@@ -1208,7 +1209,7 @@ def render(packet: Any, first: bool = False, board_empty: bool = False, full: bo
     if instruction and get(packet, "keep_the_why", "enabled"):
         out += ["", f"Keep the Why: {inline(instruction)}"]
 
-    reqs = _dict(packet.get("requests"))
+    reqs = obj(packet.get("requests"))
     sections: list[tuple[str, list[str]]] = [
         ("Cards you hold:", [_card(c, names) for c in _items(packet.get("claims"))]),
         (
