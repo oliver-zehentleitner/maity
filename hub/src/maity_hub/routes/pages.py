@@ -208,8 +208,10 @@ def explore(
     settings = settings_of(request)
     # Read before the transactions below: the window has a connection of its own.
     window = maintenance.window_now(engine_of(request))
-    if as_ != "public":
+    if as_ != "public" and request.cookies.get(auth_caller.SESSION_COOKIE):
         # Before the page's rate limit: the shell is not the page and spends none of its bucket.
+        # Only with a session cookie: a visitor without one takes no pool connection before the
+        # maintenance page or the 429, which the pool may be too busy to give.
         with engine_of(request).begin() as conn:
             signed_in = auth_caller.has_live_session(conn, request.cookies)
         if signed_in:

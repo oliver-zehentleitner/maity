@@ -459,6 +459,38 @@ def test_public_explore_spends_the_page_bucket(world: World, monkeypatch: Any) -
     assert world.anyone.get(EXPLORE).status_code == 429
 
 
+def test_the_shell_at_explore_spends_none_of_the_page_bucket(
+    world: World, monkeypatch: Any
+) -> None:
+    """#2227's review (4nuu): the session is checked before the page's rate limit, so a signed-in
+    human gets the shell with the bucket empty; a visitor and `?as=public` get the 429."""
+    monkeypatch.setattr(public_pages.BY_ADDRESS, "hit", lambda _: 7)
+    shell = world.owner.client.get("/explore")
+    assert shell.status_code == 200 and "<title>dashboard</title>" in shell.text
+    assert world.anyone.get("/explore").status_code == 429
+    assert world.owner.client.get("/explore", params={"as": "public"}).status_code == 429
+
+
+def test_a_visitor_at_explore_takes_no_connection_before_the_429(
+    world: World, monkeypatch: Any
+) -> None:
+    """#2227's review (4nuu): without a session cookie, `/explore` asks no session of the database,
+    so a rate-limited visitor gets the 429 without a pooled connection."""
+    assert world.anyone.get("/explore").status_code == 200  # the window is read and kept
+    engine = world.anyone.app.state.engine  # type: ignore[attr-defined]
+    begun: list[int] = []
+    begin = engine.begin
+
+    def counted() -> Any:
+        begun.append(1)
+        return begin()
+
+    monkeypatch.setattr(engine, "begin", counted)
+    monkeypatch.setattr(public_pages.BY_ADDRESS, "hit", lambda _: 7)
+    assert world.anyone.get("/explore").status_code == 429
+    assert begun == []
+
+
 def test_a_monogram_is_the_names_first_letter() -> None:
     assert public_projects.monogram("a/web", "maity web") == "M"
     assert public_projects.monogram("a/web", "2 · ünd") == "Ü"
