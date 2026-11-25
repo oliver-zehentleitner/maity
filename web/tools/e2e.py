@@ -4027,8 +4027,13 @@ SEND_IN_VIEW = """() => {
   const r = send.getBoundingClientRect(), vh = window.visualViewport ? window.visualViewport.height : window.innerHeight;
   const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
   const a = attach ? attach.getBoundingClientRect() : null;
+  // Each part's height, for a failure to name what took the room.
+  const tall = (el) => Array.from(el ? el.children : []).filter((c) => c.getClientRects().length)
+    .map((c) => (c.tagName.toLowerCase() + "." + String(c.className || "").split(" ")[0]) + ":" + Math.round(c.getBoundingClientRect().height));
+  const pane = send.closest('.chat-pane');
   return { send: { top: r.top, bottom: r.bottom, height: r.height }, vh, covered: !(hit && (hit === send || send.contains(hit))),
-           sameRow: a ? Math.abs((a.top + a.bottom) / 2 - (r.top + r.bottom) / 2) <= Math.max(a.height, r.height) / 2 : null };
+           sameRow: a ? Math.abs((a.top + a.bottom) / 2 - (r.top + r.bottom) / 2) <= Math.max(a.height, r.height) / 2 : null,
+           parts: { pane: tall(pane), compose: tall(send.closest('.compose')) } };
 }"""
 
 
@@ -4041,7 +4046,9 @@ def chat_keyboard_send(run: Run, browser) -> None:
     - Full screen (the reported case), at 390 x 400 and 390 x 300: the pane is sized from the visual
       viewport (js/chat.js fullScreen). Headless Chromium shrinks the layout and the visual viewport
       together here, which the old 100dvh would follow as well; full_over_keyboard shrinks the visual
-      one only, as an Android keyboard does, and fails with the old sizing.
+      one only, as an Android keyboard does, and fails with the old sizing. At 390 x 300 the heading
+      and the composer at its rows need more than the window: the history gives up all its room, then
+      the field down to one line (css/app.css, full screen). A failure lists each part's height.
     - The chat in the page, at 390 x 400 only. At 390 x 300 the page's sticky header (about 200 px on a
       phone) leaves the composer no room below it, and a header that scrolls away is a layout change
       beyond this card."""
@@ -4102,7 +4109,10 @@ FULL_IN_VV = """() => {
   if (!pane || !send) return { pane: !!pane, send: null };
   const p = pane.getBoundingClientRect(), r = send.getBoundingClientRect(), a = attach ? attach.getBoundingClientRect() : null;
   const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
-  return { pane: { top: p.top, height: p.height }, send: { top: r.top, bottom: r.bottom, height: r.height },
+  const tall = (el) => Array.from(el ? el.children : []).filter((c) => c.getClientRects().length)
+    .map((c) => (c.tagName.toLowerCase() + "." + String(c.className || "").split(" ")[0]) + ":" + Math.round(c.getBoundingClientRect().height));
+  return { parts: { pane: tall(pane), compose: tall(send.closest('.compose')) },
+           pane: { top: p.top, height: p.height }, send: { top: r.top, bottom: r.bottom, height: r.height },
            vv: { top: window.visualViewport.offsetTop, height: window.visualViewport.height }, inner: window.innerHeight,
            covered: !(hit && (hit === send || send.contains(hit))),
            sameRow: a ? Math.abs((a.top + a.bottom) / 2 - (r.top + r.bottom) / 2) <= Math.max(a.height, r.height) / 2 : null };

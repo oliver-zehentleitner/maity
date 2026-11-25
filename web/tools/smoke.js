@@ -6056,6 +6056,10 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     // without them, the whole window.
     expect(fsCss.includes("html.chat-full .chat-pane.chat-full-pane { --chat-full-top: 0px; --chat-full-h: 100dvh; position: fixed; inset: auto 0; top: var(--chat-full-top); height: var(--chat-full-h); min-height: 0;")
       && fsCss.includes("html.chat-full body { overflow: hidden; }"), "chat full screen: the chat fixed over what is seen, the whole window without a visual viewport, the page under it still");
+    expect(fsCss.includes("html.chat-full .chat-pane.chat-full-pane .messages { flex: 1 1 0; }")
+      && fsCss.includes("html.chat-full .chat-pane.chat-full-pane .compose { display: flex; flex-direction: column; flex: 0 1 auto; min-height: 0; }")
+      && fsCss.includes("html.chat-full .chat-pane.chat-full-pane .compose > textarea { flex: 0 1 auto; min-height: 44px; }"),
+      "chat full screen: short of room, the history gives up all of it first, then the field down to one line; Send's row keeps its own");
   }
   {
     // A direct chat offers the members too; a pick keeps the draft and the hint that a mention tells nobody here.

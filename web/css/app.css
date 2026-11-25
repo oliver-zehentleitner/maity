@@ -1215,6 +1215,14 @@ html.chat-full body { overflow: hidden; }
 html.chat-full .chat-pane.chat-full-pane { --chat-full-top: 0px; --chat-full-h: 100dvh; position: fixed; inset: auto 0;
   top: var(--chat-full-top); height: var(--chat-full-h); min-height: 0; z-index: 20; margin: 0;
   padding: 8px 12px; box-sizing: border-box; background: var(--bg); }
+/* What is seen above a keyboard can be shorter than the heading, the composer and its field at their
+   rows (tsk-ftrkm6wda8yq, 390 x 300): the history takes only the room left (basis 0, so it gives up all
+   of it first), then the field gives way down to one line; the composer's head and Send's row keep
+   theirs. While there is room, the history grows and the field keeps its rows. */
+html.chat-full .chat-pane.chat-full-pane .messages { flex: 1 1 0; }
+html.chat-full .chat-pane.chat-full-pane .compose { display: flex; flex-direction: column; flex: 0 1 auto; min-height: 0; }
+html.chat-full .chat-pane.chat-full-pane .compose > * { flex: none; }
+html.chat-full .chat-pane.chat-full-pane .compose > textarea { flex: 0 1 auto; min-height: 44px; }
 .chat-back { display: none; }
 .chat-none { margin-top: 3rem; text-align: center; }
 /* The pane being left, until the next one is drawn. */
