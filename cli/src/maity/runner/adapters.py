@@ -993,7 +993,7 @@ def _claude_code(ctx: Context, env: dict[str, str]) -> Launch:
     ]  # fmt: skip
     if ctx.skill is not None:  # the Keep the Why skill for this session only (skills.py)
         base += [f"--plugin-dir={ctx.skill}"]
-    model = ctx.placement.get("model")
+    model = ctx.placement.get("model") or ctx.harness.default_model
     if model:
         base += ["--model", model]
     if ctx.placement.get("mode") == "interactive":
@@ -1180,7 +1180,7 @@ def _codex(ctx: Context, env: dict[str, str]) -> Launch:
             ctx.as_user.link(auth, home / "auth.json")
     ctx.as_user.mkdir(ctx.clone / ".git" / "maity")
     env = {**env, "CODEX_HOME": str(home)}
-    model = ctx.placement.get("model")
+    model = ctx.placement.get("model") or ctx.harness.default_model
     chosen = ["-m", model] if model else []
     prompt = START_PROMPT + _sandbox_prompt(ctx)
     if ctx.placement.get("mode") == "interactive":
@@ -1388,7 +1388,7 @@ def _antigravity(ctx: Context, env: dict[str, str]) -> Launch:
     # agy takes the work tree from $PWD: the folder's real path (workspace.check_folder).
     env = {**env, "PWD": str(ctx.folder)}
     base = [ctx.binary, "--settings", str(settings)]
-    model = ctx.placement.get("model")
+    model = ctx.placement.get("model") or ctx.harness.default_model
     if model:
         base += ["--model", model]
     # In `base`, so the first command and every continued one run the same level. A model id

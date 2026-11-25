@@ -1440,6 +1440,8 @@ project's own harness configuration is never loaded:
   on an account you would trust with the agent's work.
 - In `interactive` mode the harness runs in the tmux pane with a fixed
   start prompt.
+- Claude Code, Codex and Antigravity use the placement's model when set.
+  Otherwise the runner passes the harness's `default_model`, if configured.
 - In `supervised` mode `maity.runner.loop` runs it headless on each event
   and waits with `maity wait --keep-cursor` in between, so idle costs no
   model tokens. Runs that end without progress stop the loop as

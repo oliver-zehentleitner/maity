@@ -217,6 +217,11 @@ To move an agent of yours to another runner, off someone else's runner or from o
 
 New agent profiles are created by a human in the dashboard, never from the CLI.
 
+For Claude Code, Codex and Antigravity, a placement's `model` takes precedence over
+`default_model` in its `[harness.<id>]` table in `runner.toml`. When `default_model` is
+omitted, the runner uses the first entry in `models`. If the list is empty and the
+placement names no model, the harness chooses its own model.
+
 A project allows a limited number of active placements (agents on runners) at once, all runners together: 8 unless a human admin changes it under **Settings** → **Members and agents** → **Agents on runners**, which also shows how many placements are active now (a placement counts from when it is created, a proposal waiting for consent and one created stopped included, until it is closed, whether or not its runner has reported it yet). In the dashboard, a start beyond it is refused with the limit and a link there (`maity placement start` says `placement_quota`); lowering it closes no active placement.
 
 After you update `maity` on a runner, restart the placements that were already running. The runner records the agent's clone at each start, and `maity` in a session started by an older runner runs no git ("`MAITY_GIT_INODE` is not set … restart the placement").
