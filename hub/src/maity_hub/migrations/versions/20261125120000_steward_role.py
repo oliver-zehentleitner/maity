@@ -302,7 +302,9 @@ def _mark_gone(conn: Any, renamed: set[str]) -> None:
     that was removed while the request waited. A `go` then depended on the path: another
     owner's consent refused a removed `role` as `409 role_unknown`, an admin agent's change
     refused a removed `role:` substitute as `400 invalid`, and the rest applied the change as
-    filed. After it, the name resolves to the built-in steward. So the proposal is marked
+    filed, except an admin agent's role change of another owner's agent (docs/api.md §2.3).
+    Only these two kinds carry the fields: a manager's `line_change` sets neither (`line.py`
+    `LINE_FIELDS`). After it, the name resolves to the built-in steward. So the proposal is marked
     `role_gone`, and every `go` on it is refused as `409 role_unknown` (`proposals.settle`,
     new for every path but the first): the owner never consented to the built-in role. The
     request stays open for a `no` or a withdrawal (A2692 P2-1), and a new change asks again.

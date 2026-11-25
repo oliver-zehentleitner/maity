@@ -804,16 +804,23 @@ open request waits to apply, placements and the role memory. So a stored
 proposed before the upgrade and approved after it applies the custom
 role, not the built-in one. Where the project role `steward` was
 removed while such a request waited, the upgrade has nothing to rename,
-and the old name would now resolve to the built-in steward, so a go
-after it would have made the agent a built-in steward, or the built-in
-stewards its substitutes, which its owner never agreed to (A2692 P2-1).
-The upgrade marks such an open proposal `role_gone`, and every `go` on
-it is refused as `409 role_unknown`. Before the upgrade that answer
-came only from another owner's consent naming the removed role; an
-admin agent's change naming a removed `role:` token in `substitutes`
-was refused as `400 invalid`, and the other paths applied the change as
-filed (A2733 P2). The common 409 is new, and chosen because the request
-fails for the same reason on every path.
+and the old name would now resolve to the built-in steward. A go after
+it on a `role` would have made the agent a built-in steward, which its
+owner never agreed to (A2692 P2-1). On a `role:steward` token in
+`substitutes` it would have stored a token that now names the built-in
+stewards; cover would still not choose one, since the cover list skips
+every steward whatever a stored policy names (`cover.py`), but the
+policy would say something nobody agreed to. Only another owner's
+consent and an admin agent's change can carry either field; a
+manager's change sets neither. The upgrade marks such an open proposal
+`role_gone`, and every `go` on it is refused as `409 role_unknown`.
+Before the upgrade that answer came only from another owner's consent
+naming the removed `role`; an admin agent's change naming a removed
+`role:` token in `substitutes` was refused as `400 invalid`, and the
+other cases applied the change as filed, or for an admin agent's change
+to another owner's agent passed the role on to that owner's consent
+(A2733 P2, A2742 P2). The common 409 is new, and chosen because the
+request fails for the same reason on every path.
 That fails closed and keeps the request open for a `no` or a withdrawal,
 and a new change asks again. Rejected: binding every proposal to what
 its role resolved to when it was filed. That would also change how a

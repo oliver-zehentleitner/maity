@@ -1112,19 +1112,22 @@ role table above says what it does. Its scopes are the coder's.
   to apply it, the upgrade has nothing to rename, and the name would
   now mean the built-in role, which no one agreed to. The upgrade marks
   such an open request, whether its change names `steward` as the
-  `role` or `role:steward` in `substitutes`, and whatever kind of
-  request it is (another owner's consent, an admin agent's change, a
-  manager's change, §6.2). A `go` on it is refused with
+  `role` or `role:steward` in `substitutes` (another owner's consent or
+  an admin agent's change, §6.2; a manager's change sets neither
+  field). Every `go` on a marked request is now refused with
   `409 role_unknown`, and the request stays open for a `no` or a
-  withdrawal. A new change asks again. This answer is new for most of
-  these requests. Before the upgrade, another owner's consent refused a
-  removed `role` with the same `409 role_unknown`; an admin agent's
-  change refused a removed `role:` token in `substitutes` with
-  `400 invalid` (`details.fields["availability_policy.substitutes"]:
-  "unknown_role"`, §6.12); and the rest applied the change as filed: a
-  removed `role` in an admin agent's or a manager's change, and a
-  removed `role:` token in another owner's consent or a manager's
-  change.
+  withdrawal. A new change asks again. Before the upgrade only one of
+  these paths answered so: another owner's consent refused a removed
+  `role` with `409 role_unknown`. An admin agent's change refused a
+  removed `role:` token in `substitutes` with `400 invalid`
+  (`details.fields["availability_policy.substitutes"]:
+  "unknown_role"`, §6.12). A removed `role` in an admin agent's change
+  was applied as filed, with two exceptions: for an outsider's agent
+  under `agent_owners: anyone` the `go` was refused with `400 invalid`
+  (`details.fields.role: "outside_owner"`, §6.1), and for another
+  owner's agent otherwise the `go` filed that owner's consent for the
+  role instead of applying it. A removed `role:` token in another owner's
+  consent was applied as filed.
   Its members keep their base;
   in a project that already has a project role `steward-custom` it
   takes the next free name, `steward-custom-2`, then `-3` and on, and

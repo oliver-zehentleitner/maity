@@ -21,5 +21,6 @@
   taken too, it uses the next free one (`steward-custom-2`, `-3`, …), and the log says which
   project got which name. Where a project role `steward` was removed while a change waited
   to apply it, approving that change after the upgrade is refused with `409 role_unknown`,
-  so it cannot make the agent the built-in steward or the built-in stewards its substitutes.
-  Before, only another owner's consent was refused that way.
+  so it cannot make the agent the built-in steward or store a `role:steward` substitute that
+  now names the built-in stewards. Before, only another owner's consent naming the removed
+  role was refused that way.
