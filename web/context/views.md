@@ -4827,40 +4827,44 @@ While a tab is dragged, a 3 px upright line in the accent colour stands in the g
 - The line as an element between two tabs: it would widen the row while dragging and move the tab under the pointer.
 - An inset `box-shadow` on the tab: on the round tab it follows the curve and reads as a second border, not as a place between two tabs.
 
-## The tabs menu offers New project too, beside the projects; the "+" menu keeps its entry
+## The tabs menu offers New project and Explore too, first, then the projects; it shows for every signed-in human; the "+" menu keeps its entry
 
 **Id:** 6fd6bc4c-d67a-41bc-93fd-a37f3f4082ef
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** card tsk-c4dz5x6rb2h8 (the owner's report in the project chat, 2026-11-10: the "…" menu right of the project tabs lacks the option to create a project)
-**Revisit when:** the tabs menu gets items that are neither about the tabs nor about the projects in them, or the "+" menu loses its New project entry
+**Source:** card tsk-c4dz5x6rb2h8 (the owner's report in the project chat, 2026-11-10: the "…" menu right of the project tabs lacks the option to create a project); card tsk-r6bk2py3ezwg and the lead's decision of 2026-11-25 on the maintainer's design (the menu's order, Explore as a plain action, the menu for every signed-in human)
+**Revisit when:** the tabs menu gets items that are neither about the tabs, the projects in them nor finding a project, or the "+" menu loses its New project entry
 **See:** views.md#the-row-of-tabs-has-no-new-project-tab-the-tabs-menu-follows-the-tabs-a-dragged-tabs-place-is-a-line — 4ff40142-df78-4c11-8f0c-c0024adecd79 — as of 2026-11-10
 
-The tabs menu ("…", `tabsMenu` in `js/app.js`) ends with a separator and **New project** (`view.new_project`), a link to `/new`, the same create form the header's "+" menu opens. Like the "+" menu it is there for humans only. The "+" entry stays; the row of tabs still has no New project tab of its own.
+The tabs menu ("…", `tabsMenu` in `js/app.js`) starts with its actions: **New project** (`view.new_project`), a link to `/new`, the same create form the header's "+" menu opens; **Explore**, a link to `/explore` that opens the Explore tab or goes to it, an action and no switch; and **Keep these tabs at start**, which is left out while the human has no project. A separator follows, then each project as a switch, then Move this tab left or right where the current tab can go. Since 2026-11-25 the menu is there for every signed-in human, one without projects too, as both actions are; an agent gets none, as before. The "+" entry stays; the row of tabs still has no New project tab of its own.
 
-**Reason:** a person looks for a new project next to the projects. After the tab went (4ff40142), the action lived only in the header's "+" menu, and the owner did not find it where he looked, in the menu beside the tabs. That outweighs keeping the menu strictly about the tabs.
+**Reason:** a person looks for a new project next to the projects. After the tab went (4ff40142), the action lived only in the header's "+" menu, and the owner did not find it where he looked, in the menu beside the tabs. That outweighs keeping the menu strictly about the tabs. The actions first, and the menu for a human without projects, are the lead's 2026-11-25 ruling: such a human has no tab to manage yet but still looks for a new project and for the public ones.
 
 **Rejected alternatives:**
 - Bringing back the "+ New project" tab: the owner's 2026-11-08 layout keeps the row for projects and the menu right after the last tab (4ff40142).
 - Moving the entry out of the "+" menu: that menu is the header's one place to add something (an agent, a person, a runner, a project), and nothing asked to change it.
+- Explore as a checkbox among the switches, like a project: it opens or goes to a tab, which is an action, not a state to toggle (the lead, 2026-11-25).
 
-## The tabs menu is drawn as the row's last tab, fixed at the end, and stays a menu button
+## The tabs menu is drawn as the row's last tab, fixed after the tabs, and stays a menu button; the Explore link stands apart at the row's end
 
 **Id:** dd8eaa01-7117-4ed2-94de-8eee9ee82e57
 **Type:** decision
 **Status:** active
-**Evidence:** confirmed
-**Source:** card tsk-qa2r972wjsws (the owner in the project chat, 2026-11-10, seq 105570: the "⋯" beside the project tabs should look like a tab; the proposal approved in seq 105578; seq 105588: it cannot be moved, it stays the last tab)
-**Revisit when:** the tabs menu gets a view of its own, or the row of tabs gets groups or pinned tabs
+**Evidence:** inferred
+**Source:** card tsk-qa2r972wjsws (the owner in the project chat, 2026-11-10: the "⋯" beside the project tabs should look like a tab; the proposal approved the same day; it cannot be moved, it stays the last tab); card tsk-r6bk2py3ezwg and the lead's decision of 2026-11-25 on the maintainer's design (a link to Explore at the right end of the project tab row)
+**Revisit when:** the tabs menu gets a view of its own, the row of tabs gets groups or pinned tabs, or something else is to stand in the row beside the tabs menu and the Explore link
 **See:** views.md#the-row-of-tabs-has-no-new-project-tab-the-tabs-menu-follows-the-tabs-a-dragged-tabs-place-is-a-line — 4ff40142-df78-4c11-8f0c-c0024adecd79 — as of 2026-11-11
 
-The tabs menu ("⋯", `tabsMenu` in `js/app.js`) is drawn like a project tab: the same pill, padding, height, font, colours and bottom edge, on the tabs' line, the tabs' gap after the last one (`.tabs-menu-box .menu-button.tabs-menu` in `css/app.css`). Wider than a phone, many tabs scroll before the row wraps (`max-width: calc(100% - 24px - 0.88rem)` on `.switcher` in a row with the menu, the menu's own width at any root font size), so the menu stays on their line; before, tabs enough to fill the line pushed the menu to a line of its own. Open, it takes the current tab's accent edge and raised ground. It stays an `M.menuButton`: `aria-haspopup="menu"`, named "Project tabs", no `role="tab"`, and Enter, ArrowDown and Escape work as before. It stands outside `nav.switcher`, so dragging and Alt+Shift+Arrow move only the project tabs and never past it, and on a phone, where the tabs scroll, it keeps the row's right end.
+The tabs menu ("⋯", `tabsMenu` in `js/app.js`) is drawn like a project tab: the same pill, padding, height, font, colours and bottom edge, on the tabs' line, the tabs' gap after the last one (`.tabs-menu-box .menu-button.tabs-menu` in `css/app.css`). Wider than a phone, many tabs scroll before the row wraps (`max-width: calc(100% - 24px - 0.88rem)` on `.switcher` in a row with the menu, the menu's own width at any root font size), so the menu stays on their line; before, tabs enough to fill the line pushed the menu to a line of its own. Open, it takes the current tab's accent edge and raised ground. It stays an `M.menuButton`: `aria-haspopup="menu"`, named "Project tabs", no `role="tab"`, and Enter, ArrowDown and Escape work as before. It stands outside `nav.switcher`, so dragging and Alt+Shift+Arrow move only the project tabs and never past it, and on a phone, where the tabs scroll, it stays at the row's right end, just before the Explore link.
 
-**Reason:** the owner wants it to read as part of the row; a lone square button beside the pills looked like it belonged elsewhere. Outside the tabs it is fixed by construction, which is the owner's rule that it never moves.
+Since 2026-11-25 a signed-in human's row also carries the link to Explore (`exploreLink`, `a.explore-link`) after the menu, pushed to the row's right end (`margin-inline-start: auto`): a plain link, no tab and no menu. In a row with it the row does not wrap at all (`flex-wrap: nowrap`, the `max-width` above lifted): the tabs shrink and scroll, the menu stays right after the last tab and the link at the end. On a phone the link shows its compass alone, its name kept for a screen reader. The menu is still the row's last tab: the link is no tab, and the Explore tab, when open, stands inside `nav.switcher` before the menu.
+
+**Reason:** the owner wants it to read as part of the row; a lone square button beside the pills looked like it belonged elsewhere. Outside the tabs it is fixed by construction, which is the owner's rule that it never moves. The Explore link at the row's end is the maintainer's design as the lead ruled it on 2026-11-25; not wrapping in a row with it is the implementing change's own way to keep both rules, the menu after the last tab and the link at the end, and the lead has not confirmed it, so the entry is inferred; the rest stays confirmed.
 
 **Rejected alternatives:**
-- Leaving the many-tab wrap as it was and saying so: the owner's rule is that it stays the last tab (seq 105588), and it would not be exactly when there are the most tabs.
+- Leaving the many-tab wrap as it was and saying so: the owner's rule is that it stays the last tab, and it would not be exactly when there are the most tabs.
+- The Explore link inside `nav.switcher` or before the menu: it would scroll away with the tabs, or the menu would no longer follow the last tab.
 - A real tab (`role="tab"` or a link in `nav.switcher`): a screen reader would announce a view that does not exist, and the drag and keyboard moves would treat it as a project tab.
 - Leaving it as it was, a small button with a gap: it did not read as part of the row.
 

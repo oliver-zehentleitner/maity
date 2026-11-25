@@ -428,27 +428,39 @@ Parsing the listing with a BigInt-aware JSON reader for the seq above
 2⁵³: the whole app reads seqs as numbers, and Messages could not mark
 such a message anyway (spq4 108392).
 
-## `/explore` and `/for/<slug>` are the hub's pages: a click on a link to them is a page load, and they stay routes
+## `/explore` and `/for/<slug>` are the hub's pages, a click on a link to them a page load, except bare `/explore` signed in, the dashboard's Explore tab; both stay routes
 
 **Id:** b8377791-ca86-4ebe-82a3-dbf40b17daa2
 **Type:** decision
 **Status:** active
-**Evidence:** confirmed
-**Source:** the card tsk-mg681fdn8p6m (header links to `/explore` drew the unknown-address view), found on tsk-h1e5zmq1wnhj, 2026-11-07; docs/api.md §16.11, §16.9, §16.7.2; web/js/route.js `hubDrawn`; the route cases in web/tools/smoke.js and `visitor_step` in web/tools/e2e.py
+**Evidence:** inferred
+**Source:** the card tsk-mg681fdn8p6m (header links to `/explore` drew the unknown-address view), found on tsk-h1e5zmq1wnhj, 2026-11-07; card tsk-r6bk2py3ezwg (a signed-in Explore inside the dashboard) and the lead's decision of 2026-11-25 on the maintainer's design; docs/api.md §16.11, §16.9 ("Explore, signed in"), §16.7.2; web/js/route.js `hubDrawn` and `ownExplore`; the route cases in web/tools/smoke.js and `visitor_step` and `explore_tab_round` in web/tools/e2e.py
 **See:** routing.md#-is-the-hubs-start-page-a-click-on-a-link-to-it-is-a-page-load-never-a-route-change — 4f5c757a-98f6-44d1-adad-08fbe61b3d33 — as of 2026-11-07
-**Revisit when:** the hub draws another page of its own at an address the dashboard also answers, or the dashboard gets a view of its own at `/explore` or `/for/<slug>`
+**Revisit when:** the hub draws another page of its own at an address the dashboard also answers, the dashboard gets a view of its own at `/for/<slug>`, or the hub stops answering a session at `/explore` with the shell
 
 `M.route.listen` leaves a click on `/explore` or `/for/<slug>` to the
-browser, with or without a query or a place, as it does for `/`. Both
-stay routes (`M.route.isRoute`), and `HUB` stays the hub's own list of
-hub paths. The not-found page's own click stop for `/explore` is gone.
+browser, with or without a query or a place, as it does for `/`. Since
+2026-11-25 one address is the exception: bare `/explore`, while the page
+knows a session (`M.api.session()`), is a route change to the dashboard's
+Explore tab (`ownExplore`). With a query, `?as=public` above all, and
+signed out it stays a page load. Both stay routes (`M.route.isRoute`), and
+`HUB` stays the hub's own list of hub paths. The not-found page's own
+click stop for `/explore` is gone.
 
 **Reason:** the hub answers these addresses itself where it serves them:
 the public projects while public pages are on (§16.9), and a landing
 variant while the landing page is on and the variant exists (§16.7.2).
 It answers the shell otherwise. A route change kept the dashboard, which
-knows no view there and drew the unknown-address view, so the frame's
-links to `/explore` never reached the hub's page.
+then knew no view there and drew the unknown-address view, so the frame's
+links to `/explore` never reached the hub's page. Since 2026-11-25 the hub
+answers a session at `/explore` with the shell and the dashboard draws
+Explore there as a tab of its own (§16.9, "Explore, signed in"), so for a
+session a page load and a route change draw the same, and the route change
+spares the reload; for a visitor, and for `?as=public`, the hub's page
+still stands there. The 2026-11-07 part is confirmed; the route change for a
+session is the implementing change's own reading of the lead's ruling that
+the Explore tab lives at `/explore`, not confirmed by it, so the entry is
+inferred.
 
 **Rejected alternatives:**
 - Adding `explore` and `for` to `HUB`, as the card first suggested:
@@ -458,3 +470,6 @@ links to `/explore` never reached the hub's page.
   they are off.
 - A click stop on each link to them, as the not-found page had: every
   link would have to carry it, and the frame's header links did not.
+- Signed in, keeping `/explore` a page load as well: correct, since the hub
+  answers the session with the shell, but every Explore link and the tabs
+  menu's item would reload the whole dashboard to draw one of its tabs.
