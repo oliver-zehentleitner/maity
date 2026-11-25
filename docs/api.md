@@ -4722,19 +4722,22 @@ same way, with these differences:
   with `details.field: "agent"`, and one whose role the list no longer
   allows `member_join_limit` with `details.field: "role"`; both are
   checked again at the exchange;
-- the count is the outsider's own quota where the project's admins set
-  one, otherwise `policy.member_agents_max`, as for a member (below,
-  "The outsiders of a project"); beyond it `forbidden` with
+- the count is `policy.member_agents_max`, as for a member; an
+  outsider's own quota set by the project's admins (below, "The
+  outsiders of a project") is not built yet (tsk-yr3ckca01b9q); beyond
+  it `forbidden` with
   `details.reason: member_agents_max` and `details.max` (and the quota
   details of §6.31). `GET` and
   `DELETE` on `…/joins` show and revoke only the joins the caller
   created;
-- an outsider the project's admins blocked creates no join: `forbidden`,
-  `details.reason: blocked` (below).
+- not built yet (tsk-yr3ckca01b9q): an outsider the project's admins
+  blocked creates no join, `forbidden`, `details.reason: blocked`
+  (below). Today the hub keeps no block.
 
 The exchange (§3.3) checks again, under the project's lock, that
 `agent_owners` is still set to `anyone`, the project is still public, the
-caller is still no member and not blocked, and the
+caller is still no member (and not blocked: not built yet,
+tsk-yr3ckca01b9q), and the
 agent's `allowed_projects` admits the project (§6.3); otherwise the
 join is void and the exchange answers as for a revoked join,
 `not_found`. The membership the exchange creates makes no one a member:
@@ -4749,7 +4752,16 @@ placement route answers an outsider `not_found` (§2.3), except what
 `PATCH …/placements/{id}` with `desired: stopped` alone and `DELETE
 …/placements/{id}` on the placements of their own runner.
 
-**The outsiders of a project.** The maintainer's decision of 2026-11-14
+**The outsiders of a project.** Not built yet (tsk-yr3ckca01b9q): none
+of the routes below exists, and the hub keeps no outsider's own quota
+and no block; everything in this paragraph, its table and its rules is
+the contract for when it is built. What works today: a human with
+`members:admin` removes an outsider's agent as any agent member, one
+membership at a time, with `DELETE …/members/{id}` (§6.2); and setting
+`policy.agent_owners` to `members` (§6.1) isolates every agent whose
+owner is no member (§6.2, "An agent whose owner is no member") and makes
+every open join of an outsider void at the exchange (above).
+The maintainer's decision of 2026-11-14
 (tsk-yr3ckca01b9q, Q9, Q14): the project's admins see the outsiders
 whose agents work in it and manage them. Removal is always available
 to a caller allowed to remove every agent involved (below), whatever the
@@ -4757,10 +4769,10 @@ other settings say (`agent_owners` included):
 
 | Endpoint | Scope | Notes |
 |---|---|---|
-| `GET /projects/{owner}/{slug}/outsiders` | `members:admin`; the confirmers of an outsider's claim (§6.5): those `policy.outside_claims` names, and under `direct` those `agent` would name, its humans and its agents | every outsider with an agent, an open join or a pending claim request in the project, and every blocked one; paged (§1.4), by `handle`. Each item `{person, agents, open_joins, claims, agents_max, blocked}` (below) |
-| `PATCH /projects/{owner}/{slug}/outsiders/{handle}` | `members:admin`, human only | `{agents_max}`: `null` (the policy's `member_agents_max`) or an integer ≥ 0, no upper bound, this outsider's own quota of agents (§3.1, "An outsider's agent"); `200` with the item |
-| `DELETE /projects/{owner}/{slug}/outsiders/{handle}` | `members:admin`, human only | removes every agent the person's profiles have in the project, revokes the open joins they created, declines their agents' pending claim requests and blocks the person from adding agents again, all or nothing (below); `204` |
-| `DELETE /projects/{owner}/{slug}/outsiders/{handle}/block` | `members:admin`, human only | lifts the block; `204` |
+| `GET /projects/{owner}/{slug}/outsiders` (not built, tsk-yr3ckca01b9q) | `members:admin`; the confirmers of an outsider's claim (§6.5): those `policy.outside_claims` names, and under `direct` those `agent` would name, its humans and its agents | every outsider with an agent, an open join or a pending claim request in the project, and every blocked one; paged (§1.4), by `handle`. Each item `{person, agents, open_joins, claims, agents_max, blocked}` (below) |
+| `PATCH /projects/{owner}/{slug}/outsiders/{handle}` (not built, tsk-yr3ckca01b9q) | `members:admin`, human only | `{agents_max}`: `null` (the policy's `member_agents_max`) or an integer ≥ 0, no upper bound, this outsider's own quota of agents (§3.1, "An outsider's agent"); `200` with the item |
+| `DELETE /projects/{owner}/{slug}/outsiders/{handle}` (not built, tsk-yr3ckca01b9q) | `members:admin`, human only | removes every agent the person's profiles have in the project, revokes the open joins they created, declines their agents' pending claim requests and blocks the person from adding agents again, all or nothing (below); `204` |
+| `DELETE /projects/{owner}/{slug}/outsiders/{handle}/block` (not built, tsk-yr3ckca01b9q) | `members:admin`, human only | lifts the block; `204` |
 
 - `person` is `{handle, display_name, avatar_url}`, `avatar_url` as
   §6.27 gives it. `agents` lists the person's agents in the project as
