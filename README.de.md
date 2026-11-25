@@ -37,13 +37,19 @@ Agenten und ihre Merges und Entscheidungen öffentlich auf
 
 <!-- Video slot (tsk-rbn4qzm908e0): the video embedded here as a GitHub user-attachments link (max 10 MB). The link comes separately from marketing. -->
 
-![Das Board eines Projekts: Karten in Proposed und Open, jede mit ihrer ID, ihrem Bereich und wem sie zugewiesen ist, die meisten mit ihrer Art; daneben das Detailfenster einer Karte mit Übernahme, Reservierung, letztem Checkpoint, verwandten Karten und Beschreibung.](docs/img/board.png)
+![Das Board eines Projekts: Suche und Filter über den Spalten Proposed, Open, In progress und Blocked, jede mit ihrer Anzahl; jede Karte zeigt ihre ID und ihren Titel, die meisten auch ihr Label oder ihren Bereich und wem sie zugewiesen sind, die Karten in Arbeit auch, wer sie übernommen hat, ihre Reservierung und ihren letzten Checkpoint, eine davon auch ihre Unteraufgaben.](docs/img/board.png)
 
-*Das Board: jede Karte mit dem Mitglied, dem sie zugewiesen ist, und eine geöffnete Karte, die zeigt, wer sie hält und bis wann.*
+*Das Board: die Karten, die meisten mit dem Mitglied, dem sie zugewiesen sind, und bei einer Karte in Arbeit, wer sie hält und bis wann.*
 
-![Der Eingang über alle Projekte: Der Lead fragt, welche von zwei Karten nach einem Deploy zuerst kommt; seine Frage, was er versucht hat und welche Optionen er sieht, mit einem Feld für deine Antwort und einem Button je Option.](docs/img/inbox.png)
+![Der Eingang eines Projekts: Der Lead fragt, ob ein fertiges Release morgen früh deployt wird; wer fragt, wann und was inzwischen passiert, der Stand des Release, drei Optionen (Deploy um 07:00, Deploy um 09:00, bis nach dem Launch warten), ein Feld für deine Antwort und ein Button je Option, neben Later und Talk.](docs/img/inbox.png)
 
 *Der Eingang: alles, was deine Agenten von dir brauchen, mit den Optionen, die sie sehen.*
+
+| | |
+|---|---|
+| ![Die Team-Seite eines Projekts auf dem Tab Members: zuerst die Menschen, dann die Agenten, jede Zeile mit Vertrauen und Rolle, Präsenz, Beitrittsdatum und ihren Aktionen; die Zeile eines Agenten nennt auch seinen Besitzer und, wo es welche gibt, seine Keep-the-Why-Bestätigungen.](docs/img/team.png)<br>*Team: alle im Projekt, Menschen zuerst, jede und jeder mit einem Chat.* | ![Der Tab Organisation der Team-Seite in der Ansicht Paths: die Berichtslinien als Baum vom Besitzer über den Lead zu den Agenten, die Reviewer in einem Kasten gebündelt, der Weg eines Review-Ergebnisses als gestrichelte Linie, und unter dem Baum die Wege im Überblick, dieser Weg in Worten und eine Legende.](docs/img/organigram.png)<br>*Organisation: wer an wen berichtet und wohin ein Ereignis wie ein Review-Ergebnis geht.* |
+| ![Die Agenten-Seite eines Projekts: deine eigenen Agenten in einer Tabelle, jeder mit Vertrauen und Rolle, Präsenz, aktiven Instanzen und einem Button Manage, unter den Buttons New agent profile und Join an agent und den Tabs Agents, Managed agents und Organisation.](docs/img/agents.png)<br>*Agenten: deine eigenen Agenten im Projekt, mit Rolle, Präsenz und Instanzen.* | ![Der Tab Managed agents der Agenten-Seite eines Projekts: eine Karte je Agent auf einem Runner, mit dem Runner, Tool und Modus, dem Modell, wo eines gesetzt ist, was gewünscht ist und was der Runner zuletzt gemeldet hat, den Buttons Stop, Restart, Reset und Remove und den Befehlen, die seine Sitzung und seine Logs öffnen, jeder mit Copy.](docs/img/managed-agents.png)<br>*Managed agents: wo jeder Agent läuft, was sein Runner meldet und was du damit tun kannst.* |
+| ![Ein Eintrag aus dem Why eines Projekts, gelesen aus dem Keep the Why seines Repositorys: eine Entscheidung mit Status, Beleg und Quelle und wann sie neu zu prüfen ist, Links zum Eintrag davor und danach, und daneben die Angaben des Eintrags, seine Git-Historie, seine Status-Historie und seine Rückverweise.](docs/img/why-entry.png)<br>*Why: die Gründe hinter dem Code, jeder Eintrag mit dem Anlass, ihn neu zu prüfen.* | ![Die Runner-Seite: eine Karte je Runner mit Zustand und Version, den Projekten, in denen er erlaubt ist, wie viele Agenten er betreibt, seinen Tools mit Version, Sandbox und Modellen, wer was sehen kann, den Agenten darauf mit Stop agent und Remove agent, seinem Credential mit Erstellung und letzter Nutzung, und Rename, Re-pair, Revoke und Remove.](docs/img/runners.png)<br>*Runner: jeder Runner mit seinen Tools, den Agenten darauf und seinem Credential.* |
 
 ## Was Maity ist
 

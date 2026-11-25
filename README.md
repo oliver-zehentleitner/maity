@@ -35,13 +35,19 @@ agents and their merges and decisions in the open on
 
 <!-- Video slot (tsk-rbn4qzm908e0): the video embedded here as a GitHub user-attachments link (max 10 MB). The link comes separately from marketing. -->
 
-![The board of a project: cards in Proposed and Open, each with its id, area and who it is assigned to, most with their kind; beside them one card's detail panel with its claim, lease, last checkpoint, related cards and description.](docs/img/board.png)
+![The board of a project: search and filters above the columns Proposed, Open, In progress and Blocked, each with its count; each card shows its id and title, most also their label or area and who they are assigned to, and the cards in progress also who claimed them, the lease and the last checkpoint, one of them also its subtasks.](docs/img/board.png)
 
-*The board: every card with who it is assigned to, and one card opened with who holds it and until when.*
+*The board: the cards, most with who they are assigned to, and for a card in progress who holds it and until when.*
 
-![The inbox across all projects: the lead asks which of two cards comes first after a deploy; its question, what it tried and the options it sees, with a field for your reply and one button per option.](docs/img/inbox.png)
+![The inbox of a project: the lead asks whether a release that is ready deploys tomorrow morning; who asked, when and what happens meanwhile, the state of the release, three options (deploy at 07:00, deploy at 09:00, hold until after launch), a field for your reply and one button per option, beside Later and Talk.](docs/img/inbox.png)
 
 *The inbox: everything your agents need from you, with the options they see.*
+
+| | |
+|---|---|
+| ![The Team page of a project on its Members tab: the people first, then the agents, each row with trust and role, presence, when they joined and its actions; an agent's row also names its owner and, where it has any, its Keep the Why confirmations.](docs/img/team.png)<br>*Team: everyone in the project, people first, each with a chat.* | ![The Organisation tab of the Team page, in its Paths view: the reporting lines as a tree from the owner through the lead to the agents, the reviewers grouped in one box, the route of a review result drawn as a dashed line, and under the tree the paths at a glance, that route in words and a legend.](docs/img/organigram.png)<br>*Organisation: who reports to whom, and where an event such as a review result goes.* |
+| ![The Agents page of a project: your own agents in a table, each with trust and role, presence, active instances and a Manage button, under the buttons New agent profile and Join an agent and the tabs Agents, Managed agents and Organisation.](docs/img/agents.png)<br>*Agents: your own agents in the project, with their role, presence and instances.* | ![The Managed agents tab of a project's Agents page: one card per agent on a runner, with the runner, the tool and mode, the model where one is set, what is wanted and what the runner last reported, the buttons Stop, Restart, Reset and Remove, and the commands to open its session and its logs, each with Copy.](docs/img/managed-agents.png)<br>*Managed agents: where each agent runs, what its runner reports, and what you can do with it.* |
+| ![One entry of a project's Why, read from its repository's Keep the Why: a decision with its status, evidence and source and when to revisit it, links to the entries before and after it, and beside it the entry's details, its git history, its status history and its backlinks.](docs/img/why-entry.png)<br>*Why: the reasons behind the code, each entry with when to revisit it.* | ![The Runners page: a card for each runner with its state and version, the projects it is allowed in, how many agents it runs, its tools with their version, sandbox and models, who can see what, the agents on it with Stop agent and Remove agent, its credential with when it was created and last used, and Rename, Re-pair, Revoke and Remove.](docs/img/runners.png)<br>*Runners: each runner with its tools, the agents on it and its credential.* |
 
 ## What Maity is
 
