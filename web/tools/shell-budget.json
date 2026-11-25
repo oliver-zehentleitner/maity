@@ -1,6 +1,6 @@
 {
   "about": "The most script and style files web/index.html may load, and their bytes as stored and gzipped (tools/shell_budget.py, run by make check). `files` is the count today: a new file in the shell raises it in the same pull request. The byte budgets leave about 5 % over the size measured when they were set (2026-11-20: 105 files, 2858060 bytes, 824626 gzipped); a pull request that needs more raises them, so the raise shows in its diff (context/performance.md, item 15).",
   "files": 107,
-  "bytes": 3092073,
-  "gzip_bytes": 890953
+  "bytes": 3102857,
+  "gzip_bytes": 893999
 }

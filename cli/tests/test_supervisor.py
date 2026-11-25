@@ -1158,6 +1158,39 @@ def test_a_clone_with_a_planted_redirect_does_not_start(
     assert (place.path / ".git" / entry).read_text() == text  # the runner deletes nothing
 
 
+@pytest.mark.parametrize(
+    ("entry", "shown"),
+    [("core.worktree", "core.worktree"), ("project.localname", "<key>")],
+)
+def test_refused_config_reaches_the_hub_without_its_private_data(
+    world: Any, entry: str, shown: str
+) -> None:
+    sup, backend, _, _, _ = world
+    reports = sup.client = Pickups(PICKUP)
+    place = new_clone(sup.cfg)
+    section, key = entry.split(".")
+    with (place.path / ".git" / "config").open("a") as config_file:
+        config_file.write(f"[{section}]\n {key} = private-workspace-value\n")
+    sup.update([placement(agent=NEW, session=None)])
+    settle(sup)
+    report = reports.sent[-1][1]
+    assert (
+        report["state"],
+        report["reason"],
+        report["detail"],
+        report["restarts"],
+    ) == ("failed", "workspace_in_use", "not_a_plain_clone", 0)
+    finding = report["finding"]
+    assert (finding["cause"], finding["signals"]["process"]) == ("unknown", "gone")
+    assert any(
+        line["line"] == f"plc-0003: workspace_in_use: its .git/config sets {shown}"
+        for line in finding["log"]
+    )
+    assert "private-workspace-value" not in json.dumps(report)
+    assert "localname" not in json.dumps(report)
+    assert not backend.started
+
+
 def test_a_leftover_subagent_worktree_is_cleared_on_start(
     world: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -2333,9 +2366,9 @@ def test_inspecting_an_existing_clone_happens_in_the_start_task(
     sup, backend, _, _, _ = world
     recorded(sup.cfg)
     seen: list[tuple[str, str]] = []
-    checks, reads = clonecheck.not_inspectable, workspace.origin
+    checks, reads = clonecheck.inspection_finding, workspace.origin
 
-    def checked(path: Path, files: Any = clonecheck.LOCAL) -> str | None:
+    def checked(path: Path, files: Any = clonecheck.LOCAL) -> clonecheck.Finding | None:
         seen.append(("check", threading.current_thread().name))
         return checks(path, files)
 
@@ -2343,7 +2376,7 @@ def test_inspecting_an_existing_clone_happens_in_the_start_task(
         seen.append(("origin", threading.current_thread().name))
         return reads(path, as_user)
 
-    monkeypatch.setattr(clonecheck, "not_inspectable", checked)
+    monkeypatch.setattr(clonecheck, "inspection_finding", checked)
     monkeypatch.setattr(workspace, "origin", read)
     sup.update([placement()])
     sup.tick()
