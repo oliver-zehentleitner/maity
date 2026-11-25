@@ -50,8 +50,9 @@ maity-hub quickstart
 On the first start, `quickstart` creates `maity-hub.db` and your account,
 the instance admin. The handle is your system user name, unless you
 pass `--handle` and `--display-name`. It is `owner` when the user name is
-no handle a person may take: one of three characters or fewer, or a word
-the hub keeps for its own pages. It asks for your email address,
+no valid handle or a word the hub keeps for its own pages. A short name
+is fine here: the six characters a person needs when signing up do not
+bind the operator's own account. It asks for your email address,
 which is what you sign in with (or pass `--email`), and for your password
 twice, and never takes the password on the command line. Then it serves,
 and its last line is the address to open:

@@ -144,7 +144,7 @@
   "register_page.display_name": "Weergavenaam",
   "register_page.error_display_name_invalid": "Een weergavenaam heeft 1 tot 64 tekens.",
   "register_page.error_handle_invalid": "Een handle heeft 2 tot 31 letters, cijfers of koppeltekens.",
-  "register_page.error_handle_reserved": "Deze handle is gereserveerd.",
+  "register_page.error_handle_reserved": "Deze handle is gereserveerd: een nieuwe handle heeft minstens zes tekens nodig, en sommige woorden zijn vastgehouden voor de eigen pagina's van de hub.",
   "register_page.error_handle_taken": "Deze handle is al in gebruik.",
   "register_page.error_password": "Dat is niet het wachtwoord dat bij de registratie is gekozen.",
   "register_page.error_terms_required": "Accepteer de voorwaarden om het account aan te maken.",

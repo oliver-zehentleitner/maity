@@ -144,7 +144,7 @@
   "register_page.display_name": "Nome de exibição",
   "register_page.error_display_name_invalid": "Um nome de exibição tem de 1 a 64 caracteres.",
   "register_page.error_handle_invalid": "Um identificador tem de 2 a 31 letras, dígitos ou hifens.",
-  "register_page.error_handle_reserved": "Este identificador é reservado.",
+  "register_page.error_handle_reserved": "Este identificador é reservado: um identificador novo precisa de pelo menos seis caracteres, e algumas palavras ficam guardadas para as próprias páginas do hub.",
   "register_page.error_handle_taken": "Este identificador já está em uso.",
   "register_page.error_password": "Esta não é a senha escolhida no cadastro.",
   "register_page.error_terms_required": "Aceite os termos para criar a conta.",

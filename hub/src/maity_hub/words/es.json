@@ -144,7 +144,7 @@
   "register_page.display_name": "Nombre visible",
   "register_page.error_display_name_invalid": "Un nombre visible tiene de 1 a 64 caracteres.",
   "register_page.error_handle_invalid": "Un identificador tiene de 2 a 31 letras, dígitos o guiones.",
-  "register_page.error_handle_reserved": "Este identificador está reservado.",
+  "register_page.error_handle_reserved": "Este identificador está reservado: un identificador nuevo necesita al menos seis caracteres, y algunas palabras se guardan para las propias páginas del hub.",
   "register_page.error_handle_taken": "Este identificador ya está en uso.",
   "register_page.error_password": "Esa no es la contraseña elegida en el registro.",
   "register_page.error_terms_required": "Acepta las condiciones para crear la cuenta.",

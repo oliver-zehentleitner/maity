@@ -144,7 +144,7 @@
   "register_page.display_name": "显示名称",
   "register_page.error_display_name_invalid": "显示名称为 1 到 64 个字符。",
   "register_page.error_handle_invalid": "用户名为 2 到 31 个字母、数字或连字符。",
-  "register_page.error_handle_reserved": "此用户名已被保留。",
+  "register_page.error_handle_reserved": "此用户名已被保留：新用户名至少需要 6 个字符，并且有些词是为 hub 自己的页面保留的。",
   "register_page.error_handle_taken": "此用户名已被占用。",
   "register_page.error_password": "这不是注册时选择的密码。",
   "register_page.error_terms_required": "请接受条款以创建账户。",

@@ -144,7 +144,7 @@
   "register_page.display_name": "表示名",
   "register_page.error_display_name_invalid": "表示名は1〜64文字です。",
   "register_page.error_handle_invalid": "ハンドルは、文字、数字、ハイフンで2〜31文字です。",
-  "register_page.error_handle_reserved": "このハンドルは予約されています。",
+  "register_page.error_handle_reserved": "このハンドルは予約されています。新しいハンドルには6文字以上が必要で、一部の語はハブ自身のページのために確保されています。",
   "register_page.error_handle_taken": "このハンドルは使われています。",
   "register_page.error_password": "登録時に選んだパスワードと一致しません。",
   "register_page.error_terms_required": "アカウントを作成するには、規約に同意してください。",

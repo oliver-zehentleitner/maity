@@ -144,7 +144,7 @@
   "register_page.display_name": "Nome visualizzato",
   "register_page.error_display_name_invalid": "Un nome visualizzato ha da 1 a 64 caratteri.",
   "register_page.error_handle_invalid": "Un handle ha da 2 a 31 tra lettere, cifre o trattini.",
-  "register_page.error_handle_reserved": "Questo handle è riservato.",
+  "register_page.error_handle_reserved": "Questo handle è riservato: un nuovo handle richiede almeno sei caratteri, e alcune parole sono tenute per le pagine dell'hub stesso.",
   "register_page.error_handle_taken": "Questo handle è già in uso.",
   "register_page.error_password": "Questa non è la password scelta durante la registrazione.",
   "register_page.error_terms_required": "Accetta i termini per creare l'account.",

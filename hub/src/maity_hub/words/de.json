@@ -144,7 +144,7 @@
   "register_page.display_name": "Anzeigename",
   "register_page.error_display_name_invalid": "Ein Anzeigename hat 1 bis 64 Zeichen.",
   "register_page.error_handle_invalid": "Ein Handle hat 2 bis 31 Buchstaben, Ziffern oder Bindestriche.",
-  "register_page.error_handle_reserved": "Dieses Handle ist reserviert.",
+  "register_page.error_handle_reserved": "Dieses Handle ist reserviert: Ein neues Handle braucht mindestens sechs Zeichen, und manche Wörter sind für die eigenen Seiten des Hubs freigehalten.",
   "register_page.error_handle_taken": "Dieses Handle ist schon vergeben.",
   "register_page.error_password": "Das ist nicht das bei der Anfrage gewählte Passwort.",
   "register_page.error_terms_required": "Akzeptiere die Bedingungen, um das Konto anzulegen.",

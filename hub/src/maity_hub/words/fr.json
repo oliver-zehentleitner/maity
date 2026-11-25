@@ -144,7 +144,7 @@
   "register_page.display_name": "Nom affiché",
   "register_page.error_display_name_invalid": "Un nom affiché compte de 1 à 64 caractères.",
   "register_page.error_handle_invalid": "Un identifiant compte de 2 à 31 lettres, chiffres ou traits d'union.",
-  "register_page.error_handle_reserved": "Cet identifiant est réservé.",
+  "register_page.error_handle_reserved": "Cet identifiant est réservé : un nouvel identifiant doit compter au moins six caractères, et certains mots sont gardés pour les pages du hub lui-même.",
   "register_page.error_handle_taken": "Cet identifiant est déjà pris.",
   "register_page.error_password": "Ce n'est pas le mot de passe choisi lors de l'inscription.",
   "register_page.error_terms_required": "Acceptez les conditions pour créer le compte.",

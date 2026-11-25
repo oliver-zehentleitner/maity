@@ -681,8 +681,8 @@ def test_quickstart_is_for_sqlite_only(
         ("alice", "alice"),
         ("Bob Smith", "owner"),
         ("admin", "owner"),
-        ("bob", "owner"),  # three characters: kept for the product (§16.11)
-        ("pricing", "owner"),
+        ("bob", "bob"),  # the operator's own account is not held to the length (§16.11)
+        ("pricing", "owner"),  # but to the words
         ("a" * 31, "a" * 31),
         ("a" * 32, "owner"),
     ],

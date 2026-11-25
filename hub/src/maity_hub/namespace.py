@@ -419,7 +419,7 @@ def reserved_holders(conn: Connection) -> list[str]:
 
 
 def kept_holders(conn: Connection) -> list[str]:
-    """Who holds a handle that §16.11 keeps from new claims only: one of three characters or
+    """Who holds a handle that §16.11 keeps from new claims only: one of five characters or
     fewer, or a product word (`paths.PRODUCT_WORDS`). They keep it, its page and its alias, so
     this names them and stops nothing. `lt-<digits>` is not named: the load-test seed's own
     accounts hold such handles. Tables an older schema does not have yet are skipped."""
@@ -431,6 +431,7 @@ def kept_holders(conn: Connection) -> list[str]:
                 f"{label} {handle!r}"
                 for handle in conn.execute(select(table.c.handle)).scalars()
                 if handle not in paths.RESERVED_FIRST
+                and paths.LOADTEST_HANDLE.fullmatch(handle) is None
                 and (len(handle) <= paths.SHORT_HANDLE or handle in paths.PRODUCT_WORDS)
             ]
     return sorted(found)

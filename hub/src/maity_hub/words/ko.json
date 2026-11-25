@@ -144,7 +144,7 @@
   "register_page.display_name": "표시 이름",
   "register_page.error_display_name_invalid": "표시 이름은 1자에서 64자까지예요.",
   "register_page.error_handle_invalid": "핸들은 문자, 숫자 또는 하이픈 2자에서 31자까지예요.",
-  "register_page.error_handle_reserved": "예약된 핸들이에요.",
+  "register_page.error_handle_reserved": "예약된 핸들이에요. 새 핸들은 6자 이상이어야 하고, 일부 단어는 허브 자체 페이지를 위해 남겨 두었어요.",
   "register_page.error_handle_taken": "이미 사용 중인 핸들이에요.",
   "register_page.error_password": "가입할 때 정한 비밀번호가 아니에요.",
   "register_page.error_terms_required": "계정을 만들려면 이용약관에 동의해 주세요.",

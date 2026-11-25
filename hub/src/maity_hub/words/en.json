@@ -144,7 +144,7 @@
   "register_page.display_name": "Display name",
   "register_page.error_display_name_invalid": "A display name has 1 to 64 characters.",
   "register_page.error_handle_invalid": "A handle has 2 to 31 letters, digits or hyphens.",
-  "register_page.error_handle_reserved": "This handle is reserved.",
+  "register_page.error_handle_reserved": "This handle is reserved: a new handle needs at least six characters, and some words are kept for the hub's own pages.",
   "register_page.error_handle_taken": "This handle is taken.",
   "register_page.error_password": "That is not the password chosen at registration.",
   "register_page.error_terms_required": "Accept the terms to create the account.",

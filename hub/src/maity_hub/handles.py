@@ -207,7 +207,7 @@ def ensure_free(
 ) -> None:
     """`invalid` / `taken` when `handle` is the handle or an alias of another id in the scope
     (or a human or organisation handle the hub or the dashboard keeps, or one kept from new
-    claims: `lt-<digits>`, at most three characters, a product word, `reserved`, §16.11). Takes
+    claims: `lt-<digits>`, at most five characters, a product word, `reserved`, §16.11). Takes
     the handle's lock first, so the answer holds until the transaction ends. `exclude`: the id
     that may have it (itself). `own_alias`: the handle is already that id's alias, so a
     reservation kept from new claims alone does not refuse taking it back (§6.24)."""
