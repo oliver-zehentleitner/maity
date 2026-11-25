@@ -1340,6 +1340,7 @@ def test_opencode_launch(tmp_path: Path) -> None:
     assert flags(launch.argv) <= opencode_23_flags(OPENCODE_23_TUI)
     settings = json.loads(Path(launch.env["OPENCODE_CONFIG"]).read_text())
     assert settings["model"] == "xai/grok-4.7"
+    assert settings["snapshot"] is False
     rules = settings["permission"]
     assert list(rules)[0] == "*" and rules["*"] == "deny"  # first: the last match wins
     assert rules["bash"]["*"] == "deny" and rules["bash"]["make test *"] == "allow"
@@ -1374,7 +1375,9 @@ def test_opencode_supervised(tmp_path: Path) -> None:
     assert "--dir" not in spec["first"] + spec["again"]
     run = opencode_23_flags(OPENCODE_23_RUN)
     assert flags(spec["first"]) <= run and flags(spec["again"]) <= run
-    assert json.loads(Path(launch.env["OPENCODE_CONFIG"]).read_text())["model"] == "xai/grok-4.7"
+    settings = json.loads(Path(launch.env["OPENCODE_CONFIG"]).read_text())
+    assert settings["model"] == "xai/grok-4.7"
+    assert settings["snapshot"] is False
     # Its working directory: the session starts in the placement's workspace path
     # (supervisor: `backend.start(name, place.path, …)`), which is the clone itself for a
     # harness without a workspace folder, and the loop runs each `opencode run` there.

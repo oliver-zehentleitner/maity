@@ -136,6 +136,7 @@ pull_requests = true
 | An OpenCode placement without a model runs OpenCode's own default model. Fixed in maity 0.1.0a16 (#1969: `default_model` used, fails closed); not re-run in the lab yet | both | tsk-kf2kp09d6qew |
 | Coders cannot build the project's dev venv or run its full checks in a placement. Addressed by `[backend.local] clone_venvs` (the runner builds the venvs, Claude Code in the `single` layout; docs/runners.md); not re-run in the lab yet | both | tsk-kshmb8vc92rr |
 | The clone check refuses the empty read-only `.git/config.lock` the Claude sandbox leaves behind. Fixed in maity 0.1.0a16 (#1954); not re-run in the lab yet | both | tsk-estwtzbae972, #1954 |
+| Five OpenCode placements stopped at the plain-clone check with `core.worktree` in their local configurations. The placement configuration now disables automatic snapshot capture. A fresh placement and restart with the updated runner still need a host check. | OpenCode 2.3.0 and 2.4.0 | tsk-27rm0ay2ntnx |
 | A supervised agent shows as offline or away on the team page while its placement runs (green on **Managed agents**) | both | tsk-hv7jbgy75zjt (note nte-w7bwz93q1vnx) |
 | Claude Code without its sandbox as an opt-in where the host cannot allow it | – | tsk-yp2bprwv9whv |
 | `runner check` does not probe the nested user namespace on ssh hosts | ssh backend | tsk-5b5x3k5zvg7x (follow-up) |
