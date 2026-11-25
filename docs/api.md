@@ -5471,7 +5471,9 @@ carries `details.hidden`, the number of hidden entries. When the bound
 is lowered below what a human holds, the stars stay: a `PATCH` that
 adds no project is accepted at any length, one that adds a project
 beyond the bound is `too_many`. A browser with no tabs of its own opens the
-starred projects, dashed, after `start_tabs`. An unstarred tab belongs
+starred projects, dashed, after `start_tabs`. Explore opens such a
+tab too (§16.9, "Explore, signed in"); the star is in the tab, not on
+Explore's list. An unstarred tab belongs
 to the browser session that opened it: it goes when the reader closes
 it, or when the browser starts the dashboard afresh, and it is never
 sent to the hub. Stars are private: no count, no event, no
@@ -20867,6 +20869,7 @@ member's pull request, and nothing before the first report.
 | GET | `/admin/statistics/campaigns` | `instance:admin`, human only | 16.7.2 |
 | GET | `/for/<slug>` (outside the API) | — | 16.7.2 |
 | GET | `/public/pages/{path}` | — (the same answer for everyone) | 16.9 |
+| GET | `/public/explore` | — (the same answer for everyone) | 16.9 |
 | GET, PATCH | `/admin/settings/legal` | `instance:admin`, human only | 16.7.1 |
 | GET, PATCH | `/admin/settings/site-values` | `instance:admin`, human only | 16.7.3 |
 | POST | `/admin/settings/legal/preview?page=…` | `instance:admin`, human only | 16.7.1 |
@@ -26421,7 +26424,8 @@ from the hub's catalogue in `language`.
   longer works. The join host keeps its own small page with the product
   line, as it serves none of the frame's stylesheets (§1.1). The
   Markdown answer for an agent is the same on both hosts and unchanged.
-- **`/explore`** (§16.9) stands in the model's header and footer around
+- **`/explore`** (§16.9), as a visitor gets it (a signed-in human gets
+  the shell, §16.9, "Explore, signed in"), stands in the model's header and footer around
   the landing page's dark hero with its title, and the projects as cards.
   Each card is one link to the project's page: the first letter of its
   name on a tile in the accent colour (projects have no picture), its
@@ -27384,6 +27388,44 @@ member gets `not_found` (§1.3). A signed-in reader who is no member of the
 project reads the same route. The Overview's addresses read the project's own
 page (`kind` `project`), its swarm tab none (§16.11).
 
+**Explore, signed in.** The lead's decision of 2026-11-25
+(tsk-r6bk2py3ezwg), on the maintainer's design: a signed-in human
+finds Explore inside the dashboard, not in the frame. `/explore`
+answers them with the app shell (§16.11), and the dashboard draws
+Explore there as a tab of its own in the project tab row, without a
+project's views. The tab lasts for the browser session, as an outsider's
+unstarred tab does (§5.1, "Stars"), is closed with its own ×, and is
+never sent to the hub; the tab row's Explore link and the tabs menu's
+**Explore** open it or go to it. Its list comes from one route, which
+lists what `/explore` lists:
+
+```
+GET /public/explore
+```
+
+No authentication, and a session or a credential sent with it is
+ignored: the answer is the same for everyone. It holds every project
+that has a page now (this section), by name, in `/explore`'s order (the
+name without regard to case, then the full name):
+
+```json
+{ "projects": [ { "name": "Maity", "full_name": "oliver/maity" } ] }
+```
+
+Each entry is `{name, full_name}` and nothing else: no project id, no
+count, no member and no star. It is `not_found` while `MAITY_PUBLIC_PAGES`
+is off. It answers with `Content-Type: application/json`, `Cache-Control:
+public, max-age=60` and an `ETag` (a matching `If-None-Match` is a `304`),
+without `Vary: Cookie`, since a cookie changes nothing, and spends the
+page's rate limit bucket. It has no paging, no write and no search.
+Whether the reader is a member of a listed project or has starred it, the
+dashboard takes from `GET /me` (`projects` and `member.starred`, §5.1), by
+`full_name`. A member's project opens as its own tab, any other as the
+outsider's dashed tab (§2.3, §5.1). The star stays in that tab: the list
+carries none, and a project's id for a new star is read from `GET
+/projects/{owner}/{slug}` (§2.3, "What an outsider reads") before `PATCH
+/me` (§5.1).
+
 **The dashboard** offers `public_page` and `public_about` in the
 project's settings to its namespace owner (to an organisation's owners
 for its projects), `public_page` in an organisation's settings to its
@@ -27522,7 +27564,9 @@ session while the landing page is enabled (§16.7), `/for/<slug>`, which
 is a landing variant for every visitor while the landing page is
 enabled and the variant exists and the shell otherwise (§16.7.2; `for`
 is therefore no hub path: an unknown variant gets the shell, never
-`not_found`), and the public pages (below) with `/explore`. For a visitor a
+`not_found`), and the public pages (below) with `/explore`, each for a
+visitor without a valid session or with `?as=public`; a signed-in human
+gets the shell there (§16.9). For a visitor a
 public page's address with a slash at the end is a `308` to the address
 without it. A dashboard address under a project with a public page stays the
 login page for a visitor, so that a link from a mail goes on after the
@@ -27597,7 +27641,7 @@ names:
 | `/account/pending` | the one page of an account waiting for approval (§2.7.5) |
 | `/account/…`, `/admin…`, `/all`, `/chats…`, `/new`, `/runners`, `/inbox`, `/notifications` | the dashboard's own pages |
 | `/observe/<owner>/<slug>`, `/observe/<owner>/<slug>/<id>` | reading along in the group chats one's agents are in, in a project one is no member of (§9.2), and one of those chats by its id |
-| `/explore` | the public projects, by name, as cards in the frame of §16.7.5 and in its language (`?lang`, else `Accept-Language`), for every visitor with or without a session, under the public pages' `Cache-Control` and `nosniff` (§16.9), the policy of a stored page in its frame (§16.9) and `Vary: Cookie, Accept-Language`, without an `ETag`; the shell while the instance serves no public pages |
+| `/explore` | the public projects, by name, as cards in the frame of §16.7.5 and in its language (`?lang`, else `Accept-Language`), for a visitor without a valid session and for anyone with `?as=public`, under the public pages' `Cache-Control` and `nosniff` (§16.9), the policy of a stored page in its frame (§16.9) and `Vary: Cookie, Accept-Language`, without an `ETag`; for a signed-in human the shell (`Cache-Control: no-cache`, `Vary: Cookie`, as every shell), where the dashboard draws Explore as a tab of its own (§16.9, "Explore, signed in"); the shell while the instance serves no public pages |
 | `/<handle>` | a person's or an organisation's address; its public page where one is served (below). A person's agents stand on it (§6.27, §16.9, "A person's agents"); `/<handle>/agents` names nothing: `404` with the shell (above), the dashboard's "not found", no redirect |
 | `/<owner>/<slug>` | a project; its public page where one is served (below) |
 | `/<owner>/<slug>/<view>…` | a view of the project: `inbox/<id>`, `board`, `tasks/<id>`, `overview` (tabs `overview/swarm` and `overview/project`), `contract` (the project's contract, a heading by its anchor as the fragment, §6.8), `team/<id>[/<tab>[/<instance>]]` (the view the dashboard names **Team**: people and agents of the project, the agents for administration; at `team` since the maintainer's decision of 2026-11-10, so that the path says what the tab says; `members` is no view and stays reserved as a slug, and `/<owner>/<slug>/members…` answers as any word that is no view: `404` with the app shell (above) and the dashboard's "not found", with the sign-in one link away for a visitor, never a redirect or the Team view; the member's tabs activity, cards, briefing and sessions below it, and sessions followed by an instance id opening that instance's sessions; tabs are no project views), `chat/<id>`, `messages`, `ticker`, `agents/<id>…` (the caller's own agents here), `placements` (the tab the dashboard names **Managed agents**: where the project's agents run and their wanted and reported state, §15.5–§15.7, the start on a runner being the last part of the page's **Join an agent** form; every member who reads the project sees it, the actions on it as §15.6 grants them), `organisation`, `why`, `settings` (one view in tabs: the project's settings for callers with `project:admin`, General at `settings` and the others at `settings/members`, `settings/work`, `settings/moderation` and `settings/runners` (the runners attached to the project, §15.4; `runners` is no view since tsk-ert2k23kr5m4 and stays reserved as a slug, and `/<owner>/<slug>/runners…` answers as `members…` does, never a redirect), each shown only where the caller has a part on it, and the caller's own settings here at `settings/mine`, §6.2, for every member; a caller opening a tab not shown to them gets the first one that is, so a caller without `project:admin` opening `settings` gets `settings/mine`), `jour-fixe/<round id>` (§20), `memory` (§19), `message`, `events/<seq>` (one event by its number, the target of a seq link: it reads §8.9 and opens the event where it lives); a view added later joins this list |
