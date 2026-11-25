@@ -669,6 +669,17 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     expect(tabIds() === MA && kept().open.join() === MA && !header.querySelector(".tabs-menu-box").querySelector("ul").hidden
       && tabsItems()[1].getAttribute("aria-checked") === "false" && said() === "Sample shop is no longer a tab" && !patchesTabs.length,
       "tabs: switching a project off closes its tab, the menu stays open, nothing is sent");
+    // A long list scrolls inside the menu, not past the screen (tsk-hhyccgssr2pr): on open the list's
+    // top on screen goes to the stylesheet, which caps a header menu at the viewport below it.
+    {
+      const tmList = header.querySelector(".tabs-menu-box").querySelector("ul");
+      tmList.getBoundingClientRect = () => ({ top: 137.4, bottom: 400, left: 0, right: 200 });
+      if (!tmList.hidden) { tabsButton().click(); await tick(); }
+      tabsButton().click(); await tick();
+      const tmTop = tmList.style["--menu-top"];
+      delete tmList.getBoundingClientRect;
+      expect(!tmList.hidden && tmTop === "137px", "tabs: an opened header menu tells the stylesheet where it starts, so a long list scrolls inside it " + JSON.stringify(tmTop));
+    }
     // The inbox filter to open tabs, kept per viewer.
     const pfTabs = byId("inbox-project");
     pfTabs.value = "open-tabs"; pfTabs.dispatch("change"); await tick();

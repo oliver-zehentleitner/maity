@@ -1425,6 +1425,13 @@ html.chat-full .chat-pane.chat-full-pane { position: fixed; inset: 0; z-index: 2
   margin: 0; padding: 4px; list-style: none; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
   box-shadow: 0 6px 18px rgb(0 0 0 / 0.15); }
 .menu[hidden] { display: none; }
+/* A menu in the sticky header (the tabs menu, "+", the gear and profile menus) never scrolls away
+   with the page, so it ends at the screen's bottom edge: a longer list scrolls inside it, and the page
+   behind does not scroll along. --menu-top is where the list starts on screen, set on the list when
+   it opens (js/menu.js, which wins over the default here); dvh follows a phone's browser bars where
+   vh does not (tsk-hhyccgssr2pr). */
+#header .menu { --menu-top: 8rem; max-height: calc(100vh - var(--menu-top) - 8px); max-height: calc(100dvh - var(--menu-top) - 8px);
+  overflow-y: auto; overscroll-behavior: contain; }
 .menu-item { display: block; width: 100%; padding: 8px 10px; border: 0; border-radius: 4px; background: none; color: var(--text);
   text-align: start; text-decoration: none; font: inherit; cursor: pointer; }
 .menu-item:hover, .menu-item:focus-visible { background: var(--surface-2); }
