@@ -6805,8 +6805,12 @@ def start_on_runner_open(run: Run, page: Page, name: str, section, open_form) ->
     # Why there is none, under the empty choice (tsk-2k0jcaxfd0ja): the answer above names
     # repositories and no harness.
     expect(form.locator(".placement-new-no-tool-why")).to_have_text("The runner's configuration names no tool for this target.")
-    # What a placement does not take is hidden; the button says what it does.
-    expect(form.locator("#join-ttl")).to_be_hidden()
+    # The form keeps one shape (tsk-6w4qckma672q): what a placement does not take stays, switched
+    # off with its reason beside it; the button says what it does.
+    expect(form.locator("#join-ttl")).to_be_visible()
+    expect(form.locator("#join-ttl")).to_be_disabled()
+    expect(form.locator("#join-ttl")).to_have_attribute("aria-describedby", re.compile(r"\bjoin-ttl-runner\b"))
+    expect(form.locator("#join-ttl-runner")).to_be_visible()
     start = form.get_by_role("button", name="Start on the runner", exact=True)
     expect(start).to_be_visible()
     run.shot(page, "placements-start-form")
