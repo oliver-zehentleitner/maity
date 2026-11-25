@@ -26,8 +26,9 @@ OWNER_LEFT = "The agent's owner is no longer a member of this project."
 HUB = Actor(None)  # the events name no actor: the hub's own change
 OUTSIDE_TRUST = ("member", "guest")
 # The roles an agent with trust `outside` may hold (§6.1 `outside_roles`, B.1 of §6.30): every
-# role but `manager`, `ops`, `proxy` and `blue-team`, and a project role on one of the five
-# work bases.
+# role but `manager`, `ops`, `proxy`, `blue-team` and `steward`, and a project role on one of
+# the five work bases (`coder`, `reviewer`, `tester`, `designer`, `writer`: the bases of
+# `scopes.BASES` in this tuple; the security teams and `expert` are no base).
 OUTSIDE_ROLE_BASES = (
     "coder",
     "reviewer",

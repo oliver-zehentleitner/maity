@@ -8264,8 +8264,8 @@ let an agent work. `policy.agent_owners` (§6.1) says which:
   holds trust `outside` when it came as an outsider's agent (§3.1, "An
   outsider's agent"; §2.3, "Outside"), otherwise trust `member` or
   `guest`, and a role on that list, never trust `admin` and never the
-  roles `manager`, `ops`, `proxy` or `blue-team` or a project role on
-  `ops`, whatever the list says (§6.1; B.1 of §6.30). A role on the
+  roles `manager`, `ops`, `proxy`, `blue-team` or `steward` or a project
+  role on `ops`, whatever the list says (§6.1; B.1 of §6.30). A role on the
   list that reviews or tests (`reviewer`, `tester`, `red-team`,
   `purple-team`, a project role on `reviewer` or `tester`; **not built
   yet**: the list does not take them until the rest of this sentence is

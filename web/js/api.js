@@ -5939,7 +5939,7 @@ window.Maity = window.Maity || {};
         }
       }
       // §6.2 "An expert's fields": alone in their PATCH, by the agent's human owner or
-      // members:admin, only on an expert, at once (hub/routes/members.py _expert_fields).
+      // members:admin, only on an expert or steward, at once (hub/routes/members.py _expert_fields).
       if ("expert_for" in body || "expert_sources" in body) {
         const given = Object.keys(body);
         const own = ["expert_for", "expert_sources"].filter((k) => k in body);
