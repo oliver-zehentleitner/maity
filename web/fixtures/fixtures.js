@@ -4263,10 +4263,13 @@ window.MAITY_FIXTURES = {
       "keep_the_why": "required",
       "keep_the_why_defaults": "adopt",
       "lease_seconds": 7200,
+      "looking_for_coders": "per_card",
       "max_placements": 8,
       "member_agents": "on",
       "member_agents_max": 3,
       "on_runner_revoke": "stop",
+      "outside_claims": "human",
+      "outside_claims_max": null,
       "outside_roles": [
         "coder"
       ],

@@ -116,6 +116,11 @@ class PolicyIn(Strict):
     # `{"owners_of": [handle, …]}`, checked in `_apply_policy` so each refusal is named.
     own_approvals: Any = None
     own_agents: Any = None
+    # §6.1, an outsider's claim: two choices, and `null` or an integer ≥ 1, checked in
+    # `_apply_policy` so that a bool or a string is named `out_of_range` as for `own_approvals`.
+    looking_for_coders: str | None = None
+    outside_claims: str | None = None
+    outside_claims_max: Any = None
 
 
 class AbsenceIn(Strict):
@@ -708,6 +713,17 @@ def _apply_policy(
             errors["own_agents"] = checked
         else:
             proposed["own_agents"] = checked
+    if "outside_claims_max" in change.model_fields_set:
+        cap = change.outside_claims_max
+        # `null` (no cap) or an integer from 1 to the column's width; a bool is no number (§6.1).
+        if cap is not None and (
+            isinstance(cap, bool)
+            or not isinstance(cap, int)
+            or not 1 <= cap <= policy.OUTSIDE_CLAIMS_MAX_MAX
+        ):
+            errors["outside_claims_max"] = "out_of_range"  # named plain, as own_approvals
+        else:
+            proposed["outside_claims_max"] = cap
     if change.on_runner_revoke == "keep" and instance_rule == "stop_floor":
         # The operator made stop a floor (§15.3, §16): no project keeps its agents.
         errors["policy.on_runner_revoke"] = "stop_floor"
@@ -1735,6 +1751,11 @@ HUMANS_ONLY_POLICY = {
     "outside_roles",
     "own_approvals",  # set by a human with project:admin (§6.1)
     "own_agents",  # set by a human with trust owner (§6.1, checked in `_authorise_patch`)
+    # An outsider's claim (§6.1): a human with project:admin; `outside_claims` `agent` and
+    # `direct` a human with trust owner (checked in `_authorise_patch`).
+    "looking_for_coders",
+    "outside_claims",
+    "outside_claims_max",
     "keep_the_why",  # whether the project requires Keep the Why (§6.23)
     "keep_the_why_defaults",
 }
@@ -1824,6 +1845,21 @@ def _authorise_patch(mine: Membership, body: ProjectPatch, given: set[str]) -> N
     named = body.policy.model_fields_set if "policy" in given and body.policy else set()
     if "own_agents" in named and (mine.trust != "owner" or mine.kind != "human"):
         raise ApiError(403, "forbidden", "own_agents is set by an owner", {"reason": "owner_only"})
+    # So is letting an agent, or nobody, confirm an outsider's claim (§6.1 `outside_claims`):
+    # a body that names `agent` or `direct`, the stored value too. `human` back is any
+    # `project:admin` human's (the lead's ruling of 2026-11-25, Q9).
+    if (
+        "outside_claims" in named
+        and body.policy is not None
+        and body.policy.outside_claims in policy.OUTSIDE_CLAIMS_OWNER_ONLY
+        and (mine.trust != "owner" or mine.kind != "human")
+    ):
+        raise ApiError(
+            403,
+            "forbidden",
+            "an outsider's claim without a human's confirmation is set by an owner",
+            {"reason": "owner_only"},
+        )
     # Launch is the owner's go (§6.1): an admin human is refused too.
     moves_to_launch = body.state == "launch" and mine.project.state != "launch"
     if moves_to_launch and (mine.trust != "owner" or mine.kind != "human"):
