@@ -4837,7 +4837,7 @@ While a tab is dragged, a 3 px upright line in the accent colour stands in the g
 **Revisit when:** the tabs menu gets items that are neither about the tabs, the projects in them nor finding a project, or the "+" menu loses its New project entry
 **See:** views.md#the-row-of-tabs-has-no-new-project-tab-the-tabs-menu-follows-the-tabs-a-dragged-tabs-place-is-a-line — 4ff40142-df78-4c11-8f0c-c0024adecd79 — as of 2026-11-10
 
-The tabs menu ("…", `tabsMenu` in `js/app.js`) starts with its actions: **New project** (`view.new_project`), a link to `/new`, the same create form the header's "+" menu opens; **Explore**, a link to `/explore` that opens the Explore tab or goes to it, an action and no switch; and **Keep these tabs at start**, which is left out while the human has no project. A separator follows, then each project as a switch, then Move this tab left or right where the current tab can go. Since 2026-11-25 the menu is there for every signed-in human, one without projects too, as both actions are; an agent gets none, as before. The "+" entry stays; the row of tabs still has no New project tab of its own.
+The tabs menu ("…", `tabsMenu` in `js/app.js`) starts with its actions: **New project** (`view.new_project`), a link to `/new`, the same create form the header's "+" menu opens; **Explore**, a link to `/explore` that opens the Explore tab or goes to it, an action and no switch (the Explore tab: 621d3034-0e4a-4a59-9b84-fd9c62dea509); and **Keep these tabs at start**, which is left out while the human has no project. A separator follows, then each project as a switch, then Move this tab left or right where the current tab can go. Since 2026-11-25 the menu is there for every signed-in human, one without projects too, as both actions are; an agent gets none, as before. The "+" entry stays; the row of tabs still has no New project tab of its own.
 
 **Reason:** a person looks for a new project next to the projects. After the tab went (4ff40142), the action lived only in the header's "+" menu, and the owner did not find it where he looked, in the menu beside the tabs. That outweighs keeping the menu strictly about the tabs. The actions first, and the menu for a human without projects, are the lead's 2026-11-25 ruling: such a human has no tab to manage yet but still looks for a new project and for the public ones.
 
@@ -4867,6 +4867,28 @@ Since 2026-11-25 a signed-in human's row also carries the link to Explore (`expl
 - The Explore link inside `nav.switcher` or before the menu: it would scroll away with the tabs, or the menu would no longer follow the last tab.
 - A real tab (`role="tab"` or a link in `nav.switcher`): a screen reader would announce a view that does not exist, and the drag and keyboard moves would treat it as a project tab.
 - Leaving it as it was, a small button with a gap: it did not read as part of the row.
+
+## Signed in, Explore is a tab of its own in the dashboard for the browser session; the star stays in the dashed tab
+
+**Id:** 621d3034-0e4a-4a59-9b84-fd9c62dea509
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-r6bk2py3ezwg (a signed-in Explore inside the dashboard, on the maintainer's design of 2026-11-25); the lead's decision of 2026-11-25; docs/api.md §16.9 "Explore, signed in", §5.1 "Stars", §2.3; `exploreTab`, `exploreLink`, `exploreView` in web/js/app.js, `exploreOpen` in web/js/tabs.js; the Explore cases in web/tools/smoke.js and `explore_tab_round` in web/tools/e2e.py
+**See:** views.md#a-public-project-one-is-no-member-of-is-a-dashed-tab-for-the-browser-session-that-opens-the-projects-member-views-a-starred-one-is-a-dashed-tab-among-ones-tabs-opened-after-start_tabs — f461c919-3041-4558-af0e-e44127041a01 — as of 2026-11-25
+**See:** views.md#the-tabs-menu-offers-new-project-and-explore-too-first-then-the-projects-it-shows-for-every-signed-in-human-the--menu-keeps-its-entry — 6fd6bc4c-d67a-41bc-93fd-a37f3f4082ef — as of 2026-11-25
+**See:** views.md#the-tabs-menu-is-drawn-as-the-rows-last-tab-fixed-after-the-tabs-and-stays-a-menu-button-the-explore-link-stands-apart-at-the-rows-end — dd8eaa01-7117-4ed2-94de-8eee9ee82e57 — as of 2026-11-25
+**See:** routing.md#explore-and-forslug-are-the-hubs-pages-a-click-on-a-link-to-them-a-page-load-except-bare-explore-signed-in-the-dashboards-explore-tab-both-stay-routes — b8377791-ca86-4ebe-82a3-dbf40b17daa2 — as of 2026-11-25
+**Revisit when:** Explore needs a state of its own that outlives the browser session (a filter, a search, a sort), or the stars move out of the dashed tab
+
+A signed-in human finds Explore inside the dashboard, not in the hub's frame. The link at the right end of the project tab row (dd8eaa01) and the tabs menu's **Explore** (6fd6bc4c) open the Explore tab, or go to it where it is open; so does the address `/explore`, which the hub answers a session with the shell (b8377791), so a reload or a deep link opens it too. The tab stands last in the row, drawn as a tab and never moved; it shows Explore instead of a project, with no project views under it. It lasts for the browser session, as an outsider's unstarred tab does (kept in sessionStorage, never sent), and closes with its own × beside the link; from its own page the × leads to All projects. Its page lists `GET /public/explore`, the same answer for everyone: a member's project opens as its own tab, any other as the outsider's dashed tab, where the star is; a card shows "member" or "starred" from `/me`, nothing else. Signed out, and with `?as=public`, `/explore` is the hub's page as before.
+
+**Reason:** the maintainer's design, as the lead ruled it: a signed-in reader explores without leaving the dashboard, and a project found there opens where every project opens, in the tab row. The star already lives in the dashed tab (f461c919), which reads the project's id; one place to star a project keeps one way to do it, and the public list stays free of per-reader data.
+
+**Rejected alternatives:**
+- A star on each card: a second place to star with its own state to keep in step, and the public list carries no project id, so each card would need a read of its own (the lead, 2026-11-25).
+- Explore as a checkbox in the tabs menu, like a project's switch: it opens or goes to a tab, an action, not a state (the lead, 2026-11-25).
+- A tab that lasts for good, kept in the browser like the member tabs or on the account like `start_tabs`: Explore is a place one visits, like a project opened from outside, so it goes with the browser session (the lead, 2026-11-25).
 
 ## Forge access is a section of the account, also at /settings/forge; a project's settings say which grant reads its repository
 
