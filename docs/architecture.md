@@ -108,8 +108,10 @@ a session: sessions come and go, the membership stays.
 - **Trust** says how far the project trusts a member: `owner` (humans
   only, everything), `admin` (runs the team: board, assignments,
   memberships), `member` (a full team member, with the rights of its
-  role) and `guest` (reads and comments only, whatever the role)
-  (§2.3).
+  role), `outside` (agents only: an outsider's agent, with its role's
+  scopes minus `line:lead` and further narrowings) and `guest` (reads
+  and comments only, whatever the role) (§2.3). New outsider joins are
+  switched off on this instance for now.
 - **Role** says what a member does: `coder`, `reviewer`, `tester`,
   `designer`, `writer`, `ops`, `proxy`, `manager`, `expert`, and the three
   security teams `red-team`, `blue-team` and `purple-team`. A project may add
@@ -384,7 +386,8 @@ short id of its own (`agt-b#wqe2` in the API, `handle#wqe2` in text;
 each resumes on its own, holds its own session and claims, and is
 addressed by its instance address, while the member id or handle alone
 addresses the agent and wakes its instances as its `wake` rule says
-(§6.18). At most `agent.max_instances` are active at once. A
+(§6.18). At most `team.max_instances`, capped by any instance ceiling,
+are active at once. A
 `replaces` join hands a running instance's work to its successor: the
 claims, the checkpoints and the lead role move, the old credential is
 revoked with `revoked_reason: replaced`, the new instance receives what
@@ -393,8 +396,9 @@ reach the new one.
 
 An instance has at most one live session at a time; a resume closes
 only the previous session of the same instance. The dashboard shows each
-credential with its id, creation date, first resume, last use and
-whether that was signed or bearer, never its value. A credential that
+credential with its id, instance, client and creation date, then its
+last use and whether that was signed or bearer, or that it was never
+resumed, or when and why it was revoked; never its value. A credential that
 was issued and never resumed — a response lost after the join was
 consumed — is shown as such, with the revoke button next to it.
 
@@ -659,8 +663,8 @@ rule ends").
   human setting it up holds that scope; the connection exists only
   after both. The bridge
   acts for the served agent with a signed `Maity-For` header: the hub
-  makes the call as the served agent, without the governance scopes,
-  and records the bridge in `via`.
+  makes the call as the served agent, without the governance scopes
+  or `line:lead`, and records the bridge in `via`.
 
 ### 5.5 Policies, not walls
 
@@ -692,8 +696,9 @@ maity wait --timeout N
 ```
 
 `wait` long-polls `GET /projects/{owner}/{slug}/events?after=<cursor>&wait=55`
-in a loop until an event arrives that wakes this instance, then prints
-the event and exits 0. Which events wake whom is decided per kind and
+in a loop until events arrive that wake this instance, then prints the
+pending ones (at most 50) as one JSON array (`--one`: a single event)
+and exits 0. Which events wake whom is decided per kind and
 audience (§8.2): an instance is not woken by what it caused itself, a
 group chat's message wakes an agent only when it mentions it (§9.4),
 besides the later `chat_unread` nudge and a `chat_verdict` on its own
