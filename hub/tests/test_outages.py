@@ -55,13 +55,15 @@ def test_a_failure_files_one_notice_to_the_profiles_owner(setup: Setup) -> None:
     assert len(notices(setup)) == 1
 
 
+@pytest.mark.parametrize("log_case", ["present", "empty", "absent"])
 def test_refused_clone_notice_points_the_owner_to_the_restricted_runner_log(
     setup: Setup,
+    log_case: str,
 ) -> None:
     body = placed(setup)
     at = "2026-10-22T13:00:00Z"
     line = f"{body['id']}: workspace_in_use: its .git/config sets core.worktree"
-    finding = {
+    finding: dict[str, Any] = {
         "cause": "unknown",
         "seen_at": at,
         "signals": {
@@ -72,8 +74,9 @@ def test_refused_clone_notice_points_the_owner_to_the_restricted_runner_log(
             "login": "unknown",
             "pickup_code": None,
         },
-        "log": [{"at": at, "line": line}],
     }
+    if log_case != "absent":
+        finding["log"] = [{"at": at, "line": line}] if log_case == "present" else []
     result = report(
         setup,
         body,
@@ -84,9 +87,12 @@ def test_refused_clone_notice_points_the_owner_to_the_restricted_runner_log(
         finding=finding,
     )
     assert result.status_code == 200, result.text
-    assert result.json()["reported"]["finding"]["log"] == finding["log"]
+    assert result.json()["reported"]["finding"] == finding
     [notice] = notices(setup)
-    assert "Runner log" in notice["summary"]
+    ending = "restarts 0."
+    if log_case == "present":
+        ending += " See the Runner log in Managed agents for the clone check's reason."
+    assert notice["summary"].endswith(ending)
     assert "core.worktree" not in notice["summary"]
 
 

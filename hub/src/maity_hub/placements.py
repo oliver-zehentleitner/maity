@@ -1745,7 +1745,7 @@ def _open_outage(conn: Connection, placement: Any, report: dict[str, Any]) -> No
         and report.get("detail") == "not_a_plain_clone"
         and (report.get("finding") or {}).get("log")
     ):
-        runner_log = " See the Runner log in Managed agents for the clone check’s reason."
+        runner_log = " See the Runner log in Managed agents for the clone check's reason."
     request_id = file_hub_notice(
         conn,
         placement.project_id,
