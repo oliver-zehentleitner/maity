@@ -18718,8 +18718,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       await go("#" + exHref(otItems().find((i) => i.textContent === "Explore"))); for (let k = 0; k < 6; k++) await tick();
       expect(exPath() === "/explore" && exTab() && exTab().getAttribute("aria-current") === "page" && ssStore[EXPLORE] === "1",
         "explore: the tabs menu's Explore opens the tab again, current");
-      exClose().click(); for (let k = 0; k < 6; k++) await tick();
-      expect(exPath() === "/all" && !exTab() && !(EXPLORE in ssStore) && !otPatches.length, "explore: its × on its own page closes it and leads to All projects " + exPath());
+      exClose().click(); for (let k = 0; k < 12; k++) await tick();
+      expect(exPath() === "/all" && !exTab() && !(EXPLORE in ssStore) && !otPatches.length, "explore: its × on its own page closes it and leads to All projects "
+        + JSON.stringify([exPath(), !!exTab(), ssStore[EXPLORE], otPatches]));
       // While the instance serves no public pages, GET /public/explore is not_found: the page says so.
       delete viPages["/public/explore"];
       await go("#/explore"); for (let k = 0; k < 6; k++) await tick();

@@ -3256,8 +3256,9 @@ window.Maity = window.Maity || {};
       // The boot's reads are done: a part nobody asked for (a window read a minute ago) is dropped.
       if (primed) M.api.unprime(primed);
       ctx.projectViews = views;
-      // At /explore the Explore tab is open, also when the address was opened by a reload or a link.
-      if (where.scope === "explore") M.tabs.setExplore(ctx, true);
+      // At /explore the Explore tab is open, also when the address was opened by a reload or a link;
+      // not by a drawing a newer one overtook (its × may have closed the tab meanwhile).
+      if (where.scope === "explore" && seq === renderSeq) M.tabs.setExplore(ctx, true);
       ctx.followRoute = (fn) => { if (seq === renderSeq) followingRoute = fn; };
       if (seq !== renderSeq) return;
       // What the next switch may start from: read just now, or kept and read again below; nothing
