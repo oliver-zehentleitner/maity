@@ -12071,6 +12071,10 @@
     "en": "6c675eafabb0d256",
     "text": "d2aaaead9b5fc517"
   },
+  "name_rules.handle_person": {
+    "en": "b83f07916d982f95",
+    "text": "31e163c70bb0688d"
+  },
   "name_rules.slug": {
     "en": "0851da38257f9de3",
     "text": "03f300ff0af6a687"
@@ -12852,8 +12856,8 @@
     "text": "3057f3577fb2b74d"
   },
   "orgs.field.format": {
-    "en": "97ea92837113d4eb",
-    "text": "24557d70a246ddfa"
+    "en": "d4d166f86e3818b4",
+    "text": "125e9301d79441ea"
   },
   "orgs.field.invited": {
     "en": "ad21cd4d8779da6a",

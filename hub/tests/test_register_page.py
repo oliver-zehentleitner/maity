@@ -12,7 +12,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import Engine, select
 
-from maity_hub import catalog, clock, models, render
+from maity_hub import catalog, clock, languages, models, render
 from maity_hub import tables as t
 from maity_hub.config import Settings
 from maity_hub.notifications import tokens
@@ -212,8 +212,8 @@ def test_a_wrong_password_is_the_pages_error_and_the_fifth_voids(
     ("given", "message"),
     [
         ({"handle": "Ada Lovelace"}, "lowercase only"),  # the word the field shows while typed
-        ({"handle": "ada lovelace"}, "2 to 31"),
-        ({"handle": "x"}, "2 to 31"),
+        ({"handle": "ada lovelace"}, "6 to 31"),
+        ({"handle": "x"}, "6 to 31"),
         ({"handle": "abcde"}, "six characters"),  # five: kept for the product (§16.11)
         ({"handle": "maintainer"}, "taken"),
         ({"display_name": ""}, "1 to 64"),
@@ -639,6 +639,12 @@ def test_the_handle_field_carries_the_hubs_rule_and_says_it_before_sending(
     assert f'pattern="{register_page.HANDLE_PATTERN}"' in page.text
     assert 'aria-describedby="handle-rule"' in page.text
     assert f'<p class="hint" id="handle-rule">{html.escape(words["handle_rule"])}</p>' in page.text
+    # A new person's handle needs six characters (§16.11): the rule says so before anything is
+    # sent, in every language, while the pattern stays the syntax.
+    for lang in languages.INTERFACE:
+        rule = catalog.section("register_page", lang)["handle_rule"]
+        assert "6" in rule or "six" in rule.lower(), (lang, rule)
+        assert "2" not in rule, (lang, rule)
     check = (
         f'<p class="hint handle-check" id="handle-check">{html.escape(words["handle_lower"])}</p>'
     )
