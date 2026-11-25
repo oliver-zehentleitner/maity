@@ -99,6 +99,12 @@ class Refused(Exception):
         self.why = why
 
 
+class CloneRefused(Refused):
+    def __init__(self, finding: clonecheck.Finding):
+        super().__init__("workspace_in_use", "not_a_plain_clone", why=finding.reason)
+        self.finding = finding
+
+
 def said(text: str) -> str | None:
     """The last line a tool wrote, for the runner's log: printable, at most 300 characters,
     with the userinfo taken out of every URL in it. An https repository URL carries none,
@@ -337,9 +343,9 @@ def plain(workspace: Workspace, as_user: AsUser = RUNNER) -> None:
     session of the agent may have planted what git follows elsewhere (a `commondir`,
     `worktrees/`), so nothing starts in such a clone, and neither the agent nor a person's
     later git in it lands where the plant points (§15.7)."""
-    finding = clonecheck.not_inspectable(workspace.repo, as_user)
+    finding = clonecheck.inspection_finding(workspace.repo, as_user)
     if finding is not None:
-        raise Refused("workspace_in_use", "not_a_plain_clone", why=finding)
+        raise CloneRefused(finding)
 
 
 def prepare(

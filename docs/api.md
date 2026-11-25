@@ -22573,7 +22573,12 @@ skill.
   branch or file name, or the text of an exception raised by an
   operation on the agents' side, goes in only as a fixed code or a
   placeholder (`<path>`, `<branch>`, `<error>`), or the line is left
-  out. A line the runner cannot build that way is left out.
+  out. A line the runner cannot build that way is left out. For a clone
+  refused during start (`workspace_in_use`, `not_a_plain_clone`), a
+  finding with cause `unknown` carries the clone check's reason. The
+  runner names recognized Git metadata such as `core.worktree` from a
+  fixed list. Other items appear as `<key>` or `<entry>`. Configuration
+  values stay out of the finding.
 - **One placement per line.** The runner writes each line about a
   placement with that placement's id at its start (`plc-0003: …`) and
   selects for `finding.log` only the lines that start with the id of

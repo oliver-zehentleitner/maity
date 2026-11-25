@@ -55,6 +55,41 @@ def test_a_failure_files_one_notice_to_the_profiles_owner(setup: Setup) -> None:
     assert len(notices(setup)) == 1
 
 
+def test_refused_clone_notice_points_the_owner_to_the_restricted_runner_log(
+    setup: Setup,
+) -> None:
+    body = placed(setup)
+    at = "2026-10-22T13:00:00Z"
+    line = f"{body['id']}: workspace_in_use: its .git/config sets core.worktree"
+    finding = {
+        "cause": "unknown",
+        "seen_at": at,
+        "signals": {
+            "process": "gone",
+            "exit_code": None,
+            "below": "unknown",
+            "pane_match": [],
+            "login": "unknown",
+            "pickup_code": None,
+        },
+        "log": [{"at": at, "line": line}],
+    }
+    result = report(
+        setup,
+        body,
+        1,
+        state="failed",
+        reason="workspace_in_use",
+        detail="not_a_plain_clone",
+        finding=finding,
+    )
+    assert result.status_code == 200, result.text
+    assert result.json()["reported"]["finding"]["log"] == finding["log"]
+    [notice] = notices(setup)
+    assert "Runner log" in notice["summary"]
+    assert "core.worktree" not in notice["summary"]
+
+
 def test_its_events_reach_the_owner_only_and_no_project_route_shows_it(setup: Setup) -> None:
     body = placed(setup)
     report(setup, body, 1, state="failed", reason="crash_loop")
