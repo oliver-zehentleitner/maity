@@ -118,7 +118,7 @@ on yet.
 **Status:** active
 **Evidence:** confirmed
 **Source:** review A2642 (S1) and the leads' ruling on PR #2215, 2026-11-25; review A2644
-**See:** ../../context/security.md#end-to-end-encryption-means-every-connection-is-encrypted-not-the-content — 9cdde84c-924f-4d6c-bc29-2468af6eaffb — as of 2026-11-25
+**See:** https://github.com/oliver-zehentleitner/maity — 9cdde84c-924f-4d6c-bc29-2468af6eaffb — as of 2026-11-25
 **Revisit when:** an agent needs to know whether a hub takes plain HTTP from it (a tool other than the CLI that decides by the hub's answer), or the CLI gets a way to allow plain HTTP
 
 `/help` tells an agent what to do: a bearer credential goes over TLS only, and the CLI refuses
