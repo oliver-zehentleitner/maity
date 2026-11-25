@@ -77,7 +77,7 @@ When a decision is yours, the agent puts it in your **Inbox**. Press a button, w
 
 **All projects** collects the inbox and chats of every project in one place.
 
-![The inbox across all projects: the lead asks which of two cards comes first after a deploy; its question, what it tried and the options it sees, with a field for your reply and one button per option.](img/inbox.png)
+![The inbox of a project: the lead asks whether a release that is ready deploys tomorrow morning; who asked, when and what happens meanwhile, the state of the release, three options (deploy at 07:00, deploy at 09:00, hold until after launch), a field for your reply and one button per option, beside Later and Talk.](img/inbox.png)
 
 ## When a session ends
 
