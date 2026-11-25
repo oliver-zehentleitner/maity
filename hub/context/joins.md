@@ -524,8 +524,8 @@ said nothing.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the lead's order on card tsk-enfbkj0xqq5m, 2026-11-23 (the join lands switched off, failing closed, until the own-approvals gate of tsk-3ggnhdmgmkf3 is on main; the "may an outsider join here" predicate in one place; the refusal of an outsider's agent's own claim in one place; the membership's own trust decides whose agent is outside); the review A2245 of #2142 and the lead's findings with it (round 2); the maintainer's answers to req-gp8jzgr6zdvj and req-yzt08c2qgx6g (`context/members.md`, fee10dc5 and d20a0c4b); `docs/api.md` §3.1 "An outsider's agent", §6.1 "The outsiders' opt-in", §6.5 "Until the claim request is built"; the lead's ruling of 2026-11-24 (joins from outside stay off at launch by the owner's decision, the own-approvals gate being built, #2145)
-**Revisit when:** the owner decides to open joins from outside (they are off at launch by the owner's decision; the code no longer waits on anything before they can be turned on, the own-approvals gate is built, #2145; `outsiders.JOINS_ON` then goes on by a one-line change of its own); the claim request of §6.5 is built (`refuse_taking` gives way to it); the outsiders' block or own quota (§3.1, "The outsiders of a project") is built, which `still_holds` and the join then check as well
+**Source:** the lead's order on card tsk-enfbkj0xqq5m, 2026-11-23 (the join lands switched off, failing closed, until the own-approvals gate of tsk-3ggnhdmgmkf3 is on main; the "may an outsider join here" predicate in one place; the refusal of an outsider's agent's own claim in one place; the membership's own trust decides whose agent is outside); the review A2245 of #2142 and the lead's findings with it (round 2); the maintainer's answers to req-gp8jzgr6zdvj and req-yzt08c2qgx6g (`context/members.md`, fee10dc5 and d20a0c4b); `docs/api.md` §3.1 "An outsider's agent", §6.1 "The outsiders' opt-in", §6.5 "Until the claim request is built"; the lead's ruling of 2026-11-24 (joins from outside stay off at launch by the owner's decision, the own-approvals gate being built, #2145); the owner's decision of 2026-11-25 (joins from outside on), carried out on card tsk-25wd170kbf12 by the one-line change this entry foresaw
+**Revisit when:** the owner decides to close joins from outside again (`outsiders.JOINS_ON` back to `False`, a one-line change of its own); the claim request of §6.5 is built (`refuse_taking` gives way to it); the outsiders' block or own quota (§3.1, "The outsiders of a project") is built, which `still_holds` and the join then check as well
 **See:** https://github.com/oliver-zehentleitner/maity — fee10dc5-5922-4fb8-84f3-d1549b670a05 — as of 2026-11-23
 **See:** https://github.com/oliver-zehentleitner/maity — d20a0c4b-c785-481b-b0d8-6b972bc75441 — as of 2026-11-23
 
@@ -533,9 +533,11 @@ said nothing.
 project now. It reads the switch `outsiders.JOINS_ON`, the admins' stored
 `policy.agent_owners: anyone` and whether the project is public for outsiders. The gate
 (`access.gate`, for `access.OUTSIDE_JOINS`), the joins routes (`routes/joins.joiner`) and the
-exchange (`outsiders.still_holds`) all ask it and nothing else. `JOINS_ON` ships `False`: the
-three joins routes then answer an outsider `not_found` before the body is read, as before, and no
-exchange makes a membership with trust `outside`. `outsiders.refuse_taking` is the one check of
+exchange (`outsiders.still_holds`) all ask it and nothing else. `JOINS_ON` shipped `False` until
+the owner's decision of 2026-11-25 turned it on; on, a join still opens only where the admins
+stored `anyone` and the project is public for outsiders. Off, the three joins routes answer an
+outsider `not_found` before the body is read, and no exchange makes a membership with trust
+`outside`. `outsiders.refuse_taking` is the one check of
 a card coming to be held by such an agent: `claim`, the `assign` that moves an expired claim
 and the takeover receiver call it, each where the contract's order puts it (§6.5). Cover, which
 is not a takeover and moves cards without a call, asks the same test
@@ -546,8 +548,9 @@ contract pull request).
 **Reason:** without the own-approvals gate, an agent with trust `outside` under `done_authority:
 holder` could move its own card to `done`. The lead wanted the join built and reviewed now but
 unreachable until that gate lands, and the opt-in, then pending with the maintainer, changeable
-in one line. Either answer was then one edit, and turning the join on is one reviewable line.
-One refusal for the card keeps the interim of §6.5 in one place, to be replaced as a whole when
+in one line. Either answer was then one edit, and turning the join on was one reviewable line:
+when the owner decided on 2026-11-25 to open joins from outside, the switch went on by that line
+alone, with no new behaviour beside it. One refusal for the card keeps the interim of §6.5 in one place, to be replaced as a whole when
 the claim request is built.
 
 **Rejected alternatives:**
@@ -562,7 +565,8 @@ the claim request is built.
 
 `GET …/contribution` (§6.1) answers from the same predicate: `members_only` while
 `joins_open` does not hold, the switch off included, since the outsider's tab needs to say why
-the button is missing before the join is on (the lead, relaying the web side, 2026-11-23).
+the button is missing, as it did before the join was on (the lead, relaying the web side,
+2026-11-23).
 
 **Whose agent is outside (the lead's ruling of 2026-11-23):** every check reads the
 trust of the membership it is about: the active row, and for own approvals the active row, else
