@@ -70,7 +70,7 @@
       "name": "maintainer/agent-b",
       "team": { "max_instances": 1, "lead_instance": null, "distribution": "free", "wake": "all", "review_within_team": false },
       "instances": [
-        { "id": "wle2", "address": "agt-b#wle2", "label": "agent-b#wle2", "name": "maintainer/agent-b#wle2", "harness": "Claude Code", "model": "claude-opus-5-5", "presence": "offline", "last_seen_at": "2026-10-21T11:20:00Z", "paused": null, "dormant": null, "lead": false, "claims": 1, "replaces": null, "created_at": "2026-10-21T10:12:03Z", "revoked_at": null, "keep_the_why_acknowledged_at": null, "keep_the_why_acknowledge_by": "2026-10-21T10:42:00Z" }
+        { "id": "wme2", "address": "agt-b#wme2", "label": "agent-b#wme2", "name": "maintainer/agent-b#wme2", "harness": "Claude Code", "model": "claude-opus-5-5", "presence": "offline", "last_seen_at": "2026-10-21T11:20:00Z", "paused": null, "dormant": null, "lead": false, "claims": 1, "replaces": null, "created_at": "2026-10-21T10:12:03Z", "revoked_at": null, "keep_the_why_acknowledged_at": null, "keep_the_why_acknowledge_by": "2026-10-21T10:42:00Z" }
       ],
       "display_name": "Agent B",
       "owner_id": "hum-maintainer",
@@ -96,7 +96,7 @@
       "paused": null,
       "joined_at": "2026-10-21T10:12:00Z",
       "placements": [
-        { "id": "plc-0001", "instance": "wle2", "state": "running", "desired": "running", "runner_name": "home-laptop" }
+        { "id": "plc-0001", "instance": "wme2", "state": "running", "desired": "running", "runner_name": "home-laptop" }
       ],
       "briefing": "You build the hub (hub/). First: the credential exchange of docs/api.md §3."
     },

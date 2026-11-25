@@ -3701,6 +3701,8 @@
   "placements.finding.login_needed": "需要登录",
   "placements.finding.log": "运行器日志",
   "placements.generation": "第 {generation} 代",
+  "placements.no_instance": "尚无实例",
+  "placements.clone": "克隆 {clone}",
   "placements.fresh_session": "一个新会话",
   "placements.hint": "运行器为此项目启动的智能体：期望的状态，以及运行器最近一次报告的状态。",
   "placements.last_report": "{ago}最近一次报告",

@@ -414,8 +414,12 @@ window.Maity = window.Maity || {};
         lines.length ? h("ul", null, lines.map((line) => {
           const words = { agent: line.agent.handle, project: line.project };
           return h("li", null,
-            M.tn("runners.placements.line", { agent: h("strong", { translate: "no" }, line.agent.handle), project: line.project }),
-            h("span", { class: "muted" }, " · ", line.desired === "running" ? M.t("runners.placements.running") : M.t("runners.placements.stopped"),
+            // The instance as `handle#id` (§15.3): two of one agent on this runner told apart;
+            // the owner's line carries no clone. None before the first pickup.
+            M.tn("runners.placements.line", { agent: h("strong", { translate: "no" }, line.agent.handle,
+              line.instance ? h("span", { class: "member-instance muted" }, "#" + line.instance) : null), project: line.project }),
+            h("span", { class: "muted" }, line.instance ? null : [" · ", M.t("placements.no_instance")],
+              " · ", line.desired === "running" ? M.t("runners.placements.running") : M.t("runners.placements.stopped"),
               line.state ? [" · ", M.t("runners.placements.reported", { state: line.state })] : null,
               line.foreign ? [" · ", M.t("runners.placements.foreign")] : null),
             " ",
