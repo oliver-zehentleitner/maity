@@ -17,13 +17,12 @@ A public project's outsider reading the member routes (§2.3) reads the cards by
 
 from __future__ import annotations
 
-import hashlib
 from collections.abc import Collection
 from typing import Any
 
 from sqlalchemy import Connection, and_, case, func, or_, select
 
-from maity_hub import clock, moderation, namespace, public_design, public_pages, render
+from maity_hub import clock, moderation, namespace, public_design, public_pages
 from maity_hub import tables as t
 from maity_hub.cards import CLOSED
 from maity_hub.config import Settings
@@ -256,21 +255,15 @@ def render_card(conn: Connection, hub: Settings, card_id: str) -> list[public_pa
     }
     # The HTML in the dashboard's design, from `data` alone (`public_design.page`).
     content = public_design.page(KIND, data, path)
-    digest = hashlib.sha256("\x00".join((path, project.name, content)).encode())
     return [
-        public_pages.Page(
-            path=path,
-            body=render.page_document(
-                lang="en",
-                title=f"{card.title} ({card.id}) · {project.name}",
-                canonical=f"{hub.public_url.rstrip('/')}{path}",
-                content=content,
-                styled=False,
-            ),
-            inputs=digest.hexdigest(),
-            lastmod=clock.now(),
-            view="card",
-            data=data,
+        public_pages.page(
+            hub,
+            path,
+            f"{card.title} ({card.id}) · {project.name}",
+            content,
+            (project.name,),
+            KIND,
+            data,
         )
     ]
 
