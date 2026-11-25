@@ -1759,8 +1759,10 @@ def add_parser(sub: Any, fmt: type[argparse.HelpFormatter]) -> None:
     # where the runner is not that user (the agent_user layout, an ssh host).
     r = rsub.add_parser("codexd")
     r.add_argument("action", choices=["end-updater"])
+    r.add_argument("root")
     r.add_argument("home")
-    r.set_defaults(handler=lambda a: codexd.main([a.action, a.home]))
+    r.add_argument("wait", nargs="?", default=str(codexd.UPDATER_WAIT))
+    r.set_defaults(handler=lambda a: codexd.main([a.action, a.root, a.home, a.wait]))
     r = rsub.add_parser("stub")
     r.add_argument("--exit-code", type=int, default=0)
     r.add_argument("--run-seconds", type=int, default=30)

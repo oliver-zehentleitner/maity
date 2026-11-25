@@ -1261,46 +1261,58 @@ class Supervisor:
                 if target.name not in seen or (target.remote and target.agent_files is None):
                     done = False  # its sessions are unknown: unknown means kept
                     continue
+                paths: list[Path] = []
+                in_tmp = False
+                skip = refused = False  # this target's scratch is not removed this pass
+                try:
+                    located = self._scratch_location(p, target)
+                    if located is None:
+                        skip = True  # no /tmp scratch on this target (an ssh host): none to remove
+                    else:
+                        path, in_tmp = located
+                        # Beside the clone, the former per-project scratch goes too, wherever a
+                        # start before the holder made one (tsk-c7zzd440x8pn); the holder's
+                        # project directory stays, even empty (scratchop.remove). The holder's
+                        # path is asked for only where a holder is there and the host's `maity`
+                        # has the holder op: an older one keeps the former layout and cannot read
+                        # that path (A2045). Where the host does not answer (ssh unreachable),
+                        # nothing is asked of it this pass, and the placement stays uncleared to
+                        # be tried again (A2068).
+                        paths = [path]
+                        if not in_tmp:
+                            old = workspace.scratch_of(
+                                target.workspaces, p["project_id"], p["id"], target.host,
+                                former=True,
+                            )  # fmt: skip
+                            if target.name not in layouts:
+                                layouts[target.name] = self._host_layout(target)
+                            layout = layouts[target.name]
+                            if layout == "unknown":
+                                done, skip, paths = False, True, []
+                            else:
+                                paths = [*([path] if layout == "holder" else []), old]
+                except workspace.Refused:
+                    refused = True
+                # A Codex placement's updater loop and app-server daemon live on detached from
+                # its session, in the CODEX_HOME inside a scratch: ended first, in either layout,
+                # before its TMPDIR leaf and the scratch go, as at a start (tsk-n6sajs3gyh8h,
+                # slice 2). Not where the host's layout is unknown: nothing is asked of it then.
+                harness = self.cfg.harnesses.get(p.get("harness") or "")
+                if harness is not None and harness.id == "codex" and not in_tmp:
+                    for room in paths:
+                        try:
+                            self._stop_codex_daemon(p, harness, target, room, None, closing=True)
+                        except Exception as exc:  # noqa: BLE001 - the removal goes on
+                            self.log(f"{p['id']}: the Codex stop at close failed: "
+                                     f"{type(exc).__name__}")  # fmt: skip
                 if not self._remove_tmpdir(p, target):
                     done = False
                 if target.as_user.here and not self._remove_stale(p, target):
                     done = False  # an earlier leaf still there: tried again next time
-                try:
-                    located = self._scratch_location(p, target)
-                    if located is None:
-                        continue  # no /tmp scratch on this target (an ssh host): none to remove
-                    path, in_tmp = located
-                    # A Codex placement's updater loop and app-server daemon live on detached
-                    # from its session, in the CODEX_HOME inside this scratch: ended before the
-                    # scratch goes, or they would run on without it (tsk-n6sajs3gyh8h, slice 2).
-                    harness = self.cfg.harnesses.get(p.get("harness") or "")
-                    if harness is not None and harness.id == "codex" and not in_tmp:
-                        try:
-                            self._stop_codex_daemon(p, harness, target, path, None)
-                        except Exception as exc:  # noqa: BLE001 - the removal goes on
-                            self.log(f"{p['id']}: the Codex stop at close failed: "
-                                     f"{type(exc).__name__}")  # fmt: skip
-                    # Beside the clone, the former per-project scratch goes too, wherever a start
-                    # before the holder made one (tsk-c7zzd440x8pn); the holder's project
-                    # directory stays, even empty (scratchop.remove). The holder's path is asked
-                    # for only where a holder is there and the host's `maity` has the holder op:
-                    # an older one keeps the former layout and cannot read that path (A2045).
-                    # Where the host does not answer (ssh unreachable), nothing is asked of it
-                    # this pass, and the placement stays uncleared to be tried again (A2068).
-                    paths = [path]
-                    if not in_tmp:
-                        old = workspace.scratch_of(
-                            target.workspaces, p["project_id"], p["id"], target.host, former=True
-                        )
-                        if target.name not in layouts:
-                            layouts[target.name] = self._host_layout(target)
-                        layout = layouts[target.name]
-                        if layout == "unknown":
-                            done = False
-                            continue
-                        paths = [*([path] if layout == "holder" else []), old]
-                except workspace.Refused:
+                if refused:
                     break
+                if skip:
+                    continue
                 for path in paths:
                     try:
                         removed = (
@@ -2696,19 +2708,22 @@ class Supervisor:
         target: Target,
         scratch: Path | None,
         view: GateView | None,
+        closing: bool = False,
     ) -> None:
         """A Codex start stops the app-server daemon an earlier start left in the placement's
         CODEX_HOME (codexd): it is detached from the pane's process group, so a stop's TERM
         never reached it, and it keeps the first start's TMPDIR, a leaf `_context` is about to
         remove (tsk-n6sajs3gyh8h). In the start thread, outside the lock: it may take seconds.
         With the binary the session starts and the home its launch env names. A failed stop is
-        logged and the start goes on."""
+        logged and the start goes on. `closing`: the same stop when the placement is closed,
+        before its scratch goes (`_clear_scratch`); its log lines say the close goes on."""
         if harness.id != "codex":
             return
         found = (view or GateView.of(target, harness.id)).found
         if found is None or not found.path:
             return  # the gate refuses a Codex start without its binary
         assert target.agent_files is not None  # noqa: S101 - connected before a launch
+        going = "the close goes on" if closing else "the start goes on"
 
         def say(line: str) -> None:
             self.log(f"{p['id']}: {line}")
@@ -2716,8 +2731,7 @@ class Supervisor:
         # The agents' home as the target found it when it was set up or connected: no account
         # lookup or remote call outside the stop's deadline.
         if target.agents_home is None:
-            say("the agents' home is not known; no Codex app-server daemon stopped, "
-                "the start goes on")  # fmt: skip
+            say(f"the agents' home is not known; no Codex app-server daemon stopped, {going}")
             return
         # The path `agent_dir_for` returns, made nothing of: `_context` makes it, and here no
         # work may run outside the stop's deadline. With a scratch the home ignores it anyway.
@@ -2729,7 +2743,7 @@ class Supervisor:
         try:
             codexd.stop_codex_daemon(
                 target.as_user, found.path, adapters.codex_home_of(scratch, agent_dir), root,
-                target.agents_home, target.agent_path, say,
+                target.agents_home, target.agent_path, say, going,
             )  # fmt: skip
         except Exception as exc:  # noqa: BLE001 - a daemon stop never refuses the start
             self.log(f"{p['id']}: the Codex app-server daemon stop failed: {type(exc).__name__}")

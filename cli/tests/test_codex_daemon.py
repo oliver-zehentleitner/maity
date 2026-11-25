@@ -28,7 +28,7 @@ from test_supervisor import (
     started,
 )
 
-from maity.runner import capabilities, codexd, config, supervisor
+from maity.runner import capabilities, codexd, config, supervisor, workspace
 from maity.runner.asuser import AsUser
 
 
@@ -461,12 +461,19 @@ class AgentsSide:
         self.check = check
         self.updater = updater
         self.runs: list[tuple[list[str], float]] = []
+        self.envs: list[dict[str, str] | None] = []
 
     def runner_module(self, name: str) -> list[str]:
         return ["agents-python", "-I", "-m", f"maity.runner.{name}"]
 
-    def run(self, argv: Sequence[str], timeout: float = 60.0) -> subprocess.CompletedProcess[str]:
+    def module_env(self) -> dict[str, str]:
+        return {"PATH": "/agents/bin"}  # the host's PATH for its `maity`
+
+    def run(
+        self, argv: Sequence[str], env: dict[str, str] | None = None, timeout: float = 60.0
+    ) -> subprocess.CompletedProcess[str]:
         self.runs.append((list(argv), timeout))
+        self.envs.append(env)
         if argv[0] == "sh":
             code, out = self.check()
         elif argv[0] == "agents-python":
@@ -509,7 +516,8 @@ def test_the_stop_gets_what_is_left_of_the_deadline(
     agents, logs = stop_after_a_check_of(took, tmp_path, monkeypatch)
     (check_argv, check_timeout), (updater_argv, _), (stop_argv, stop_timeout) = agents.runs
     assert is_check(check_argv, tmp_path, "h") and check_timeout == codexd.CHECK_TIMEOUT
-    assert updater_argv[-2:] == ["end-updater", str(tmp_path / "h")]
+    assert updater_argv[-4:] == ["end-updater", str(tmp_path), str(tmp_path / "h"), "3"]
+    assert agents.envs[1] == {"PATH": "/agents/bin"}  # the host's maity finds its python
     assert stop_argv[-4:] == [str(tmp_path / "codex"), "app-server", "daemon", "stop"]
     assert stop_timeout == codexd.DEADLINE - took == 15.5
     assert logs == []
@@ -556,6 +564,7 @@ def test_the_direct_layout_home_check_is_bounded_too(tmp_path: Path) -> None:
 LOOP = (
     "import os, signal, sys, time\n"
     "def bye(*_):\n"
+    "    time.sleep(float(os.environ.get('LOOP_DELAY', '0')))\n"
     "    with open(os.environ['LOOP_CALLS'], 'a') as out:\n"
     "        out.write('loop ended\\n')\n"
     "    sys.exit(0)\n"
@@ -572,11 +581,13 @@ def spawn(tmp_path: Path) -> Iterator[Callable[..., subprocess.Popen[bytes]]]:
     `home`, and on TERM it writes `loop ended` to `calls`. Every one is ended at the end."""
     started_: list[subprocess.Popen[bytes]] = []
 
-    def start(home: Path, calls: Path, tail: Sequence[str] = codexd.UPDATER_ARGV,
-              env_home: Path | None = None) -> subprocess.Popen[bytes]:  # fmt: skip
+    def start(
+        home: Path, calls: Path, tail: Sequence[str] = codexd.UPDATER_ARGV,
+        env_home: Path | None = None, delay: float = 0.0,
+    ) -> subprocess.Popen[bytes]:  # fmt: skip
         ready = calls.with_name(f"ready-{len(started_)}")
         env = {**os.environ, "CODEX_HOME": str(env_home or home), "LOOP_CALLS": str(calls),
-               "LOOP_READY": str(ready)}  # fmt: skip
+               "LOOP_READY": str(ready), "LOOP_DELAY": str(delay)}  # fmt: skip
         proc = subprocess.Popen([sys.executable, "-c", LOOP, *tail], env=env)
         started_.append(proc)
         for _ in range(500):  # its TERM handler is in place once it says so
@@ -618,7 +629,7 @@ def test_the_recorded_loop_is_ended(tmp_path: Path, spawn: Any) -> None:
     home, calls = tmp_path / "h", tmp_path / "calls.log"
     loop = spawn(home, calls)
     record(home, loop.pid)
-    assert codexd.end_updater(home) == "stopped"
+    assert codexd.end_updater(tmp_path, home) == "stopped"
     wait_ended(loop)
     assert calls.read_text() == "loop ended\n"
 
@@ -647,7 +658,7 @@ def test_a_process_that_is_not_the_recorded_loop_is_never_signalled(
     else:
         other = spawn(home, calls)
         record(home, other.pid, boot="00000000-0000-0000-0000-000000000000")
-    assert codexd.end_updater(home) == "mismatch"
+    assert codexd.end_updater(tmp_path, home) == "mismatch"
     assert other.poll() is None  # still running
     assert not calls.exists()
 
@@ -659,7 +670,7 @@ def test_a_recorded_pid_that_is_gone_is_said_so(tmp_path: Path, spawn: Any) -> N
     record(home, loop.pid)
     loop.kill()
     loop.wait(timeout=10)
-    assert codexd.end_updater(home) == "gone"
+    assert codexd.end_updater(tmp_path, home) == "gone"
 
 
 @linux
@@ -691,7 +702,7 @@ def test_no_usable_record_signals_nothing(tmp_path: Path, case: str) -> None:
         elsewhere = record(tmp_path / "other", os.getpid())
         (folder / codexd.UPDATER_PID).symlink_to(elsewhere)
         expected = "unreadable"
-    assert codexd.end_updater(home) == expected
+    assert codexd.end_updater(tmp_path, home) == expected
 
 
 def test_the_updater_step_comes_before_the_daemon_stop_and_says_why_it_failed(
@@ -754,3 +765,156 @@ def test_a_closed_codex_placement_ends_its_loop_and_daemon_before_its_scratch_go
         f"launch|{home}", "loop ended", f"app-server daemon stop|{home}",
     ]  # fmt: skip
     assert any("plc-0003: scratch removed on local" in line for line in logs), logs
+
+
+# --- slice 2, round 1 (A2599) -------------------------------------------------------------------
+
+CLOSED_CODEX = {"id": "plc-0003", "project_id": "maity", "active": False,
+                "closed_reason": "deleted", "harness": "codex"}  # fmt: skip
+
+
+@linux
+def test_a_loop_slow_to_exit_is_waited_for_before_the_daemon_stop(
+    world: Any, tmp_path: Path, spawn: Any
+) -> None:
+    """A loop that takes its time over the TERM (here 0.5 s) has exited before the daemon
+    stop runs, so it cannot start a replacement between the two."""
+    sup, *_ = world
+    calls = tmp_path / "calls.log"
+    started(world)
+    home = codex_home(sup)
+    record(home, spawn(home, calls, delay=0.5).pid)
+    restart(world)
+    lines = calls.read_text().splitlines()
+    assert lines.index("loop ended") < lines.index(f"app-server daemon stop|{home}"), lines
+
+
+@linux
+def test_a_loop_that_does_not_exit_in_time_is_said_so_and_never_killed(
+    tmp_path: Path, spawn: Any
+) -> None:
+    home, calls = tmp_path / "h", tmp_path / "calls.log"
+    loop = spawn(home, calls, delay=5.0)
+    record(home, loop.pid)
+    assert codexd.end_updater(tmp_path, home, wait=0.2) == "running"
+    assert loop.poll() is None  # TERMed, still in its handler: no KILL followed
+
+
+@linux
+def test_a_process_of_another_user_is_never_signalled(
+    tmp_path: Path, spawn: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The process's uids must all be the agents' user's: here the hook runs as another."""
+    home, calls = tmp_path / "h", tmp_path / "calls.log"
+    loop = spawn(home, calls)
+    record(home, loop.pid)
+    me = os.getuid()
+    monkeypatch.setattr(os, "getuid", lambda: me + 1)
+    assert codexd.end_updater(tmp_path, home) == "mismatch"
+    assert loop.poll() is None and not calls.exists()
+
+
+@linux
+def test_without_pidfds_nothing_is_signalled(
+    tmp_path: Path, spawn: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    home, calls = tmp_path / "h", tmp_path / "calls.log"
+    loop = spawn(home, calls)
+    record(home, loop.pid)
+    monkeypatch.delattr(os, "pidfd_open")
+    assert codexd.end_updater(tmp_path, home) == "unsupported"
+    assert loop.poll() is None and not calls.exists()
+
+
+@linux
+def test_an_exited_loop_not_reaped_yet_is_gone_not_a_mismatch(tmp_path: Path, spawn: Any) -> None:
+    """A zombie has no cmdline; it is gone, and nothing is logged for it."""
+    home = tmp_path / "h"
+    loop = spawn(home, tmp_path / "calls.log")
+    record(home, loop.pid)
+    os.kill(loop.pid, 9)
+    stat_file = Path(f"/proc/{loop.pid}/stat")
+    for _ in range(500):  # not waited for: it stays a zombie of this test
+        text = stat_file.read_text()
+        if text[text.rindex(")") + 2] == "Z":
+            break
+        time.sleep(0.01)
+    assert codexd.end_updater(tmp_path, home) == "gone"
+
+
+@linux
+def test_the_agents_side_command_prints_one_token_and_refuses_other_arguments(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    home = tmp_path / "h"
+    assert codexd.main(["end-updater", str(tmp_path), str(home)]) == 0
+    assert capsys.readouterr().out == "absent\n"
+    for bad in (["end-updater", str(home)], ["end-updater", "rel", str(home)],
+                ["end-updater", str(tmp_path), "rel"], ["stop", str(tmp_path), str(home)],
+                ["end-updater", str(tmp_path), str(home), "x"],
+                ["end-updater", str(tmp_path), str(home), "99"]):  # fmt: skip
+        assert codexd.main(bad) == 2, bad
+
+
+def test_a_home_not_below_the_root_is_unreadable(tmp_path: Path) -> None:
+    assert codexd.end_updater(tmp_path / "root", tmp_path / "elsewhere" / "h") == "unreadable"
+
+
+@linux
+def test_a_link_on_the_way_from_the_root_is_never_followed(tmp_path: Path, spawn: Any) -> None:
+    """The record is reached from the root one directory at a time, no link at any step."""
+    real = tmp_path / "real"
+    loop = spawn(real / "h", tmp_path / "calls.log")
+    record(real / "h", loop.pid)
+    (tmp_path / "root").mkdir()
+    (tmp_path / "root" / "via").symlink_to(real)
+    assert codexd.end_updater(tmp_path / "root", tmp_path / "root" / "via" / "h") == "unreadable"
+    assert loop.poll() is None
+
+
+@linux
+def test_a_close_stops_before_the_tmpdir_goes_and_in_the_former_layout_too(
+    world: Any, tmp_path: Path, spawn: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """At close: the stop runs for the scratch of either layout (here the former one, beside
+    the clone), and before the placement's own TMPDIR leaf is removed, as at a start."""
+    sup, backend, *_ = world
+    calls = tmp_path / "calls.log"
+    started(world)
+    target = next(iter(sup.targets.values()))
+    old = workspace.scratch_of(target.workspaces, "maity", "plc-0003", target.host, former=True)
+    home = old / "codex-home"
+    loop = spawn(home, calls)
+    record(home, loop.pid)
+    monkeypatch.setattr(sup, "_host_layout", lambda target: "former")
+
+    def tmpdir_removed(p: Any, target: Any) -> bool:
+        with calls.open("a") as out:
+            out.write("tmpdir removed\n")
+        return True
+
+    monkeypatch.setattr(sup, "_remove_tmpdir", tmpdir_removed)
+    backend.kill(SESSION)
+    sup.update([])
+    sup.closed([CLOSED_CODEX])
+    sup.tick()
+    wait_ended(loop)
+    lines = calls.read_text().splitlines()
+    assert lines[1:] == ["loop ended", f"app-server daemon stop|{home}", "tmpdir removed"]
+    assert not home.exists()
+
+
+def test_a_close_where_the_hosts_layout_is_unknown_stops_nothing(
+    world: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Where the host does not answer, nothing is asked of it this pass: no stop either, so a
+    dead host costs no deadline every tick."""
+    sup, backend, *_ = world
+    started(world)
+    monkeypatch.setattr(sup, "_host_layout", lambda target: "unknown")
+    backend.kill(SESSION)
+    sup.update([])
+    sup.closed([CLOSED_CODEX])
+    sup.tick()
+    assert (tmp_path / "calls.log").read_text().splitlines() == [f"launch|{codex_home(sup)}"]
+    assert "plc-0003" not in sup.scratch_cleared
