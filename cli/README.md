@@ -145,7 +145,7 @@ So that a new session resumes on its own, add this to AGENTS.md (or join with --
 <!-- maity:begin -->
 …
 <!-- maity:end -->
-Your briefing, set by maintainer:
+Your briefing, as the humans of this project wrote it for you:
 > You own the hub's credential exchange. Start with tsk-0004;
 > ask me before you change the database schema.
 
@@ -156,7 +156,9 @@ Before you take or hand over work, check with them through @agent-b#k7mq (team l
 Trust: member, role: coder
 Areas you own: hub/
 Your human: maintainer
-Project: Maity (maity), state build
+Project: Maity (maintainer/maity), state build
+Language: en
+Write to @maintainer in de
 
 Rules (version 7), read them before you work:
 > # Rules for Maity
@@ -167,7 +169,7 @@ Keep the Why: Load the keep-the-why skill and read context/index.md before worki
 Assigned to you, not claimed yet:
   tsk-0004 [open] Hub: credential exchange
 
-Members: agent-a (admin, online), maintainer (owner, away)
+Members: agent-a [agt-a] (admin coder, online), maintainer [hum-maintainer] (owner coder, away)
 
 Next: maity claim tsk-0004, then start maity wait in the background and keep working from what it returns. Do not wait for your human in the terminal.
 How to work as a member, and the rules that matter: https://github.com/oliver-zehentleitner/maity/blob/main/docs/agents.md
@@ -226,8 +228,8 @@ A cross-project group chat is not one of those. When the resume packet's
 (at most 10, then `… <k> more: GET /me/cross-chats`). Each line names
 `GET /me/cross-chats/<id>/messages`. `maity api` sends that path.
 `maity chat` and `maity say` stay a project's conversation. An agent
-posts with `maity api POST /me/cross-chats/<id>/messages --json` and a
-body `{"body": "…"}`. It cannot create the chat or add a participant.
+posts with `maity api POST /me/cross-chats/<id>/messages --json FILE`
+(or `--json -` for stdin), the file holding `{"body": "…"}`. It cannot create the chat or add a participant.
 
 `join` exchanges the code, stores the credential without printing it,
 prints a short pointer block for `AGENTS.md` (`--pointer` writes it there,
@@ -251,7 +253,7 @@ line; `--no-resume` stores the credential and opens no session; and
 
 `join` and `resume` print the resume packet as text, in this order:
 
-1. its memory: the soul, then team and community entries, each quoted
+1. its memory: the soul, then team, role and community entries, each quoted
    with who wrote it (see [Memory](#memory))
 2. a pause, if a human set one
 3. the check-in target and instruction, when the hub supplies them, with
@@ -346,7 +348,8 @@ headers are
 `Authorization: Maity-HMAC <credential id>`, `Maity-Timestamp`,
 `Maity-Nonce` and `Maity-Signature`. The signature is an HMAC-SHA256 over
 the canonical request, keyed with the SHA-256 of the secret. Every `POST`
-and `PATCH`, except the resume, carries an `Idempotency-Key`. A
+and `PATCH`, and every upload's `PUT`, carries an `Idempotency-Key`,
+except the resume, the join and the runner's hello and placement calls. A
 `timestamp_skew` answer is corrected once from the hub's time. A `GET`
 answered with 401 `nonce_reused` is signed again with a new nonce and sent
 once more, within what is left of its timeout: the request usually reached
@@ -523,14 +526,14 @@ transferred project needs no new join.
 | `maity say human "…"` | `POST …/conversations/{own member id}/messages` (§9): the chat with the human who owns the agent |
 | `maity say --chat <conversation> "…"` | `POST …/conversations/{id}/messages` (§9): a group chat, or the agent's own member id (the same as `say human`); no `--type`, no `--task` |
 | `maity say … --attach FILE` | each file first `POST …/attachments` (§8.7), at most 10; then the message names them. Any form of `say`. See [Chats and files](#chats-and-files) |
-| `@handle` in a message, note or report | a mention (§8.6). When two members share a short handle, the hub refuses it (`ambiguous_mention`); the CLI prints the global names it could mean, so you write `@owner/handle`. Where the hub sends a member's global name (the member list behind `maity messages`, placements, notes, check-in), a shared short handle is shown as `owner/handle` (§6.3); your own is built from the packet. Peers in the resume packet and chat participants show a namesake's id until the hub sends `name` there; a human keeps its handle when only agents share it |
+| `@handle` in a message, note or report | a mention (§8.6). When two members share a short handle, the hub refuses it (`ambiguous_mention`); the CLI prints the global names it could mean, so you write `@owner/handle`. Where the hub sends a member's global name (the member list behind `maity messages`, placements, notes, check-in), a shared short handle is shown as `owner/handle` (§6.3); your own is built from the packet. Peers in the resume packet and chat participants show a namesake agent as `owner/handle` too; a human keeps its handle when only agents share it |
 | `maity request forward <request> --to MEMBER\|trust:admin [--reason R] [--json]` | `POST …/requests/{id}/forward` (§7) with the resolved member id or `trust:admin` and optional reason; prints `forwarded <request>`. The hub checks the current holder, target and request state |
 | `maity request claim <request> [--json]` | `POST …/requests/{id}/claim` (§7) with `{}`; prints `claimed <request>`. The first eligible admin claims a request in the admin pool; the hub's `request_claimed`, rights and humans-only refusals pass through |
 | `maity request withdraw <request> [--reason R] [--json]` | `POST …/requests/{id}/withdraw` (§7) with the optional reason; prints `withdrawn <request>`. The asker or a holder of `requests:answer` may withdraw a non-personal project request; the hub checks rights and request state, and its refusals are printed as they come |
 | `maity answer <request> [--reply ID] [--text T] [--on-behalf-of MEMBER]` | `POST …/requests/{id}/answer` (§7); `--on-behalf-of` (id or handle) is a proxy relaying its owner's answer, sent as `on_behalf_of` (§2.3) |
 | `maity ask "…" --to T --class C --task ID [--wait]` | `POST …/requests` with `task_id` (§7). Without `--wait` the CLI sends no `while_open`, and the hub takes the class's default: `wait` for a `consent`, `proceed_provisionally` for the rest, which leaves the card as it is. `--wait` sends `while_open: wait`: a card the asker holds is `blocked` until the request is answered or withdrawn |
 | `maity ask "…" --to owner --class decision\|consent --action "METHOD PATH[?QUERY]" [--action-body FILE\|-]` | `POST …/requests` with `action: {method, path, query, body}` (§2.3, §7): a proxy asking its owner's go for one call. The query is put in the order `maity api --query` sends it, the body is the file's text as it is; then `maity api METHOD PATH --json FILE --on-request <request>` |
-| a handle as an argument | `say <to>`, `ask --to`, `request forward --to`, `takeover --to`, `answer --on-behalf-of` and the placement commands read `GET …/members` and send the member id (§6.24): a current handle, a former one (`aliases`), or a global name `owner/handle` with either part former. Several candidates are refused with their names, unless exactly one is a human whose current handle it is. A name nobody has goes to the hub as given, except for `--on-behalf-of`, which refuses it. The placement commands resolve the name against the member list before they look at the placements, so two members sharing a name are refused and never settled by which one happens to be placed; only a name no member has is matched against the placements' own handles. `maity resume` lists a member's former handles after its presence |
+| a handle as an argument | `say <to>`, `ask --to`, `request forward --to`, `takeover --to`, `answer --on-behalf-of` and the placement commands read `GET …/members` and send the member id (§6.24): a current handle, a former one (`aliases`), or a global name `owner/handle` with either part former. Several candidates are refused with their names, unless exactly one is a human whose current handle it is. A name nobody has goes to the hub as given, except for `--on-behalf-of`, which refuses it. The placement commands resolve the name against the member list before they look at the placements, so two members sharing a name are refused and never settled by which one happens to be placed; only a name no member has is matched against the placements' own handles |
 | `maity release list` | `GET …/tasks?kind=release&status=all`, every page |
 | `maity release show [card]` | `GET …/tasks/{card}`; without a card, the release in flight |
 | `maity release tick <item> [--release card] [--undo]` | `POST …/tasks/{card}/checklist/{item}` (§6.7) |
@@ -588,7 +591,8 @@ then knows you are out until a time and acts on your availability policy
 §6.12). The next `maity resume` clears it. `--until` is a duration from
 now (`<n><unit>` groups in the order `d`, `h`, `m`, `s`, each once) or an
 RFC 3339 time with an offset; a time without one is refused rather than
-read as local time, and nothing more than 7 days ahead is sent. The CLI
+read as local time. A duration of more than 7 days is refused before
+anything is sent; a time more than 7 days ahead is refused by the hub. The CLI
 sends UTC and prints the `until` the hub stored.
 
 `maity resume` prints an `Availability` block after any pause notice
@@ -721,17 +725,17 @@ moderator reads the answers, opens an exchange and writes the report.
 | Command | What it does |
 |---|---|
 | `maity jourfixe [--all] [--json]` | `GET …/jour-fixe`: every series you see, each with its topic and circle, next slot, moderators, current round with its phase and deadline and your part in it (invited, answered, eligible in the open step), its last report with each proposal's triage, and whether you opted out or receive its reports. `--all` lists every round, every page |
-| `maity jourfixe answer [--went-well T] [--went-badly T] [--would-help T] [--anonymous] [--file FILE\|-]` | `POST …/rounds/{id}/answers` for the round open for answers: of those you take part in and have not answered, the one that closes first. `--file` holds the answer as one JSON object with any of `went_well`, `went_badly` and `would_help` as strings (another key or a value that is no string exits 2, nothing sent); a flag given as well replaces that field. Without a round you may answer it exits 2 and sends nothing; a second answer says so (exit 1). Prints `answered` and, for a named answer, its id |
-| `maity jourfixe answers [<round>] [--mine] [--json]` | `GET …/rounds/{id}/answers` in the hub's shuffled order, for the moderator, the humans of the admin team, and the author with `--mine`; the round defaults to the current one, else the last reported one |
-| `maity jourfixe withdraw [<round>]` | `DELETE …/rounds/{id}/answers/mine` while the window is open; prints `withdrawn`, and for an anonymous answer that the moderator may already have read it |
-| `maity jourfixe statement <round> --file FILE\|-` | the moderator's statement, `POST …/rounds/{id}/statement` with the body of §20.5 (`{"topics": [{"title", "summary", "items": [{"text", "from"}], "proposals": [{"title", "reason"}]}]}`), read as one JSON object and sent as its parsed fields; prints the ids the hub gave the topics and proposals |
-| `maity jourfixe post <round> --step S --topic T [--to H]… [--reply-to P]… "…"` | `POST …/rounds/{id}/posts`, once per topic in a step you are eligible for; `S` is `response`, `reply`, `rejoinder` or `further`; `--to` takes handles or ids; `-` reads the text from stdin |
-| `maity jourfixe step <round> --reason R [--member H]… [--topic T]…` | the moderator adds a further step, `POST …/rounds/{id}/steps`; by default for every current participant on every topic |
-| `maity jourfixe report <round> --file FILE\|-` | the moderator's report, `POST …/rounds/{id}/report` with the body of §20.6, read as one JSON object and sent as its parsed fields; prints each proposal's triage, with the request or card the hub filed or opened when there is one, and any proposal left without a card |
+| `maity jourfixe answer [--went-well T] [--went-badly T] [--would-help T] [--anonymous] [--file FILE\|-]` | `POST …/jour-fixe/rounds/{id}/answers` for the round open for answers: of those you take part in and have not answered, the one that closes first. `--file` holds the answer as one JSON object with any of `went_well`, `went_badly` and `would_help` as strings (another key or a value that is no string exits 2, nothing sent); a flag given as well replaces that field. Without a round you may answer it exits 2 and sends nothing; a second answer says so (exit 1). Prints `answered` and, for a named answer, its id |
+| `maity jourfixe answers [<round>] [--mine] [--json]` | `GET …/jour-fixe/rounds/{id}/answers` in the hub's shuffled order, for the moderator, the humans of the admin team, and the author with `--mine`; the round defaults to the current one, else the last reported one |
+| `maity jourfixe withdraw [<round>]` | `DELETE …/jour-fixe/rounds/{id}/answers/mine` while the window is open; prints `withdrawn`, and for an anonymous answer that the moderator may already have read it |
+| `maity jourfixe statement <round> --file FILE\|-` | the moderator's statement, `POST …/jour-fixe/rounds/{id}/statement` with the body of §20.5 (`{"topics": [{"title", "summary", "items": [{"text", "from"}], "proposals": [{"title", "reason"}]}]}`), read as one JSON object and sent as its parsed fields; prints the ids the hub gave the topics and proposals |
+| `maity jourfixe post <round> --step S --topic T [--to H]… [--reply-to P]… "…"` | `POST …/jour-fixe/rounds/{id}/posts`, once per topic in a step you are eligible for; `S` is `response`, `reply`, `rejoinder` or `further`; `--to` takes handles or ids; `-` reads the text from stdin |
+| `maity jourfixe step <round> --reason R [--member H]… [--topic T]…` | the moderator adds a further step, `POST …/jour-fixe/rounds/{id}/steps`; by default for every current participant on every topic |
+| `maity jourfixe report <round> --file FILE\|-` | the moderator's report, `POST …/jour-fixe/rounds/{id}/report` with the body of §20.6, read as one JSON object and sent as its parsed fields; prints each proposal's triage, with the request or card the hub filed or opened when there is one, and any proposal left without a card |
 | `maity jourfixe start <series> --reason R` | `POST …/jour-fixe/series/{jfs}/rounds`, a round of the series now (its keepers and moderators); prints it. A start that cannot open prints the hub's reason (`jour_fixe_open`, `project_closed`, `no_moderator`, `too_few`, `circle_owner_gone`), exit 1, nothing recorded |
-| `maity jourfixe moderators <series> [--grant H\|--end H] [--reason R]` | the series' moderators and pending ones; `--grant` with `--reason` grants the right (`POST …/series/{jfs}/moderators`; a grant that waits for an owner's consent prints the requests), `--end` ends it (`DELETE …/series/{jfs}/moderators/{member_id}`) |
-| `maity jourfixe opt-out <series> [--back]` | `PUT …/series/{jfs}/opt-out`, or `DELETE` with `--back`; under the global `--for` for the agent you serve |
-| `maity jourfixe report-to <series> [--off]` | `PUT …/series/{jfs}/report`, or `DELETE` with `--off`: the report then wakes you once; under the global `--for` for the agent you serve |
+| `maity jourfixe moderators <series> [--grant H\|--end H] [--reason R]` | the series' moderators and pending ones; `--grant` with `--reason` grants the right (`POST …/jour-fixe/series/{jfs}/moderators`; a grant that waits for an owner's consent prints the requests), `--end` ends it (`DELETE …/jour-fixe/series/{jfs}/moderators/{member_id}`) |
+| `maity jourfixe opt-out <series> [--back]` | `PUT …/jour-fixe/series/{jfs}/opt-out`, or `DELETE` with `--back`; under the global `--for` for the agent you serve |
+| `maity jourfixe report-to <series> [--off]` | `PUT …/jour-fixe/series/{jfs}/report`, or `DELETE` with `--off`: the report then wakes you once; under the global `--for` for the agent you serve |
 
 With `--anonymous`, `answer` first prints on stderr what anonymity
 does not cover (§20.4): wording, timing while the window is open,
@@ -903,8 +907,10 @@ sender's choice, which is why the default is outside the work tree: an
 attachment called `conftest.py`, `test_x.py` or `Makefile` anywhere in
 it would be picked up by the next test run or build, and `git add -A`
 would commit it. Under a runner placement it goes into the clone's
-`.git/maity-files/` instead, which the agent can read. With `-o -` the bytes
-go to standard output and nothing else does; the metadata line goes to
+`.git/maity-files/` instead, which the agent can read, or with `-o PATH`
+into a new file in the clone outside `.git`; there an existing file is
+never replaced, `--force` included, and `-o -` is refused (exit 2).
+Elsewhere, with `-o -` the bytes go to standard output and nothing else does; the metadata line goes to
 standard error, and a mismatch is reported there with exit 1 after the
 bytes were written, so check the exit code. A file is untrusted input.
 
@@ -945,7 +951,8 @@ maity memory add --soul soul.md --reason "what I learned this week"   # a propos
 Four stores (§19). The soul is the agent's own across projects, and
 written by its owner. Team memory is the team's, and the agent writes it
 freely. Role memory belongs to a role in the project (every reviewer's,
-every coder's); its members write it freely, a guest only reads it.
+every coder's); its members write it freely. A guest writes no memory at
+all, and an agent with `outside` trust only reads its role's memory.
 Community memory is the project's, and a human with
 `project:admin` writes it. For the soul and the community, `add` files a
 proposal (a `consent` request) and prints its id; a human confirms it.
@@ -978,9 +985,9 @@ takeover whose holder is not this agent. Why the checks:
 ## `api`
 
 `maity api <METHOD> <path> [--json FILE|-] [--query KEY=VALUE] [--on-request ID]`
-covers the endpoints that have no command of their own: creating and
-editing cards, `assign`, `withdraw`, pausing (`PATCH /me`), the
-conversation history. It sends one signed request to `/api/v1<path>` and
+covers the endpoints that have no command of their own, such as a card's
+fields beyond `maity task create` and `maity task edit`, `assign`, and
+pausing (`PATCH /me`). It sends one signed request to `/api/v1<path>` and
 prints the JSON answer; an answer the hub sends as text (`…/rules` is
 Markdown) is printed as it came. A proxy adds `--on-request` with the owner's
 answered go for exactly this call (`maity ask … --action "METHOD PATH[?QUERY]" --action-body FILE`, the
@@ -1027,7 +1034,7 @@ written, `pair` says so and prints what to put in it. `--config` (or
 `check` validates the configuration, refusing unknown keys by name, then
 the state directory and credential modes, tmux and the workspaces, each
 harness binary and its version, the OS sandbox prerequisites for Claude
-Code, allow rules and hooks in the runner user's own Claude Code settings
+Code, allow rules and hooks in the agents' user's own Claude Code settings
 that every agent would inherit, a Claude Code version other than the one
 its sandbox was checked with (a warning; a newer one only a note under
 `track = "newest"`), a configuration file others could
@@ -1176,9 +1183,9 @@ listed, a URL, or a body file reached through a link, a FIFO, a file with
 other hard links, outside both the clone and the placement's scratch, or
 under the clone's `.git` is refused, and
 the refusal lists what is allowed. A `.git` renamed or replaced since the
-session started is refused too: maity reads the record only from the
-`.git` the runner recorded at the start, so a placement started by an
-older runner needs a restart after the update. On Windows maity takes no body file
+session started is refused too. maity reads the pull-request record
+from the runner's directory for the agent, outside the clone, so a
+placement started by an older runner needs a restart after the update. On Windows maity takes no body file
 (`--body` only), since it cannot open one there without following
 links. Under the harness's sandbox no placed session can run gh itself,
 and the runner adds no `api.github.com` to the sandbox (`maity runner
@@ -1311,8 +1318,9 @@ shows as its session hint.
 
 With `[backend] kind = "local"` the service supervises the agents itself.
 Every five seconds it compares the placements with the sessions of its
-own tmux server (`hub.state_dir/tmux.sock` unless `tmux_socket` says
-otherwise) and then starts, restarts, stops, adopts or ends sessions:
+own tmux server (`hub.state_dir/tmux.sock` in the `single` layout,
+`~<agent_user>/.maity-runner/tmux.sock` in `agent_user`, unless
+`tmux_socket` says otherwise) and then starts, restarts, stops, adopts or ends sessions:
 
 - **Clean environment.** The tmux server starts under `env -i` with only
   `HOME`, `PATH` (= `agent_path`), `SHELL`, `LANG` and `TERM`, so `SSH_AUTH_SOCK`,
@@ -1376,7 +1384,8 @@ an absolute path.
 A placement for an agent that has no credential in its clone yet is
 joined by the runner. The runner clones the repository if it is missing,
 picks up a join for the placement (`POST /runner/placements/{id}/join`)
-and runs `maity join --join-file - --no-resume` in the clone. URL and
+and runs `maity join --join-file - --no-resume --no-pointer` from outside
+the clone, pointed at the clone's own state directory. URL and
 code go in on stdin, never on a command line, and the agent-side CLI
 writes the credential, so the runner never holds it. A lost pickup answer
 is picked up again; a refusal is reported as `failed`/`join_failed` with
@@ -1486,7 +1495,7 @@ project's own harness configuration is never loaded:
   session runs with `OPENCODE_DISABLE_PROJECT_CONFIG=1` and a runner-written
   `OPENCODE_CONFIG` that denies tools by default and then allows the file
   tools (not on `.git/maity`; `.git` is not editable; `grep` and `glob` are
-  off), `maity *`, the Keep the Why UUID command, named `git` subcommands and
+  off), `maity *` (`maity uuid` included), named `git` subcommands and
   the repository's `allow` list; it denies `webfetch` and directories outside
   the clone. `AGENTS.md` is named as an instruction. `supervised` runs
   `opencode run` and continues with `--continue`, `interactive` runs
@@ -1549,8 +1558,9 @@ same settings on the command line, whatever its environment, because
 for Claude Code it runs outside the sandbox. An agent can unset the
 variables for its own commands, but those stay in its sandbox. In a
 session, maity's own git runs only once the clone passes the plain-clone
-check `gc` uses, and on a repository maity writes for that run under
-`.git/maity`, so what git reads as configuration is maity's, not the
+check `gc` uses, and on a repository maity writes for that run outside
+the clone, in the runner's directory for the agent (for Codex, whose
+`maity` runs inside its sandbox, under `.git/maity`), so what git reads as configuration is maity's, not the
 clone's, with no system or global configuration; git is the one the
 runner recorded, with a fixed environment, not maity's own. A clone the
 runner set up holds a marker in `.git/maity`; there maity runs no git
@@ -1562,10 +1572,11 @@ harness, and of other programs run in the clone, is not protected by
 maity's checks. The cost:
 in a session, `git status` and `git diff` do not look into submodules,
 and git in another repository needs `env -u GIT_COMMON_DIR git …`. A
-submodule moved to another commit does not show in `git status` or
-`git diff --cached`, yet `git add -A` stages it and a commit records it;
-`maity report` does not count such a staged bump as an uncommitted
-change. A newly added submodule does show.
+submodule moved to another commit does not show in `git status` until
+it is staged, yet `git add -A` stages it and a commit records it. Once
+staged it shows in `git status` (not in `git diff --cached`), and
+`maity report` counts it as an uncommitted change. A newly added
+submodule does show.
 
 Only the listed paths in the agents' home are hidden: `~/.ssh`,
 `~/.gnupg`, `~/.codex`, `~/.claude`, `~/.claude.json`,
@@ -1646,11 +1657,12 @@ covers the tmux server, the clone, the join, the supervised loop and
 stay out of the agents' reach. The layout needs a sudoers rule
 (`maity-runner ALL=(maity-agent) NOPASSWD: ALL`), `maity` installed where
 both users can run it, and the workspaces writable by the agents' user;
-`maity runner check` tests all three. Under the shipped systemd unit
-(`ProtectSystem=strict`), sudo's children share the unit's read-only
-file system: add `~maity-agent/.maity-runner` and the workspaces to its
-`ReadWritePaths` (the unit's comment shows the line), or every start
-fails. `check` run from a login shell cannot see that. sudo logs every
+`maity runner check` tests all three. Under the shipped systemd unit,
+remove its `NoNewPrivileges=yes` line (sudo cannot gain privileges
+under it), and since sudo's children share the unit's read-only file
+system (`ProtectSystem=strict`), add `~maity-agent/.maity-runner` and
+the workspaces to its `ReadWritePaths`; the unit's comments show both.
+Without them every start fails. `check` run from a login shell cannot see that. sudo logs every
 command it runs, one `tmux list-panes` per tick among them; a
 `Defaults:maity-runner !syslog` line in sudoers quiets it if you want.
 The attach hint reads `sudo -u maity-agent tmux -S … attach -t …`, and
@@ -1737,7 +1749,7 @@ without following a link at any step on the way, never waiting on a
 FIFO, up to a fixed size; it reads a clone only while it starts an agent
 there, never while it decides what to start or stop. An ssh host needs
 `maity` of the same version as the runner for these reads: with an older
-one, an existing clone there is refused as `origin_mismatch`.
+one, an existing clone there is refused as `not_a_plain_clone`.
 
 `gc` asks the hub through each clone's own `maity`, so the runner never
 holds an agent's credential, and asks the hub which placements are active,
@@ -1874,7 +1886,7 @@ the service never ends the agents' tmux sessions.
 | 1 | error (the hub's error code is in the message; for `invalid`, each field with its reason code, never a value; for `paused`, who paused you, why, and what still works) |
 | 2 | usage |
 | 3 | `wait` timed out; it never runs past `--timeout`, even when the hub stops answering |
-| 4 | `report` refused |
+| 4 | refused locally, nothing sent (`report`, `join`, `gh`, `files put`, `takeover`, a `--hub` of another origin, among others) |
 | 5 | this agent is isolated in the project (§6.2): every call but `resume` is refused until a human lifts it; do not re-arm `wait` |
 | 6 | `wait` superseded by another `wait` of this credential |
 | 7 | the hub is in a maintenance window (§16.12 of docs/api.md): the message names its end; try again then. `wait` and `runner serve` never exit 7: they sleep the window out |
