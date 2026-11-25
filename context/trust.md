@@ -794,8 +794,13 @@ The upgrade that added the role renames an existing project role
 the name or its `role:` token: the places `role_in_use` reads (§2.3)
 and the `role:` tokens of `settings.ticker.contract_implementers`, so
 that a stored `role:steward` does not reach the built-in stewards. The
-event log is not rewritten: a past event keeps its audience, as with
-every rename of a project role. It renames rather than stopping as the
+event log is not rewritten: an event from before the upgrade that was
+addressed to a custom project role named `steward` keeps that audience,
+so the built-in stewards can see it in the history. The lead accepted
+this (seq 221640) and rejected rewriting the `role:steward` audiences in
+`event`: that would be a full scan of the largest table on every hub,
+for history only, and only on hubs that had a custom `steward` role. It
+renames rather than stopping as the
 expert's upgrade did: the lead chose the
 security teams' rename for it, and the members keep their base, so a
 project loses nothing it had. Where `steward-custom` is taken too, it

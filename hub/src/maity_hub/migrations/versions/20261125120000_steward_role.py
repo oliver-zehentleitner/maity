@@ -11,7 +11,9 @@ card's `needs`, a request's `to`, a placement's profile, the onboarding's `check
 `substitutes` list, the role memory and `outside_roles`), whether open or not, and the
 `role:` tokens of `settings.ticker.contract_implementers`. A membership's `role_base` is
 unchanged, so no one's scopes move. The event log is not rewritten: a past event keeps the
-audience it was written with, as for every rename of a project role (§2.3).
+audience it was written with, as for every rename of a project role (§2.3), so the built-in
+stewards can see the history addressed to the old custom `steward`. The lead accepted this
+(seq 221640): rewriting it would scan the largest table on every hub, for history only.
 
 A project that already has a project role `steward-custom` gets the next free name,
 `steward-custom-2`, then `-3` and on (the lead's ruling of 2026-11-25, seq 221098): an upgrade
