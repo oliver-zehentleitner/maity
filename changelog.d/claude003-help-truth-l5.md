@@ -5,4 +5,5 @@
   admin (any role but proxy), not to an "admin role". A takeover also moves a card you hold. A
   member's own agent may take any work role, manager, or a project role built on one. Each human's
   own language is already in the resume packet. Mentions are resolved in group chats too, among
-  its participants. Plain HTTP is also accepted where the operator allowed it behind a TLS proxy.
+  its participants. The bearer note says the CLI refuses plain HTTP except to the hub's own
+  machine.
