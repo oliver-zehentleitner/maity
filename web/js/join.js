@@ -97,6 +97,13 @@ window.Maity = window.Maity || {};
   // shows it ("message #6001").
   const handoverValue = (v) => (/^#?[0-9]+$/.test(v) ? Number(v.startsWith("#") ? v.slice(1) : v) : v);
   const BRIEFING_CHARS = 16 * 1024; // docs/api.md §3: 16 KiB, in characters as the hub counts
+  // A control is described by the hints shown now only: a screen reader reads a hidden element
+  // named in aria-describedby too (as js/placements.js does).
+  function describe(control, ids) {
+    const shown = ids.filter(Boolean).join(" ");
+    if (shown) control.setAttribute("aria-describedby", shown);
+    else control.removeAttribute("aria-describedby");
+  }
 
   // A join's state from GET /joins (docs/api.md §3.1), in the hub's order:
   // revoked, used, burned, then the clock.
@@ -142,17 +149,28 @@ window.Maity = window.Maity || {};
     const profileHandle = (p) => M.dom.handleIn(ctx.members, { kind: "agent", handle: p.handle, name: p.name });
     const agentSelect = h("select", { id: "join-agent" });
     // A member bringing their own agent (hooks.member) who starts it on a runner: the placement
-    // admits only a profile of their own that is not in the project yet (§15.6), so only those are
-    // offered then, and no new profile (showAgent sets it as the runner part is turned on).
+    // admits only a profile of their own that is not in the project yet (§15.6): the others stay
+    // listed, off, with the reason; one chosen stays chosen and is refused at Start (tsk-6w4qckma672q).
     let admitting = false;
-    const profileOptions = () => append(clear(agentSelect),
-      profiles.offered.filter((p) => !admitting || !memberOf(p.id)).map((p) => h("option", { value: p.id }, p.memberships.some((x) => x.project === ctx.slug)
-        ? M.t("join.agent.option_member", { name: p.display_name, handle: profileHandle(p) })
-        : M.t("join.agent.option", { name: p.display_name, handle: profileHandle(p) }))),
-      admitting ? null : h("option", { value: "" }, M.t("join.agent.new")));
+    const agentWhy = h("p", { class: "hint join-agent-runner", id: "join-agent-runner" }, M.t("join.runner.own_agents"));
+    agentWhy.hidden = true;
+    const runnerTakes = (id) => !!id && !memberOf(id);
+    const markAdmitting = () => {
+      Array.from(agentSelect.querySelectorAll("option")).forEach((o) => { o.disabled = admitting && !runnerTakes(o.getAttribute("value")); });
+      agentWhy.hidden = !admitting;
+      describe(agentSelect, [admitting ? agentWhy.id : null]);
+    };
+    const profileOptions = () => {
+      append(clear(agentSelect),
+        profiles.offered.map((p) => h("option", { value: p.id }, p.memberships.some((x) => x.project === ctx.slug)
+          ? M.t("join.agent.option_member", { name: p.display_name, handle: profileHandle(p) })
+          : M.t("join.agent.option", { name: p.display_name, handle: profileHandle(p) }))),
+        h("option", { value: "" }, M.t("join.agent.new")));
+      markAdmitting();
+    };
     profileOptions();
     const HANDLE = M.dom.NAME_RULES.handle;
-    const handle = h("input", { id: "join-handle", placeholder: M.t("join.handle.placeholder"), pattern: HANDLE.pattern,
+    const handle = h("input", { id: "join-handle", placeholder: M.t("join.handle.placeholder"), pattern: HANDLE.pattern, required: true,
       maxlength: "31", autocomplete: "off", spellcheck: "false", "aria-describedby": "join-handle-rule join-handle-state" });
     const display = h("input", { id: "join-display", placeholder: M.t("join.display.placeholder") });
     // Free or taken while it is typed (docs/api.md §6.3: unique among one's
@@ -175,11 +193,14 @@ window.Maity = window.Maity || {};
         : M.t("join.handle.free", { handle: v });
     };
     handle.addEventListener("input", checkHandle);
+    // A member's start on a runner takes no new profile (§15.6): the fields stay, off, with why.
+    const newWhy = h("p", { class: "hint join-new-runner", id: "join-new-runner" }, M.t("join.runner.own_agents"));
+    newWhy.hidden = true;
     const newFields = h("div", { class: "new-agent", hidden: true },
       h("label", { for: "join-handle" }, M.t("join.handle.label")), handle,
       M.handles.explain("agent", handle), h("p", { class: "hint", id: "join-handle-rule" }, HANDLE.text),
       handleState,
-      h("label", { for: "join-display" }, M.t("join.display.label")), display);
+      h("label", { for: "join-display" }, M.t("join.display.label")), display, newWhy);
     if (!profiles.offered.length) newFields.hidden = false;
     // An outsider's own agent (§3.1 "An outsider's agent", js/outsider-actions.js): a member's
     // own join with trust `outside`, a role of `outside.roles` (the policy's `outside_roles`),
@@ -207,11 +228,14 @@ window.Maity = window.Maity || {};
     const another = h("input", { type: "radio", name: "join-instance", id: "join-new-instance", value: "new" });
     const replaced = h("select", { id: "join-replaces", "aria-label": M.t("join.instance.replaces_label") });
     const quota = h("p", { class: "hint", id: "join-quota" });
+    // A start on a runner makes another instance; replacing one that way is not built yet.
+    const noReplace = h("p", { class: "hint join-runner-only", id: "join-replace-runner" }, M.t("join.runner.no_replace"));
+    noReplace.hidden = true;
     const instanceBox = h("fieldset", { class: "join-instance wide", hidden: true },
       h("legend", null, M.t("join.instance.legend")),
       h("p", { class: "hint" }, M.t("join.instance.hint")),
       h("div", { class: "instance-choice" }, replaceOne, h("label", { for: "join-replace" }, M.t("join.instance.replace")), replaced),
-      h("p", { class: "hint" }, M.t("join.instance.replace_hint")),
+      h("p", { class: "hint" }, M.t("join.instance.replace_hint")), noReplace,
       h("div", { class: "instance-choice" }, another, h("label", { for: "join-new-instance" }, M.t("join.instance.another"))),
       quota);
     const activeOf = (m) => (m.instances || []).filter((i) => !i.revoked_at);
@@ -220,9 +244,71 @@ window.Maity = window.Maity || {};
       return i.presence === "online" ? M.t("join.instance.online", { label: i.label || i.id, cards })
         : M.t("join.instance.seen", { label: i.label || i.id, ago: formatAgo(i.last_seen_at, M.api.now()), cards });
     };
-    // The fields a member's join leaves out.
-    const membershipFields = [];
-    const membershipField = (el) => { membershipFields.push(el); return el; };
+    // An agent already here: the membership's fields, which its join and its start on a runner
+    // leave out, are shown as they are, off, where they always stand, with the way to Manage
+    // (tsk-6w4qckma672q). What was typed for another agent comes back when one is chosen again.
+    const membershipNote = h("p", { class: "hint field wide join-membership-note" });
+    membershipNote.hidden = true;
+    let shownMember = null; // the membership whose fields are shown, else null
+    let draft = null;       // the form's own values while a membership's are shown
+    // A value the form would not offer: its option added until the list is filled again.
+    const showValue = (select, value, label) => {
+      if (!Array.from(select.querySelectorAll("option")).some((o) => o.getAttribute("value") === value)) append(select, h("option", { value }, label));
+      select.value = value;
+    };
+    function showMembership(m) {
+      if (m && !shownMember) {
+        draft = { trust: trust.value, role: role.value, areas: areas.value, briefing: briefing.value, subagents: subagents.checked,
+          english: english.checked, touched: subagentsTouched, takesOver: takesOver.value, handover: handover.value };
+      }
+      const was = shownMember;
+      shownMember = m;
+      if (m) {
+        fillTrust();
+        fillRoles();
+        areas.value = (m.areas || []).join(", ");
+        briefing.value = m.briefing || "";
+        // A membership that predates the field has its role's default (§6.2).
+        subagents.checked = typeof m.subagents === "boolean" ? m.subagents : SUBAGENT_ROLES.includes(m.role);
+        english.checked = m.subagents_language === "en";
+        const over = m.takes_over && (m.takes_over.member_id || m.takes_over);
+        if (over) showValue(takesOver, over, M.t("join.takes_over.option", { name: ctx.nameOf(over), handle: m.takes_over.handle || over }));
+        else takesOver.value = "";
+        handover.value = !m.handover ? "" : m.handover.kind === "task" ? String(m.handover.id) : "#" + m.handover.id;
+        clear(membershipNote);
+        // An outsider has no Manage of its own agent's membership here: the sentence alone.
+        append(membershipNote, M.t("join.membership.readonly"), outside ? null : [" ", M.tn("join.membership.manage", { link: ctx.canAdmin
+          ? h("a", { class: "join-manage-link", href: ctx.link("team") + "?manage=" + encodeURIComponent(m.id) }, M.t("memberpage.manage_members"))
+          : h("a", { class: "join-manage-link", href: ctx.link("agents", m.id) }, M.t("memberpage.manage_agents")) })]);
+      } else if (was && draft) {
+        trust.value = draft.trust;
+        fillTrust();
+        role.value = draft.role;
+        fillRoles();
+        areas.value = draft.areas;
+        briefing.value = draft.briefing;
+        subagents.checked = draft.subagents;
+        english.checked = draft.english;
+        subagentsTouched = draft.touched;
+        takeOverOptions();
+        takesOver.value = Array.from(takesOver.querySelectorAll("option")).some((o) => o.getAttribute("value") === draft.takesOver) ? draft.takesOver : "";
+        handover.value = draft.handover;
+        draft = null;
+      }
+      membershipNote.hidden = !m;
+    }
+    // A membership's fields are off, and a join line's own while on a runner (§15.6: takes_over,
+    // handover and ttl_seconds stay join-only), each with its reason.
+    function settle(m, on) {
+      [trust, role, areas, briefing, subagents].forEach((c) => { c.disabled = !!m; });
+      english.disabled = !!m || !subagents.checked;
+      takesOver.disabled = handover.disabled = !!m || on;
+      ttl.disabled = on;
+      [takeOverWhy, handoverWhy, ttlWhy].forEach((p) => { p.hidden = !on; });
+      describe(takesOver, ["join-takes-over-hint", on ? takeOverWhy.id : null]);
+      describe(handover, ["join-handover-hint", on ? handoverWhy.id : null]);
+      describe(ttl, [on ? ttlWhy.id : null]);
+    }
     // One click to what the form cannot change (tsk-svqsdp6qf0f3): the chosen agent's profile
     // and, where it is a member here, the rulebook with its instance limit.
     const profileLinks = h("p", { class: "hint join-profile-links" });
@@ -236,44 +322,43 @@ window.Maity = window.Maity || {};
     // The choice starts from its default for each agent shown as a member.
     let shownFor = "";
     let drawAhead = null; // set with the restricted-access line below
-    // The fields as the agent chosen asks, then what the runner part takes away: a placement
-    // knows no instance choice, take-over, hand-over, subagents or validity (§15.6), and never
-    // changes a membership, so nothing typed there is dropped unseen.
+    // The instance choice before the runner part was turned on, given back when it is turned off.
+    let instanceKept = null;
+    // The fields as the agent chosen asks; the runner part hides and changes nothing above it.
     function showAgent() {
-      const admits = own && !!viaRunner && viaRunner.on();
-      if (admits !== admitting) {
-        admitting = admits;
-        const kept = agentSelect.value;
-        profileOptions();
-        const values = Array.from(agentSelect.querySelectorAll("option")).map((o) => o.getAttribute("value"));
-        agentSelect.value = values.includes(kept) ? kept : values.length ? values[0] : "";
-      }
+      admitting = own && !!viaRunner && viaRunner.on();
+      markAdmitting();
       showJoinFields();
       if (!viaRunner) return;
       followRunner();
-      const on = viaRunner.on();
-      [instanceBox, memberReportsField, subagentsField, takeOverField, handoverField, ttlField].forEach((f) => { if (on) f.hidden = true; });
-      if (!on) ttlField.hidden = false;
-      create.textContent = on ? M.t("placements.new.submit") : M.t("join.create");
+      create.textContent = viaRunner.on() ? M.t("placements.new.submit") : M.t("join.create");
     }
     function showJoinFields() {
       const m = agentSelect.value ? memberOf(agentSelect.value) : null;
+      const on = !!viaRunner && viaRunner.on();
       const fresh = (m ? m.id : "") !== shownFor;
       shownFor = m ? m.id : "";
-      newFields.hidden = agentSelect.value !== "" || admitting;
+      newFields.hidden = agentSelect.value !== "";
       // Hidden, the new profile's fields are off too: a handle typed for one and refused by its
-      // pattern no longer blocks the form once an agent is chosen (review of #1558, #1919).
-      handle.disabled = display.disabled = newFields.hidden;
+      // pattern no longer blocks the form once an agent is chosen (review of #1558, #1919). A
+      // member's start on a runner takes no new profile: shown, off, with the reason.
+      handle.disabled = display.disabled = newFields.hidden || admitting;
+      newWhy.hidden = newFields.hidden || !admitting;
       instanceBox.hidden = !m;
-      membershipFields.forEach((f) => { f.hidden = !!m; });
-      memberReportsField.hidden = !m || !!outside;
       reportsOptions();
-      if (m && fresh) memberReportsOptions(m);
       takeOverOptions();
+      showMembership(m);
+      // Reports to stands in one place: the new membership's boss, or the boss of the agent
+      // already here, which its owner changes here (a PATCH before the join or the start).
+      if (reportsField) reportsField.hidden = !!m;
+      memberReportsField.hidden = !m || !!outside;
+      if (m && fresh) memberReportsOptions(m);
+      settle(m, on);
       profileLinksFor(agentSelect.value, m);
       // The line before the join follows the profile chosen, also when `open()` chooses it
       // (no `change` event) or the members are read again.
       if (drawAhead) drawAhead();
+      if (fresh) instanceKept = null;
       if (!m) return;
       const active = activeOf(m);
       const kept = replaced.value;
@@ -281,6 +366,19 @@ window.Maity = window.Maity || {};
       replaced.value = active.some((i) => i.id === kept) ? kept : active.length ? active[0].id : "";
       replaceOne.disabled = replaced.disabled = !active.length;
       if (fresh || !active.length) { replaceOne.checked = active.length > 0; another.checked = !active.length; }
+      // On a runner the start is another instance (§15.5); Replace is off with why, and the
+      // choice made before comes back when the part is turned off.
+      if (on) {
+        if (instanceKept === null) instanceKept = replaceOne.checked;
+        replaceOne.checked = false;
+        another.checked = true;
+        replaceOne.disabled = replaced.disabled = true;
+      } else if (instanceKept !== null) {
+        if (!replaceOne.disabled) { replaceOne.checked = instanceKept; another.checked = !instanceKept; }
+        instanceKept = null;
+      }
+      noReplace.hidden = !on;
+      describe(replaceOne, [on ? noReplace.id : null]);
       const max = m.team && m.team.max_instances;
       quota.textContent = max ? (active.length >= max ? M.t("join.quota.full", { active: active.length, max }) : M.t("join.quota.active", { active: active.length, max }))
         : m.instances ? "" : M.t("join.quota.unlisted");
@@ -296,8 +394,15 @@ window.Maity = window.Maity || {};
     // An agent never holds trust owner; admin and the role proxy only from an
     // owner, proxy only with trust admin (§3.1, owner_only §2.3).
     const trusts = outside ? ["outside"] : own ? M.trust.MEMBER_TRUSTS : ctx.isOwner ? ["member", "guest", "admin"] : ["member", "guest"];
-    const trust = h("select", { id: "join-trust" }, trusts.map((r) => h("option", { value: r }, M.trust.trustWord(r))));
-    trust.value = trusts[0];
+    const trust = h("select", { id: "join-trust" });
+    // The trusts offered, and a membership's own where it is shown (showMembership).
+    const fillTrust = () => {
+      const wanted = shownMember ? shownMember.trust : trust.value;
+      const list = shownMember && wanted && !trusts.includes(wanted) ? trusts.concat([wanted]) : trusts;
+      append(clear(trust), list.map((r) => h("option", { value: r }, M.trust.trustWord(r))));
+      trust.value = list.includes(wanted) ? wanted : trusts[0];
+    };
+    fillTrust();
     const role = h("select", { id: "join-role" });
     // The project's own roles follow the built-in ones (§2.3): for one's own agent only those on
     // a base a member join may give (not ops), as the hub's member limits check it. A start on a
@@ -309,10 +414,12 @@ window.Maity = window.Maity || {};
     let ownRoles = outside ? [] : takeOwn(M.trust.projectRoles(ctx, (list) => { ownRoles = takeOwn(list); if (ownRoles.length) fillRoles(); }));
     const fallback = outside ? outside.roles[0] : "coder";
     const fillRoles = () => {
-      const wanted = role.value || fallback;
+      const wanted = shownMember ? shownMember.role : role.value || fallback;
       const offered = outside ? outside.roles.slice()
         : (own ? M.trust.MEMBER_ROLES : M.trust.ROLES.filter((r) => r !== "proxy" || (ctx.isOwner && trust.value === "admin")))
           .concat(ownRoles.map((x) => x.name));
+      // A membership's role shown although this form would not give it.
+      if (shownMember && wanted && !offered.includes(wanted)) offered.push(wanted);
       M.trust.fillRoles(role, offered, wanted, fallback, ownRoles);
     };
     const roleHelp = M.trust.roleHint(role);
@@ -404,9 +511,12 @@ window.Maity = window.Maity || {};
       memberReports.value = now;
     }
     const memberReportsField = h("div", { class: "field join-member-reports", hidden: true },
-      h("label", { for: "join-member-reports" }, M.t("join.field.reports_to")), memberReports,
+      h("label", { for: "join-member-reports" }, M.t("members.edit.reports")), memberReports,
       h("p", { class: "hint", id: "join-member-reports-hint" }, M.t("join.reports.member_hint")));
-    const areas = h("input", { id: "join-areas", placeholder: "hub/, docs/" });
+    // An outsider's agent reports to the caller, never chosen (§3.1 "An outsider's agent").
+    const reportsField = outside ? null : h("div", { class: "field join-reports" }, h("label", { for: "join-reports" }, M.t("members.edit.reports")), reportsTo);
+    // Areas as the members' Manage calls and explains them (js/members.js).
+    const areas = h("input", { id: "join-areas", placeholder: M.t("members.edit.areas.placeholder"), "aria-describedby": "join-areas-hint" });
     // docs/api.md §3: the briefing reaches the agent in its resume packet
     // after the exchange, never on the join page.
     const briefing = M.dom.sendOnCtrlEnter(h("textarea", {
@@ -425,19 +535,26 @@ window.Maity = window.Maity || {};
       append(clear(takesOver), h("option", { value: "" }, M.t("join.takes_over.nobody")),
         list.map((m) => h("option", { value: m.id }, M.t("join.takes_over.option", { name: m.display_name, handle: M.dom.handleOf(ctx, m) }))));
       takesOver.value = list.some((m) => m.id === kept) ? kept : "";
-      takeOverField.hidden = !list.length || !!(agentSelect.value && memberOf(agentSelect.value));
+      // Nobody to take over from: no choice to show, unless a membership shown names one.
+      const m = agentSelect.value ? memberOf(agentSelect.value) : null;
+      takeOverField.hidden = !list.length && !(m && m.takes_over);
     };
     const handover = h("input", { id: "join-handover", maxlength: "200", autocomplete: "off", spellcheck: "false",
       placeholder: M.t("join.handover.placeholder"), "aria-describedby": "join-handover-hint" });
+    // Join-only (§15.6): off while the agent starts on a runner, each saying why (settle).
+    const runnerWhy = (id, text) => { const p = h("p", { class: "hint join-runner-only", id }, text); p.hidden = true; return p; };
+    const takeOverWhy = runnerWhy("join-takes-over-runner", M.t("join.runner.join_only"));
+    const handoverWhy = runnerWhy("join-handover-runner", M.t("join.runner.join_only"));
+    const ttlWhy = runnerWhy("join-ttl-runner", M.t("join.runner.no_line"));
     const takeOverField = h("div", { class: "field" }, h("label", { for: "join-takes-over" }, M.t("join.field.takes_over")), takesOver,
-      h("p", { class: "hint", id: "join-takes-over-hint" }, M.t("join.takes_over.hint")));
-    const handoverField = membershipField(h("div", { class: "field" }, h("label", { for: "join-handover" }, M.t("join.field.handover")), handover,
-      h("p", { class: "hint", id: "join-handover-hint" }, M.t("join.handover.hint"))));
+      h("p", { class: "hint", id: "join-takes-over-hint" }, M.t("join.takes_over.hint")), takeOverWhy);
+    const handoverField = h("div", { class: "field" }, h("label", { for: "join-handover" }, M.t("join.field.handover")), handover,
+      h("p", { class: "hint", id: "join-handover-hint" }, M.t("join.handover.hint")), handoverWhy);
     const ttl = h("select", { id: "join-ttl" },
       [900, 1800, 3600].map((v) => h("option", { value: String(v) },
         v < 3600 ? M.t("join.ttl.minutes", { count: v / 60 }) : M.t("join.ttl.hours", { count: v / 3600 }))));
 
-    const ttlField = h("div", { class: "field" }, h("label", { for: "join-ttl" }, M.t("join.field.ttl")), ttl);
+    const ttlField = h("div", { class: "field" }, h("label", { for: "join-ttl" }, M.t("join.field.ttl")), ttl, ttlWhy);
 
     const status = M.statusLine();
     // The panel's body: the form, or once a join is made the line in its place.
@@ -527,17 +644,25 @@ window.Maity = window.Maity || {};
     // fields), the rest from the runner part; one POST, no line. Made, the panel closes and the
     // line under it says so, with the way to where it runs; refused, the hub's message and the
     // fields it names stay here.
-    async function place(agent, member, text) {
+    // Whether the runner part can start the chosen agent now: said and true when it cannot, before
+    // anything is sent (a boss changed on the form is not saved for a start that cannot be made).
+    function placeRefused() {
       const no = viaRunner.blocked() || (!viaRunner.ready() ? M.t("placements.new.not_ready") : null);
-      if (no) { status.fail(M.t("placements.new.failed"), { message: no }); viaRunner.first().focus(); return; }
+      if (no) { status.fail(M.t("placements.new.failed"), { message: no }); viaRunner.first().focus(); return true; }
       // A tool that starts only on a named model (opencode) is never sent without one.
       const unnamed = viaRunner.unnamed();
-      if (unnamed) { status.fail(M.t("placements.new.failed"), { message: unnamed }); viaRunner.model().focus(); return; }
+      if (unnamed) { status.fail(M.t("placements.new.failed"), { message: unnamed }); viaRunner.model().focus(); return true; }
+      return false;
+    }
+    // bossSaid: a boss of the agent already here saved by its PATCH just before; a refused start
+    // says that it stays saved.
+    async function place(agent, member, text, mine, bossSaid) {
       // A profile of one's own not in the project yet: the placement admits it with the fields of
       // a first join, as the join would carry them (§15.6, §3.1). A member's (`admitting`): trust,
-      // role, oneself or one's own manager as the boss, the briefing; no areas or capabilities.
-      // An admin's: an admin's join fields, as for a new profile (`first_join_fields`). An agent
-      // already here: its id alone, as a placement never changes a membership (not_with_agent_id).
+      // role, oneself or one's own manager as the boss, the briefing, subagents; no areas or
+      // capabilities. An admin's: an admin's join fields, as for a new profile
+      // (`first_join_fields`). An agent already here: its id alone, as a placement never changes
+      // a membership (not_with_agent_id).
       const admits = !!agent.id && !member;
       const req = admits && admitting ? { agent: { id: agent.id }, trust: trust.value, role: role.value, reports_to: reportsTo.value || ctx.me.id }
         : agent.id && !admits ? { agent: { id: agent.id } } : {
@@ -549,8 +674,13 @@ window.Maity = window.Maity || {};
           capabilities: [],
         };
       if ((admits || !agent.id) && text) req.briefing = text;
+      // The owner's subagent instruction, as the join sends it (§15.6 takes it as in a join).
+      if (admits || !agent.id) {
+        followRole();
+        req.subagents = subagents.checked;
+        if (subagents.checked) req.subagents_language = english.checked ? "en" : M.i18n.language;
+      }
       Object.assign(req, viaRunner.body());
-      const mine = ++submission;
       status.busy(M.t("placements.new.busy"));
       create.disabled = true;
       let made;
@@ -564,6 +694,8 @@ window.Maity = window.Maity || {};
           const limit = own ? memberRefusal(err) : null;
           if (limit) status.fail(M.t("placements.new.failed"), limit);
           else viaRunner.refuse(status, err);
+          // The boss changed just before stays changed: said plainly, not undone.
+          if (bossSaid) append(status.el, " ", h("span", { class: "flag join-reports-said" }, M.t("join.reports.kept", { said: bossSaid })));
         };
         say();
         const fields = (err.code === "invalid" && err.details && err.details.fields) || {};
@@ -586,7 +718,8 @@ window.Maity = window.Maity || {};
       if (panel.hidden) viaRunner.reread();
       append(clear(listStatus.el), h("span", { class: "ok" }, M.t("placements.new.done",
         { name: made.agent.display_name || made.agent.handle, runner: made.runner.name })), " ",
-      h("a", { href: ctx.link("placements") }, M.t("placements.title")));
+      h("a", { href: ctx.link("placements") }, M.t("placements.title")),
+      bossSaid ? [" ", h("span", { class: "join-reports-said" }, bossSaid)] : null);
       listStatus.el.className = "send-status";
       if (hooks.started) await hooks.started(made);
       // A new profile is one's own now: offered by name, its handle taken.
@@ -639,9 +772,10 @@ window.Maity = window.Maity || {};
         e.preventDefault();
         if (create.disabled) return;
         let agent;
-        // Starting one's own agent on a runner with none of one's profiles left to admit: why.
-        if (admitting && !agentSelect.value) {
-          status.fail(M.t("placements.new.failed"), { message: viaRunner.blocked() });
+        // A member's start on a runner of an agent it does not take (one already here, or a new
+        // profile), chosen before the part was turned on: refused here with the reason.
+        if (admitting && !runnerTakes(agentSelect.value)) {
+          status.fail(M.t("placements.new.failed"), { message: M.t("join.runner.own_agents") });
           agentSelect.focus();
           return;
         }
@@ -673,8 +807,9 @@ window.Maity = window.Maity || {};
           briefing.focus();
           return;
         }
-        if (viaRunner && viaRunner.on()) { await place(agent, member, text); return; }
-        const req = member
+        const placing = !!viaRunner && viaRunner.on();
+        if (placing && placeRefused()) return;
+        const req = placing ? null : member
           ? Object.assign({ agent, ttl_seconds: Number(ttl.value) },
             replaceOne.checked && replaced.value ? { replaces: replaced.value } : { new_instance: true })
           // One's own agent (§3.1): oneself (the default) or one of one's own managers here.
@@ -689,17 +824,17 @@ window.Maity = window.Maity || {};
             capabilities: [],
             ttl_seconds: Number(ttl.value),
           };
-        if (text) req.briefing = text;
-        if (!member) {
+        if (req && text) req.briefing = text;
+        if (req && !member) {
           followRole();  // an untouched box takes the role chosen now
           req.subagents = subagents.checked;
           if (subagents.checked) req.subagents_language = english.checked ? "en" : M.i18n.language;
         }
-        if (!member && takesOver.value && !takeOverField.hidden) req.takes_over = takesOver.value;
-        if (!member && handover.value.trim()) req.handover = handoverValue(handover.value.trim());
+        if (req && !member && takesOver.value && !takeOverField.hidden) req.takes_over = takesOver.value;
+        if (req && !member && handover.value.trim()) req.handover = handoverValue(handover.value.trim());
         // An agent already here whose boss was changed in the panel: that PATCH first (§2.3),
-        // then the join. Refused, nothing is sent after it; taken, it stays whatever the join
-        // does, and the panel says so beside the join's own outcome.
+        // then the join or the start on a runner. Refused, nothing is sent after it; taken, it
+        // stays whatever the join or the start does, and the panel says so beside its outcome.
         // This submission's number, taken before the first wait: a panel closed meanwhile
         // (close() counts on) ends it, so neither the PATCH's outcome nor a join follows.
         const mine = ++submission;
@@ -716,7 +851,7 @@ window.Maity = window.Maity || {};
             // submission's to touch (review of #1919).
             if (mine !== submission) return;
             create.disabled = false;
-            status.fail(M.t("join.reports.failed"), err);
+            status.fail(placing ? M.t("join.reports.failed_start") : M.t("join.reports.failed"), err);
             memberReports.focus();
             return;
           }
@@ -733,6 +868,7 @@ window.Maity = window.Maity || {};
           // Taken, the boss stays (kept above for the next submission); closed meanwhile, no join.
           if (mine !== submission) return;
         }
+        if (placing) { await place(agent, member, text, mine, bossSaid); return; }
         const sayBoss = () => { if (bossSaid) append(status.el, " ", h("span", { class: "flag join-reports-said" }, bossSaid)); };
         status.busy(M.t("join.creating"));
         create.disabled = true;
@@ -830,25 +966,31 @@ window.Maity = window.Maity || {};
     },
     h("div", { class: "join-columns" },
       h("div", { class: "join-fields" },
-        h("div", { class: "field wide" }, h("label", { for: "join-agent" }, M.t("join.field.agent")), agentSelect, profileLinks),
+        // One shape whichever way the agent comes in (tsk-6w4qckma672q): the agent, a new
+        // profile, the instance, then the membership in the order and words of the members'
+        // Manage (js/members.js), then what only a join line takes; the briefing beside them,
+        // the runner part at the end.
+        h("div", { class: "field wide" }, h("label", { for: "join-agent" }, M.t("join.field.agent")), agentSelect, agentWhy, profileLinks),
         newFields,
         instanceBox,
+        membershipNote,
+        outside ? null : h("div", { class: "field" }, h("label", { for: "join-trust" }, M.t("members.edit.trust")), trust),
+        h("div", { class: "field" }, h("label", { for: "join-role" }, M.t("members.edit.role")), role, roleHelp),
+        reportsField,
         memberReportsField,
-        outside ? null : membershipField(h("div", { class: "field" }, h("label", { for: "join-trust" }, M.t("join.field.trust")), trust)),
-        membershipField(h("div", { class: "field" }, h("label", { for: "join-role" }, M.t("join.field.role")), role, roleHelp)),
-        outside ? null : membershipField(h("div", { class: "field" }, h("label", { for: "join-reports" }, M.t("join.field.reports_to")), reportsTo)),
-        outside ? membershipField(h("p", { class: "hint field wide join-outside-hint" }, M.t("join.field.outsider_hint")))
-          : own ? membershipField(h("p", { class: "hint field wide" }, M.t("join.field.own_hint")))
-          : membershipField(h("div", { class: "field" }, h("label", { for: "join-areas" }, M.t("join.field.areas")), areas)),
-        membershipField(subagentsField),
-        membershipField(takeOverField),
+        outside ? h("p", { class: "hint field wide join-outside-hint" }, M.t("join.field.outsider_hint"))
+          : own ? h("p", { class: "hint field wide" }, M.t("join.field.own_hint"))
+          : h("div", { class: "field" }, h("label", { for: "join-areas" }, M.t("members.edit.areas")), areas,
+            h("p", { class: "hint", id: "join-areas-hint" }, M.t("members.edit.areas.hint"))),
+        subagentsField,
+        takeOverField,
         // An outsider's join hands over a card it reads only, never a message (§3.1, H1 at
         // 39497bfb): the field, which takes both, is left out for it.
         outside ? null : handoverField,
         ttlField),
-      membershipField(h("div", { class: "join-briefing" },
+      h("div", { class: "join-briefing" },
         h("label", { for: "join-briefing" }, M.t("join.briefing.label", { keys: M.dom.SEND_KEYS })), briefing,
-        h("p", { class: "hint" }, M.t("join.briefing.hint"))))),
+        h("p", { class: "hint" }, M.t("join.briefing.hint")))),
     viaRunner ? viaRunner.el : null,
     ahead ? ahead.el : null,
     stepSlot,
