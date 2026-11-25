@@ -38,6 +38,42 @@ def context(tmp_path: Path, harness_id: str = "claude-code", **overrides: Any) -
     return adapters.Context(**data)
 
 
+@pytest.mark.parametrize(
+    ("harness_id", "binary", "flag"),
+    [
+        ("claude-code", "claude", "--model"),
+        ("codex", "codex", "-m"),
+        ("antigravity", "agy", "--model"),
+    ],
+)
+@pytest.mark.parametrize("placement_model", [None, "override"])
+def test_placement_model_or_harness_default(
+    tmp_path: Path, harness_id: str, binary: str, flag: str, placement_model: str | None
+) -> None:
+    harness = config.Harness(
+        harness_id,
+        ("interactive", "supervised"),
+        "interactive",
+        ("default", "override"),
+        default_model="default",
+    )
+    for mode in harness.modes:
+        ctx = context(
+            tmp_path / mode,
+            harness=harness,
+            binary=f"/usr/bin/{binary}",
+            folder=tmp_path / mode if harness_id == "antigravity" else None,
+            placement={**PLACEMENT, "mode": mode, "model": placement_model},
+        )
+        launch = adapters.launch(ctx)
+        commands = [launch.argv]
+        if mode == "supervised":
+            spec = json.loads(Path(launch.argv[-1]).read_text())
+            commands = [spec["first"], spec["again"]]
+        for argv in commands:
+            assert argv[argv.index(flag) + 1] == (placement_model or "default")
+
+
 def test_claude_code_interactive(tmp_path: Path) -> None:
     ctx = context(tmp_path)
     launch = adapters.launch(ctx)
