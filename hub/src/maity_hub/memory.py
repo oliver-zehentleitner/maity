@@ -382,10 +382,9 @@ def refuse_outside_write(mine: Membership) -> None:
 def refuse_role_change(mine: Membership) -> None:
     """The one check of a write or a delete in a role's memory (§19.2): a guest changes none
     (§2.3), and neither does an outsider's agent (trust `outside`, §2.3 "Outside"), which
-    neither reads, writes nor deletes it: role memory goes into every same-role agent's
-    resume packet (hub/context/memory.md, "An outsider's agent writes no role memory"), and
-    such an agent reads no memory of the project. `forbidden` either way; every other trust
-    passes as before."""
+    reads and writes no memory of the project at all (`refuse_outside_write`, hub/context/
+    memory.md, "An outsider's agent reads and writes no memory of the project"). `forbidden`
+    either way; every other trust passes as before."""
     if mine.trust == "guest":
         raise forbidden("tasks:write", "a guest writes no memory")
     if mine.trust == OUTSIDE:
