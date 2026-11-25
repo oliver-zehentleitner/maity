@@ -4332,6 +4332,15 @@ the hub is unchanged: `clone_failed`, the exit code, no detail.
 - Rejected: logging nothing, as before. `clone_failed` without an exit code
   covers several unrelated causes, so nobody could tell which one it was.
 
+An existing clone refused before start is a different case. Five OpenCode
+placements filed identical owner requests with no finding while each
+service journal identified `core.worktree` (tsk-27rm0ay2ntnx). The runner
+can safely report its own clone-check wording and a fixed list of known
+Git metadata names. Arbitrary keys can contain private subsection names
+and arbitrary entry names may contain private paths, so those are
+represented by placeholders. The owner request directs the reader to
+the access-controlled finding.
+
 ## A refused join says its code, reason and why in the runner's log, in code form only
 
 **Id:** 1b6e0e38-6392-4180-ae47-597064b9023b

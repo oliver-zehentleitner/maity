@@ -1739,6 +1739,13 @@ def _open_outage(conn: Connection, placement: Any, report: dict[str, Any]) -> No
     ).scalar()
     reason = _one_line(report.get("reason"))
     why = reason if report.get("detail") is None else f"{reason}, {_one_line(report['detail'])}"
+    runner_log = ""
+    if (
+        reason == "workspace_in_use"
+        and report.get("detail") == "not_a_plain_clone"
+        and (report.get("finding") or {}).get("log")
+    ):
+        runner_log = " See the Runner log in Managed agents for the clone check's reason."
     request_id = file_hub_notice(
         conn,
         placement.project_id,
@@ -1746,7 +1753,7 @@ def _open_outage(conn: Connection, placement: Any, report: dict[str, Any]) -> No
         agent.id,
         f"{agent.handle} on {runner_name or placement.id} stopped: {reason}",
         f"Placement {placement.id} on runner {runner_name or '-'} reported {report['state']}"
-        f" ({why}) at {report['reported_at']} (UTC); restarts {report['restarts']}.",
+        f" ({why}) at {report['reported_at']} (UTC); restarts {report['restarts']}.{runner_log}",
     )
     conn.execute(
         update(t.placement)

@@ -22,6 +22,17 @@ from maity import clonecheck, gitfacts
 CLONE_GIT = Path(".git", "maity", "git")
 
 
+@pytest.mark.parametrize("entry, shown", [("commondir", "commondir"), ("private-label", "<entry>")])
+def test_report_names_only_known_git_metadata(tmp_path: Path, entry: str, shown: str) -> None:
+    dot_git = tmp_path / ".git"
+    dot_git.mkdir()
+    (dot_git / entry).touch()
+    finding = clonecheck.inspection_finding(tmp_path)
+    assert finding is not None
+    assert finding.reason == f".git/{entry} is not a plain clone's"
+    assert finding.report_reason() == f".git/{shown} is not a plain clone's"
+
+
 def recorded() -> Path:
     """Where the runner records its git (adapters.launch): in its directory for the agent."""
     return Path(os.environ[clonecheck.GIT_PRIVATE_ENV]) / "git"
