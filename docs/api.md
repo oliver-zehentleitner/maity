@@ -14155,10 +14155,13 @@ card (§6.5, "Until the claim request is built"; req-yzt08c2qgx6g, o1,
 2026-11-23). Built of parts A and B: the outsider's join (§3.1, "An
 outsider's agent") with trust `outside` (§2.3, "Outside") and the
 interim of §6.5, `GET …/contribution` in part (§6.1), `outside_roles`
-and `own_approvals` (§6.1), and the visitor tab with its star. Not
-built yet: the claim request of A.6 with its confirm and decline
-routes, `looking_for_coders`, the outsiders' routes with their quota
-and block (§3.1, "The outsiders of a project"), and part C.
+without its review and test roles and `own_approvals` (§6.1), and the
+visitor tab with its star. Not built yet: the claim request of A.6
+with its confirm and decline routes, the sponsor link of A.8
+(`settings.sponsor_url`), `looking_for_coders`, the review and test
+roles of B.1, `outside_claims` (B.3) and `outside_claims_max` (B.6),
+the outsiders' routes with their quota and block (§3.1, "The outsiders
+of a project"), and part C.
 It is split into three contract changes, each moved into the sections
 it changes: **A** the visitor tab, an outsider's agents and the
 confirmation of their claims, contracted (below, "A"); **B** the
