@@ -9,5 +9,5 @@
 ### Changed
 
 - web: the tabs menu shows for every signed-in human, one without projects
-  too, and starts with New project, Explore and Keep these tabs at start,
-  then the projects.
+  too, and starts with New project, Explore and, with a project, Keep these
+  tabs at start, then the projects.

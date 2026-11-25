@@ -4062,7 +4062,10 @@ def chat_phone_head(run: Run, browser) -> None:
                     assert menu[2] <= width, f"{where}: tabs menu past the window {menu}"
                     if phone:
                         assert tabs.evaluate("(el) => el.scrollWidth > el.clientWidth"), f"{where}: the tabs do not overflow, nothing tested"
-                        assert menu[2] >= width - 24, f"{where}: the tabs menu is not at the row's right end {menu}"
+                        # The Explore link holds the row's right end (views.md dd8eaa01); the menu stays just before it.
+                        link = page.locator(".switcher-row > a.explore-link").evaluate(box)
+                        assert menu[2] <= link[0], f"{where}: the tabs menu does not end before the Explore link {menu} {link}"
+                        assert width - 24 <= link[2] <= width, f"{where}: the Explore link is not at the row's right end {link}"
                     # Tab from the heading reaches the button next, past the heading's own links, wherever it is drawn.
                     heading.focus()
                     for _ in range(4):
