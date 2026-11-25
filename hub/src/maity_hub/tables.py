@@ -878,7 +878,8 @@ membership = Table(
     Column("subagents_by", String(ID)),
     # An expert's fields (§2.3 "The expert", §6.2): what it answers about, plain text of at
     # most 120 characters, and the path prefixes it learned, at most 20; null for no text
-    # and no sources, and both null whenever the role is not `expert`.
+    # and no sources, and both null whenever the role is not `expert` or `steward` (§2.3
+    # "The steward").
     Column("expert_for", String(480)),
     Column("expert_sources", JSON_VALUE),
     Column("onboarded_at", UtcDateTime),
