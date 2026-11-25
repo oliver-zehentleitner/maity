@@ -483,7 +483,8 @@ def test_owner_create_refuses_a_load_test_handle(
     assert "is reserved" in capsys.readouterr().err
 
 
-@pytest.mark.parametrize("handle", ["lt-x", "lt-", "lt7", "alt-7", "lt-7a"])
+# Four characters at least: a shorter one is reserved for its length (§16.11).
+@pytest.mark.parametrize("handle", ["lt-x", "lt-ab", "lt77", "alt-7", "lt-7a"])
 def test_a_handle_near_the_load_test_pattern_may_still_be_taken(
     migrated: Engine, handle: str
 ) -> None:

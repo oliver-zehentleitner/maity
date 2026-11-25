@@ -416,3 +416,21 @@ def reserved_holders(conn: Connection) -> list[str]:
                 if slug in slugs
             ]
     return sorted(found)
+
+
+def kept_holders(conn: Connection) -> list[str]:
+    """Who holds a handle that §16.11 keeps from new claims only: one of three characters or
+    fewer, or a product word (`paths.PRODUCT_WORDS`). They keep it, its page and its alias, so
+    this names them and stops nothing. `lt-<digits>` is not named: the load-test seed's own
+    accounts hold such handles. Tables an older schema does not have yet are skipped."""
+    present = set(inspect(conn).get_table_names())
+    found: list[str] = []
+    for table, label in ((t.human, "handle"), (t.org, "organisation handle")):
+        if table.name in present:
+            found += [
+                f"{label} {handle!r}"
+                for handle in conn.execute(select(table.c.handle)).scalars()
+                if handle not in paths.RESERVED_FIRST
+                and (len(handle) <= paths.SHORT_HANDLE or handle in paths.PRODUCT_WORDS)
+            ]
+    return sorted(found)

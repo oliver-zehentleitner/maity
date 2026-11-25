@@ -35,16 +35,68 @@ MISLEADING_HANDLES = frozenset({"hub", "human", "maity", "system"})
 # alias back: the reservation stops a new claimant, not the id's own old name.
 LOADTEST_HANDLE = re.compile(r"lt-[0-9]+")
 
+# A new person or organisation may not take a handle this short or one of `PRODUCT_WORDS`
+# (§16.11), so that `/<word>` stays free for the product's own pages (the maintainer,
+# 2026-11-25, tsk-3ykgt3t9jd57). Like `lt-<n>` these are no members of `RESERVED_FIRST`: they
+# name no route, so the robots list, the join host, the dashboard and `never_a_page` read them
+# as any handle, and whoever holds one already keeps it, its page and its alias. A word that
+# gets a page of ours later moves to `RESERVED_FIRST` in that change, which deals with its holder.
+# `owner` and `owners` stay free: every scripted hub, harness and doc creates `owner`.
+SHORT_HANDLE = 3  # §6.24 allows 2 to 31 characters
+PRODUCT_WORDS = frozenset(
+    {
+        "about", "account-recovery", "accounts", "administrator", "administrators", "admins",
+        "ads", "affiliate", "affiliates", "analytics", "announcements", "apps", "archive",
+        "auth", "authorize", "billing", "blog", "blogs", "bot", "bots", "brand", "branding",
+        "business", "callback", "career", "careers", "cart", "changelog", "chat", "checkout",
+        "cli", "community", "compare", "compliance", "confirm", "contact", "contacts",
+        "contribute", "contribution", "cookies", "copyright", "customer", "customers",
+        "dashboard", "default", "demo", "design", "dev", "developer", "developers", "discord",
+        "discuss", "discussions", "doc", "docs", "documentation", "domain", "domains", "donate",
+        "download", "downloads", "edit", "email", "enterprise", "example", "examples", "faq",
+        "faqs", "feature", "features", "feed", "feedback", "files", "forum", "forums", "gdpr",
+        "github", "gitlab", "guide", "guides", "help", "home", "hooks", "hosting", "info",
+        "integration", "integrations", "investors", "issue", "issues", "job", "jobs",
+        "knowledge-base", "knowledgebase", "landing", "learn", "legal", "licence", "licences",
+        "license", "licenses", "list", "lists", "log-in", "log-out", "logout", "marketplace",
+        "me", "media", "member", "members", "moderator", "moderators", "news", "newsletter",
+        "oauth", "official", "onboarding", "org", "organisation", "organisations",
+        "organization", "organizations", "orgs", "page", "pages", "partner", "partners",
+        "password", "payment", "payments", "plan", "plans", "platform", "policies", "policy",
+        "popular", "press", "pricing", "pro", "product", "products", "profile", "profiles",
+        "project", "projects", "public", "pulls", "readme", "release", "releases", "report",
+        "reports", "reset", "roadmap", "root", "rss", "sales", "sdk", "search", "security",
+        "server", "service", "services", "setup", "shop", "showcase", "sign-out", "sign-up",
+        "signin", "signout", "signup", "site", "sitemap", "sites", "source", "sponsor", "sponsors",
+        "staff", "stats", "status", "store", "subscribe", "subscription", "subscriptions",
+        "support", "team", "teams", "terms-of-service", "terms-of-use", "test", "testing",
+        "tos", "tour", "trending", "trust", "tutorial", "tutorials", "unsubscribe", "update",
+        "updates", "upgrade", "user", "users", "verify", "webhook", "webhooks", "welcome",
+        "wiki", "www",
+    }
+)  # fmt: skip
+
+
+def kept_from_new_claims(handle: str) -> bool:
+    """Whether `handle` is reserved for a new person or organisation only (§16.11): of the form
+    `lt-<digits>`, at most `SHORT_HANDLE` characters, or one of `PRODUCT_WORDS`. Whoever holds
+    one already keeps it and may take it back as their alias (§6.24)."""
+    return (
+        LOADTEST_HANDLE.fullmatch(handle) is not None
+        or len(handle) <= SHORT_HANDLE
+        or handle in PRODUCT_WORDS
+    )
+
 
 def handle_reserved(handle: str, *, of_agent: bool = False) -> bool:
     """Whether nobody may take `handle`: the one check of every path that gives one (§6.25). An
     agent's handle is no first segment of a path, so only the misleading words hold for it.
-    `lt-<digits>` is reserved for a person or an organisation, for the load-test accounts."""
+    For a person or an organisation the first segments hold, and `kept_from_new_claims`."""
     if handle in MISLEADING_HANDLES:
         return True
     if of_agent:
         return False
-    return handle in RESERVED_FIRST or LOADTEST_HANDLE.fullmatch(handle) is not None
+    return handle in RESERVED_FIRST or kept_from_new_claims(handle)
 
 
 # The views of a project in the dashboard (§16.11): `/<owner>/<slug>/<view>…`. A slug is never

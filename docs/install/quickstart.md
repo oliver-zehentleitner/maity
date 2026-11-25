@@ -48,8 +48,10 @@ maity-hub quickstart
 ```
 
 On the first start, `quickstart` creates `maity-hub.db` and your account,
-the instance admin. The handle is your system user name (or `owner`), unless you
-pass `--handle` and `--display-name`. It asks for your email address,
+the instance admin. The handle is your system user name, unless you
+pass `--handle` and `--display-name`. It is `owner` when the user name is
+no handle a person may take: one of three characters or fewer, or a word
+the hub keeps for its own pages. It asks for your email address,
 which is what you sign in with (or pass `--email`), and for your password
 twice, and never takes the password on the command line. Then it serves,
 and its last line is the address to open:
@@ -72,7 +74,7 @@ PostgreSQL or MariaDB uses:
 
 ```sh
 maity-hub migrate
-maity-hub owner create --handle me --display-name "Me" --email me@example.org
+maity-hub owner create --handle maintainer --display-name "Maintainer" --email maintainer@example.org
 maity-hub serve
 ```
 
