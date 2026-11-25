@@ -3254,6 +3254,22 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(cluster.includes("revoked") && cluster.includes("pods in maity-agents") && cluster.includes("pi 0.9.1 · without a command allowlist: its pod is the only boundary")
     && cluster.includes("Each agent on maity-agents runs in its own pod"), "runners: a revoked cluster runner, a tool without an allowlist");
   expect(!text(main).includes("Open pairings"), "runners: an expired pairing is not listed as open");
+  // The owner's own list of agents on a runner (§15.3) names each instance, handle#id: two of one
+  // agent told apart, and one before its first pickup without an instance (tsk-m8rpxpnyg0zd).
+  {
+    const olGetAll = win.Maity.api.getAll;
+    const ol = (id, instance) => ({ id, project: "maintainer/maity", agent: { handle: "agent-b" }, instance, desired: "running", state: instance ? "running" : null, foreign: false, created_at: "2026-11-20T10:00:00Z" });
+    win.Maity.api.getAll = (p, ...rest) => (p === "/runners/rnr-0002/placements"
+      ? Promise.resolve({ items: [ol("plc-0001", "wqe2"), ol("plc-0091", "k7mq"), ol("plc-0092", null)], next_cursor: null })
+      : olGetAll(p, ...rest));
+    await go("#/all"); await go("#/runners"); for (let k = 0; k < 6; k++) await tick();
+    const olLines = (card("home-laptop").querySelector("section.runner-placements") || { querySelectorAll: () => [] }).querySelectorAll("li").map((li) => text(li));
+    win.Maity.api.getAll = olGetAll;
+    await go("#/all"); await go("#/runners"); await tick();
+    expect(olLines.length === 3 && olLines[0].startsWith("agent-b#wqe2 in maintainer/maity") && olLines[1].startsWith("agent-b#k7mq in maintainer/maity")
+      && olLines[2].startsWith("agent-b in maintainer/maity · no instance yet"),
+      "runners: the owner's list names each instance as handle#id, two of one agent apart, none yet before the first pickup " + JSON.stringify(olLines));
+  }
   // Pair: the name is checked first; the line is shown once, with the starter configuration.
   byId("pair-name").value = "New Laptop";
   main.querySelector("form.pair-form").dispatch("submit"); await tick();
@@ -6256,6 +6272,33 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     expect([...withLog, ...noLog, ...none, ...unknownCode].every(Boolean),
       "placements: the finding's cause, seen and signals; its log closed and as text; none without log, a null finding or an empty log; an unknown cause as its code "
         + JSON.stringify({ withLog, noLog, none, unknownCode }));
+  }
+  // Which instance a placement runs (§15.5 `instance`, tsk-m8rpxpnyg0zd): `handle#id` as the board
+  // names it, the clone beside the harness, and "no instance yet" before the first pickup. Two
+  // placements of one agent on one runner are told apart by both.
+  {
+    const inGetAll = win.Maity.api.getAll;
+    win.Maity.api.getAll = (p) => (p === "/projects/maintainer/maity/placements"
+      ? inGetAll(p).then((r) => {
+        const first = r.items.find((x) => x.id === "plc-0001");
+        // The fixture's own id for plc-0001 (`wle2`) has an `l`, which no instance id holds (§6.17).
+        const items = r.items.map((x) => (x.id === "plc-0004" ? { ...x, instance: null } : x.id === "plc-0001" ? { ...x, instance: "wqe2" } : x));
+        return { ...r, items: items.concat([{ ...first, id: "plc-0091", instance: "k7mq", workspace: { ...first.workspace, clone: "agent-b-2" } }]) };
+      })
+      : inGetAll(p));
+    await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/placements"); for (let k = 0; k < 8; k++) await tick();
+    const head = (id) => text(plRow(id).querySelector(".placement-head"));
+    const got = {
+      one: head("plc-0001"), two: head("plc-0091"), waiting: head("plc-0004"),
+      clones: [plFacts("plc-0001").includes("clone agent-b"), plFacts("plc-0091").includes("clone agent-b-2")],
+      link: (plRow("plc-0091").querySelector(".member-instance") || { getAttribute: () => null }).getAttribute("href"),
+    };
+    win.Maity.api.getAll = inGetAll;
+    await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/placements"); for (let k = 0; k < 8; k++) await tick();
+    expect(got.one.startsWith("agent-b#wqe2 on home-laptop") && got.two.startsWith("agent-b#k7mq on home-laptop")
+      && got.clones.every(Boolean) && !!got.link && got.link.includes("k7mq")
+      && got.waiting.includes("no instance yet") && !/#/.test(got.waiting.split(" on ")[0]),
+      "placements: each row names its instance as handle#id with its clone, two of one agent told apart, none yet before the first pickup " + JSON.stringify(got));
   }
   const plStop = btn(plRow("plc-0001"), "Stop");
   plStop.click(); plStop.click(); for (let k = 0; k < 6; k++) await tick();
