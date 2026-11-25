@@ -105,11 +105,12 @@ ROUTE_CACHE = frozenset(
     }
 )
 # The answers a visitor without a session may cache: the badge, the instance's landing page
-# (§16.7), the sign-in pages and what a visitor's dashboard reads of a public page (§16.9).
+# (§16.7), the sign-in pages, what a visitor's dashboard reads of a public page and the list
+# of the dashboard's Explore (§16.9).
 PUBLIC_PATHS = re.compile(
     r"/badge/(?:[^/]+/)?[^/]+\.svg|/api/v1/landing|/api/v1/legal|/api/v1/auth/pages/[^/]+"
     r"|/api/v1/site/chrome"
-    r"|/api/v1/public/pages/.+"
+    r"|/api/v1/public/pages/.+|/api/v1/public/explore"
     r"|/|/(?:impressum|privacy|terms)(?:/[^/]+)?"
 )
 # A picture a public page shows (§6.10): its address changes with the picture, so a browser
@@ -145,11 +146,11 @@ MAINTENANCE_OPEN = re.compile(
 # full page's End button (§16.12).
 MAINTENANCE_READ = re.compile(r"/api/v1/me")
 # The hub's own server-rendered pages that every caller gets, which answer a small 503 page
-# during a window. `/` and a stored public page are the landing or public page for a visitor
-# only and the app shell for a signed-in reader, so their routes decide (`refusal_page`);
-# every other address outside the API is the app shell or a static file, and the app shows the
-# full page itself.
-MAINTENANCE_PAGES = re.compile(r"/explore|/for/[^/]+|/join/[^/]+|/r/[^/]+|/mail/.+")
+# during a window. `/`, `/explore` and a stored public page are the landing or public page for
+# a visitor only and the app shell for a signed-in reader, so their routes decide
+# (`refusal_page`); every other address outside the API is the app shell or a static file, and
+# the app shows the full page itself.
+MAINTENANCE_PAGES = re.compile(r"/for/[^/]+|/join/[^/]+|/r/[^/]+|/mail/.+")
 
 
 class HubMiddleware:

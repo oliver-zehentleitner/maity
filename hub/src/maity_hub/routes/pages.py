@@ -10,6 +10,7 @@ They are the public host's only (the join host never routes here, §1.1).
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from fastapi import APIRouter, Query, Request
@@ -164,18 +165,68 @@ def read_public_page(path: str, request: Request) -> Response:
     return public_pages.read(request, path)
 
 
+@router.get("/public/explore")
+def read_explore(request: Request) -> Response:
+    """What the dashboard's Explore lists (§16.9, "Explore, signed in"): the projects `/explore`
+    lists, as `{name, full_name}`, the same answer for everyone. The session and the credentials
+    of the request are never looked at; membership and stars are `GET /me`'s."""
+    if not settings_of(request).public_pages:
+        raise not_found()
+    wait = public_pages.BY_ADDRESS.hit(origin_of(request).limit_key)
+    if wait:
+        raise rate_limited(wait)
+    with engine_of(request).begin() as conn:
+        rows = public_projects.explore_rows(conn)
+    payload = json.dumps(
+        {"projects": [{"name": name, "full_name": full} for full, name in rows]},
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    )
+    tag = public_pages.etag_of(payload)
+    headers = {
+        "Cache-Control": public_pages.READ_CACHE,
+        "ETag": tag,
+        "X-Content-Type-Options": "nosniff",
+    }
+    candidates = request.headers.get("if-none-match", "").split(",")
+    if any(c.strip() == "*" or c.strip().removeprefix("W/") == tag for c in candidates):
+        return Response(status_code=304, headers=headers)
+    return Response(payload, media_type="application/json", headers=headers)
+
+
 @page_router.api_route("/explore", methods=["GET", "HEAD"], include_in_schema=False)
-def explore(request: Request, lang: str | None = None) -> Response:
-    """The public projects (§16.9), for every visitor, with or without a session, in the
-    language of the frame (`?lang`, else the reader's); the shell while the instance serves no
-    public pages, as for any address it does not have."""
+def explore(
+    request: Request, lang: str | None = None, as_: str | None = Query(None, alias="as")
+) -> Response:
+    """The public projects (§16.9) for a visitor without a valid session, and for anyone who
+    asks to see it as one (`?as=public`), in the language of the frame (`?lang`, else the
+    reader's); the shell for a signed-in human, where the dashboard draws Explore as a tab of its
+    own (§16.9, "Explore, signed in"), and while the instance serves no public pages, as for any
+    address it does not have. While a maintenance window runs, a visitor gets the 503 page and
+    the shell shows a signed-in human the full page (§16.12), as at `/`."""
     settings = settings_of(request)
+    # Read before the transactions below: the window has a connection of its own.
+    window = maintenance.window_now(engine_of(request))
+    if as_ != "public":
+        # Before the page's rate limit: the shell is not the page and spends none of its bucket.
+        with engine_of(request).begin() as conn:
+            signed_in = auth_caller.has_live_session(conn, request.cookies)
+        if signed_in:
+            return _shell(settings)
+    # A visitor gets the small page while a window runs, whether or not pages are served, as
+    # when the middleware refused this address for everyone.
+    if window is not None and window["state"] == "running":
+        return maintenance.refusal_page(  # type: ignore[no-any-return]
+            window,
+            maintenance.cached_frame(engine_of(request)),
+            request.headers.get("accept-language"),
+        )
     if not settings.public_pages:
         return _shell(settings)
     wait = public_pages.BY_ADDRESS.hit(origin_of(request).limit_key)
     if wait:
         raise rate_limited(wait)
-    window = maintenance.window_now(engine_of(request))
     with engine_of(request).begin() as conn:
         frame = landing.stored(conn)
         body = public_projects.explore_html(

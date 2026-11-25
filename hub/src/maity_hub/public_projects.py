@@ -567,6 +567,25 @@ def monogram(full: str, name: str) -> str:
     return next((char for char in name if char.isalpha()), full.rsplit("/", 1)[-1][:1]).upper()
 
 
+def explore_rows(conn: Connection) -> list[tuple[str, str]]:
+    """What `/explore` and `GET /public/explore` list (§16.9): every project that has a page
+    now, as `(full_name, name)`, by its name without regard to case, then its full name. The
+    one listing of both, so the page and the dashboard's Explore cannot list different
+    projects."""
+    p = t.project.c
+    candidates = conn.execute(
+        select(p.id, p.name, p.public_page, p.state, p.owner_org_id, p.owner_human_id).where(
+            p.public_page == "on", p.state != "archived"
+        )
+    ).all()
+    public = served_of(conn, candidates)
+    names = namespace.full_names(conn, public)
+    return sorted(
+        ((names[row.id], row.name) for row in candidates if row.id in public),
+        key=lambda item: (item[1].casefold(), item[0]),
+    )
+
+
 def explore_html(
     conn: Connection,
     hub: Settings,
@@ -581,18 +600,7 @@ def explore_html(
     frame of §16.7.5 (`setting`, `legal`, `stats` and `accept_language` are the frame's). It
     shows only what those pages already show, and is rendered per request, behind the public
     cache."""
-    p = t.project.c
-    candidates = conn.execute(
-        select(p.id, p.name, p.public_page, p.state, p.owner_org_id, p.owner_human_id).where(
-            p.public_page == "on", p.state != "archived"
-        )
-    ).all()
-    public = served_of(conn, candidates)
-    names = namespace.full_names(conn, public)
-    shown = sorted(
-        ((names[row.id], row.name) for row in candidates if row.id in public),
-        key=lambda item: (item[1].casefold(), item[0]),
-    )
+    shown = explore_rows(conn)
 
     def page(lang: str, words: dict[str, str]) -> tuple[str, str]:
         # As the approved mockup draws it (tsk-tp97v64vpy5z): the landing's dark hero, then the

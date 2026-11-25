@@ -146,6 +146,20 @@ def test_explore_costs_the_same_for_3_projects_and_for_30(world: World, migrated
     )
 
 
+def test_public_explore_costs_the_same_for_3_projects_and_for_30(
+    world: World, migrated: Engine
+) -> None:
+    """`GET /public/explore` asks what `/explore` asks (`explore_rows`, §16.9)."""
+    same_for_3_and_30(
+        migrated,
+        "/api/v1/public/explore",
+        lambda: world.anyone.get("/api/v1/public/explore"),
+        Projects(world),
+        rows=lambda answer: len(answer.json()["projects"]),
+        async_engines=True,
+    )
+
+
 def test_an_organisation_s_page_costs_the_same_for_3_projects_and_for_30(
     world: World, migrated: Engine, hub: Settings
 ) -> None:

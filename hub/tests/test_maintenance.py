@@ -209,10 +209,16 @@ def test_a_running_window_refuses_the_api_with_retry_after(
     fresh = make_client()
     signed_in = factory.login_handle(fresh, "maintainer")
     assert signed_in.status_code == 200, signed_in.text
-    # the hub's own pages answer a small page, the badge an empty one; the app shell is served
-    page = fresh.get("/explore")
+    # the hub's own pages answer a small page, the badge an empty one; the app shell is served,
+    # at `/explore` too for a signed-in reader (§16.9, "Explore, signed in"): the app shows the
+    # full page there, as at `/`
+    page = fresh.get("/join/not-a-token", headers={"Accept": "text/html"})
     assert page.status_code == 503 and "Maintenance" in page.text
     assert page.headers["Retry-After"] == str(25 * 60)
+    explore = fresh.get("/explore")
+    assert explore.status_code == 200 and "js/app.js" in explore.text
+    refused = make_client().get("/explore")
+    assert refused.status_code == 503 and refused.headers["Retry-After"] == str(25 * 60)
     badge = fresh.get("/badge/maintainer/maity.svg")
     assert badge.status_code == 503 and badge.content == b""
     assert fresh.get("/settings").status_code == 200
