@@ -39,7 +39,7 @@ from maity_hub import (
     wakeups,
 )
 from maity_hub import tables as t
-from maity_hub.access import Membership, member_row, membership
+from maity_hub.access import Membership, member_row, membership, reads_from_outside
 from maity_hub.auth.caller import Caller
 from maity_hub.config import Settings
 from maity_hub.deps import AnyCaller, EventsCaller, engine_of, settings_of, wait_of
@@ -967,7 +967,9 @@ def _group_for_posting(conn: Connection, mine: Membership, conversation_id: str)
     events.lock_project(conn, mine.project.id)
     group = group_chats.find(conn, mine.project.id, conversation_id)
     found = group_chats.access(conn, conversation_id, mine) if group is not None else None
-    if found is None and group is not None and chat_gate.waiting(conn, group.id, mine.id):
+    # An agent with trust `outside` takes part in no group chat: not told it waits (§2.3).
+    waits = found is None and group is not None and not reads_from_outside(mine)
+    if waits and chat_gate.waiting(conn, group.id, mine.id):
         raise chat_gate.refuse_waiting()  # it does not post before its owner's yes (§9.6)
     if found is None:
         raise invalid({"conversation_id": "not_a_conversation"})

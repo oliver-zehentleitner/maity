@@ -637,20 +637,22 @@ def test_an_outsiders_agent_neither_reads_writes_nor_deletes_its_roles_memory(
     refused = agent.post(MEMORY, {"store": "role", "text": "Another way to review."})
     assert refused.status_code == 403, refused.text
     assert _reason(refused) == "outside_trust"
-    refused = agent.delete(f"{MEMORY}/{entry}")
-    assert refused.status_code == 403, refused.text
-    assert _reason(refused) == "outside_trust"
+    refused = agent.delete(f"{MEMORY}/{entry}")  # an entry it does not read is not there
+    assert (refused.status_code, refused.json()) == (404, NOT_FOUND), refused.text
     assert _role_items(member) == [entry]  # the entry stays, and nothing was added
 
 
-def test_an_outsiders_agent_keeps_its_own_team_memory(
-    on: None, owner: flow.Human, outsider: flow.Human, make_client: ClientFactory
+@pytest.mark.parametrize("store", ["team", "community", "role"])
+def test_an_outsiders_agent_writes_no_memory_its_own_teams_included(
+    on: None, owner: flow.Human, outsider: flow.Human, make_client: ClientFactory, store: str
 ) -> None:
     agent = _outside_agent(make_client, owner, outsider)
-    written = agent.post(MEMORY, {"store": "team", "text": "What I learned here."})
-    assert written.status_code == 201, written.text
-    deleted = agent.delete(f"{MEMORY}/{written.json()['id']}")
-    assert deleted.status_code == 200, deleted.text
+    refused = agent.post(MEMORY, {"store": store, "text": "What I learned here."})
+    assert refused.status_code == 403, refused.text
+    assert _reason(refused) == "outside_trust"
+    member = flow.agent(make_client, owner)
+    written = member.post(MEMORY, {"store": store, "text": "What I learned here."})
+    assert written.status_code in (201, 202), written.text  # a member's agent still writes
 
 
 # --- isolation (§6.2) ---------------------------------------------------------------------------

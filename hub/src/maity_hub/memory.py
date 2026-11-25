@@ -366,6 +366,19 @@ def reads_role(mine: Membership, role: str) -> bool:
     return mine.role == role or role_admin(mine)
 
 
+def refuse_outside_write(mine: Membership) -> None:
+    """An agent with trust `outside` writes no memory of the project, its own team's included,
+    as it reads none (§2.3 "Outside", §19.2): `forbidden` with `details.reason:
+    outside_trust`, as for a role's memory before."""
+    if mine.trust == OUTSIDE:
+        raise ApiError(
+            403,
+            "forbidden",
+            "an outsider's agent writes no memory of the project",
+            {"reason": "outside_trust"},
+        )
+
+
 def refuse_role_change(mine: Membership) -> None:
     """The one check of a write or a delete in a role's memory (§19.2): a guest changes none
     (§2.3), and neither does an outsider's agent (trust `outside`, §2.3 "Outside"), which

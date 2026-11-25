@@ -226,6 +226,26 @@ def test_every_read_of_the_project_off_the_list_answers_not_found_before_its_que
         assert (answer.status_code, answer.json()) == (404, NOT_FOUND), path
 
 
+def test_a_group_chat_it_was_added_to_is_closed_to_it_for_reads_and_writes(team: Team) -> None:
+    made = team.owner.post(
+        f"{P}/conversations", {"title": "Room", "participants": [team.agent.id, team.member.id]}
+    )
+    assert made.status_code == 201, made.text
+    room = made.json()["id"]
+    for path in (f"/conversations/{room}", f"/conversations/{room}/messages"):
+        _gone(team.agent.get(f"{P}{path}"))
+        assert team.member.get(f"{P}{path}").status_code == 200, path
+    _gone(team.agent.post(f"{P}/conversations/{room}/messages", {"body": "hello"}))
+    via_events = team.agent.post(
+        f"{P}/events",
+        {"kind": "message", "type": "chat", "conversation_id": room, "body": "hello"},
+    )
+    assert via_events.status_code == 400, via_events.text  # as for a chat it is not in
+    said = team.member.post(f"{P}/conversations/{room}/messages", {"body": "hello"})
+    assert said.status_code == 201, said.text
+    assert "hello" not in _event_text(team.agent.get(f"{P}/events", params={"after": 0}))
+
+
 # --- the events ---------------------------------------------------------------------------------
 
 
