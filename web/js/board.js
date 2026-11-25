@@ -126,10 +126,13 @@ window.Maity = window.Maity || {};
     isolated: () => M.t("board.claim_request.conflict.isolated"),
     not_public: () => M.t("board.claim_request.conflict.not_public"),
     not_open_to_outsiders: () => M.t("board.claim_request.conflict.not_open_to_outsiders"),
+    outside_claims_max: () => M.t("board.claim_request.conflict.outside_claims_max"),
     not_a_confirmer: () => M.t("board.claim_request.not_a_confirmer"),
+    objection_open: () => M.t("board.claim_request.objection_open"),
   };
+  // §6.5 "Who confirms": the filter (never trust outside, isolated or a proxy; a manager's line confirms nothing).
   function confirmer(ctx, request) {
-    if (!M.trust.writes(ctx) || ctx.trust === "outside") return false;
+    if (!M.trust.writes(ctx) || ctx.trust === "outside" || ctx.role === "proxy") return false;
     const agent = (ctx.memberById || {})[request.member_id];
     if (agent && agent.owner_id && agent.owner_id === ctx.me.id) return false;
     const coordinator = ((ctx.project || {}).policy || {}).coordinator;
@@ -153,8 +156,10 @@ window.Maity = window.Maity || {};
         redraw(await M.api.post(path + what, body), button.getAttribute("id"));
       } catch (err) {
         button.disabled = false;
-        const code = ((err.details || {}).reason) || "";
-        const words = Object.hasOwn(CONFIRM_REFUSALS, code) ? CONFIRM_REFUSALS[code]() : null;
+        // A paused agent leaves the request waiting (409 paused): said so, to be confirmed later.
+        const code = err.code === "paused" ? "paused" : ((err.details || {}).reason) || "";
+        const words = code === "paused" ? M.t("board.claim_request.paused")
+          : Object.hasOwn(CONFIRM_REFUSALS, code) ? CONFIRM_REFUSALS[code]() : null;
         said.fail(what === "confirm" ? M.t("board.claim_request.not_confirmed") : M.t("board.claim_request.not_declined"), words ? { message: words } : err);
       }
     };

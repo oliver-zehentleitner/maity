@@ -5799,6 +5799,7 @@ window.Maity = window.Maity || {};
     // fixture's confirmers are holders of tasks:admin who do not own the requesting agent; a confirmation
     // is checked as a claim (taken, gone), and a refused one declines the request with that reason.
     ["POST", /^\/projects\/([^/]+)\/tasks\/([^/]+)\/claim\/(confirm|decline)$/, (m, body, path) => {
+      if (m[3] === "confirm" && "reason" in body) fail(400, "invalid", "confirm takes no reason", path, { fields: { reason: "extra_forbidden" } });
       const card = file(m[1], "tasks.json", path).items.find((x) => x.id === m[2]);
       if (!card) fail(404, "not_found", "no such card", path);
       const request = (card.claim_requests || []).find((r) => r.id === body.request_id);
