@@ -790,16 +790,21 @@ can).
   switches the provider later.
 
 The upgrade that added the role renames an existing project role
-`steward` to `steward-custom` in every setting and column that stores
-the name or its `role:` token: the places `role_in_use` reads (§2.3)
-and the `role:` tokens of `settings.ticker.contract_implementers`, so
-that a stored `role:steward` does not reach the built-in stewards. The
-event log is not rewritten: an event from before the upgrade that was
-addressed to a custom project role named `steward` keeps that audience,
-so the built-in stewards can see it in the history. The lead accepted
-this (seq 221640) and rejected rewriting the `role:steward` audiences in
-`event`: that would be a full scan of the largest table on every hub,
-for history only, and only on hubs that had a custom `steward` role. It
+`steward` to `steward-custom` wherever the name or its `role:` token is
+stored, the places §2.3 lists: the role list, `outside_roles`,
+`check_in_with`, the `role:` tokens of
+`settings.ticker.contract_implementers`, memberships and their
+`substitutes`, joins, invitations, `needs`, a request's `to`, what an
+open request waits to apply, placements and the role memory. So a stored
+`role:steward` does not reach the built-in stewards, and a change
+proposed before the upgrade and approved after it applies the custom
+role, not the built-in one. The event log is not rewritten: an event
+from before the upgrade that was addressed to a custom project role
+named `steward` keeps that audience, so the built-in stewards can see it
+in the history. The lead accepted this (seq 221640) and rejected
+rewriting the `role:steward` audiences in `event`: that scan of the
+largest table would run on every hub, and would help only the hubs that
+had a custom `steward` role, for history only. It
 renames rather than stopping as the
 expert's upgrade did: the lead chose the
 security teams' rename for it, and the members keep their base, so a

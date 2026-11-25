@@ -4,16 +4,19 @@
 A project role named `steward` would turn into the built-in role on the upgrade, with other
 scopes and duties. Unlike `expert` (20261108230000), whose upgrade stops, the lead's decision
 of 2026-11-25 (point 7 of PR #2221) renames it, as §2.3 says for the security teams, and an
-admin moves the members to the built-in role where that is wanted. The rename covers every
-setting and column that stores a project role's name or its `role:` token: the places
-`project_roles.uses` reads (the role list itself, a membership, a join and an invitation, a
-card's `needs`, a request's `to`, a placement's profile, the onboarding's `check_in_with`, a
-`substitutes` list, the role memory and `outside_roles`), whether open or not, and the
-`role:` tokens of `settings.ticker.contract_implementers`. A membership's `role_base` is
-unchanged, so no one's scopes move. The event log is not rewritten: a past event keeps the
+admin moves the members to the built-in role where that is wanted. The rename covers these
+places, open or closed unless said: the project's role list, `outside_roles`, the onboarding's
+`check_in_with` and the `role:` tokens of `settings.ticker.contract_implementers`; a
+membership's `role` and the `role:` token in its `availability_policy.substitutes`; a join's
+and an invitation's `role`; a card's `needs`; a request's `to`; an open request's `proposal`
+(the member change it waits to apply: `role`, `role_base` where it holds the name, and the
+`substitutes` token, with a consent's shown canonical form and hash); a placement's profile;
+and the role memory. A membership's `role_base` is a built-in base and unchanged, so no
+one's scopes move. The event log is not rewritten: a past event keeps the
 audience it was written with, as for every rename of a project role (§2.3), so the built-in
 stewards can see the history addressed to the old custom `steward`. The lead accepted this
-(seq 221640): rewriting it would scan the largest table on every hub, for history only.
+(seq 221640): rewriting it would scan the largest table on every hub, and would help only the
+hubs that had a custom `steward` role, for history only.
 
 A project that already has a project role `steward-custom` gets the next free name,
 `steward-custom-2`, then `-3` and on (the lead's ruling of 2026-11-25, seq 221098): an upgrade
@@ -30,6 +33,7 @@ Revises: 20261124170513_org_link_check
 Create Date: 2026-11-25
 """
 
+import hashlib
 import json
 import logging
 from collections.abc import Sequence
@@ -73,7 +77,14 @@ _invitation = sa.table(
     "invitation", sa.column("project_id", sa.String), sa.column("role", sa.String)
 )
 _card = sa.table("card", sa.column("project_id", sa.String), sa.column("needs", sa.String))
-_request = sa.table("request", sa.column("project_id", sa.String), sa.column("to_role", sa.String))
+_request = sa.table(
+    "request",
+    sa.column("id", sa.String),
+    sa.column("project_id", sa.String),
+    sa.column("to_role", sa.String),
+    sa.column("status", sa.String),
+    sa.column("proposal", JSON_VALUE),
+)
 _placement = sa.table(
     "placement",
     sa.column("id", sa.String),
@@ -188,6 +199,7 @@ def _rename(conn: Any, row: Any, roles: list[dict[str, Any]], new: str) -> None:
             .where(_membership.c.id == member.id)
             .values(availability_policy={**policy, "substitutes": substitutes})
         )
+    _rename_proposals(conn, project_id, new)
     placements = conn.execute(
         sa.select(_placement.c.id, _placement.c.new_profile).where(
             _placement.c.project_id == project_id
@@ -201,6 +213,64 @@ def _rename(conn: Any, row: Any, roles: list[dict[str, Any]], new: str) -> None:
                 .where(_placement.c.id == placement.id)
                 .values(new_profile={**profile, "role": new})
             )
+
+
+def _canonical(value: Any) -> tuple[str, str]:
+    """The JCS form of a stored value and its SHA-256, as `foreign_agent._hash` gives them:
+    the values here are strings, lists and objects of them, which `json.dumps` with sorted
+    keys and no spaces writes exactly as JCS does."""
+    text = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return text, hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def _renamed_value(name: str, value: Any, new: str) -> Any:
+    """`value` of a proposal's field `name` with the project role `steward` renamed: `role`,
+    and `role_base` only where it holds that name (a built-in base such as `coder` stays), and
+    the `role:` token in `availability_policy.substitutes`."""
+    if name in ("role", "role_base"):
+        return new if value == OLD else value
+    if isinstance(value, dict) and isinstance(value.get("substitutes"), list):
+        substitutes = [f"role:{new}" if s == f"role:{OLD}" else s for s in value["substitutes"]]
+        return {**value, "substitutes": substitutes}
+    return value
+
+
+def _rename_proposals(conn: Any, project_id: str, new: str) -> None:
+    """The member change an open request waits to apply (`request.proposal["values"]`: the
+    owner's consent for another owner's agent, an admin agent's and a line lead's proposal):
+    `role`, `role_base` where it holds the project role's name, and the `role:` token in
+    `availability_policy.substitutes`. A consent's stored canonical form and hash of a renamed
+    field are written again, so that what the owner is shown is what the go applies. A closed
+    request is history and keeps what it applied."""
+    rows = conn.execute(
+        sa.select(_request.c.id, _request.c.proposal).where(
+            _request.c.project_id == project_id,
+            _request.c.status == "open",
+            _request.c.proposal.is_not(None),
+        )
+    ).all()
+    for row in rows:
+        proposal = _json(row.proposal)
+        values = proposal.get("values") if isinstance(proposal, dict) else None
+        if not isinstance(values, dict):
+            continue
+        changed = {
+            name: _renamed_value(name, values[name], new)
+            for name in ("role", "role_base", "availability_policy")
+            if name in values and _renamed_value(name, values[name], new) != values[name]
+        }
+        if not changed:
+            continue
+        renamed = {**proposal, "values": {**values, **changed}}
+        canonical, digest = proposal.get("canonical"), proposal.get("sha256")
+        if isinstance(canonical, dict) and isinstance(digest, dict):
+            canonical, digest = dict(canonical), dict(digest)
+            for name in changed:
+                if name in canonical:  # what the owner was shown, renamed the same way
+                    shown = _renamed_value(name, json.loads(canonical[name]), new)
+                    canonical[name], digest[name] = _canonical(shown)
+            renamed["canonical"], renamed["sha256"] = canonical, digest
+        conn.execute(sa.update(_request).where(_request.c.id == row.id).values(proposal=renamed))
 
 
 def downgrade() -> None:

@@ -2924,7 +2924,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   byId("join-agent").value = ""; byId("join-agent").dispatch("change");
   const srOwnRoles = srForm() ? byId("join-role").querySelectorAll("option").map((o) => o.getAttribute("value") + ":" + text(o)) : [];
   if (srForm()) { byId("join-role").value = "popelwerfer"; byId("join-role").dispatch("change"); }
-  expect(srOwnRoles.length === 13 && srOwnRoles.slice(-2).join("|") === "popelwerfer:popelwerfer (permissions of Coder)|deployer:deployer (permissions of Ops)"
+  // The steward is the join form's too (§2.3 "The steward"), after the expert, hidden under memory provider none.
+  expect(srOwnRoles.length === 14 && srOwnRoles.slice(-2).join("|") === "popelwerfer:popelwerfer (permissions of Coder)|deployer:deployer (permissions of Ops)"
+    && srOwnRoles.indexOf("steward:Steward") === srOwnRoles.indexOf("expert:Expert") + 1
     && text(byId("join-role-help")) === "throws popels",
     "placements: a new profile's role offers the project's own roles after the built-in ones, with their base and description " + JSON.stringify(srOwnRoles));
   // The save check holds only with the option there: the DOM shim takes any value (A1248 at #1948).

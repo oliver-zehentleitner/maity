@@ -1588,6 +1588,83 @@ def test_the_steward_migration_renames_a_project_role_named_steward(engine: Engi
     assert other == [legal]
 
 
+def test_the_steward_migration_renames_what_an_open_request_waits_to_apply(engine: Engine) -> None:
+    """20261125120000 (A2648 delta P2): an open request's `proposal` is renamed, `role`,
+    `role_base` only where it holds the project role's name (never a built-in base), and the
+    `role:` token in `availability_policy.substitutes`, with a consent's shown canonical form
+    and hash; a closed request keeps what it applied."""
+    import hashlib
+    import json
+
+    from sqlalchemy import insert, select, update
+
+    from maity_hub import tables as t
+    from tests import factory
+
+    rev = "20261125120000_steward_role"
+    migrate(engine)
+    human = factory.human(engine, "a")
+    shop = factory.project(engine, "shop", owner_id=human)
+    downgrade(engine, _before(engine, rev))
+    role = {"name": "steward", "base": "writer", "description": "", "guide": "", "guide_by": None}
+    now = factory.at("2026-11-20T10:00:00Z")
+
+    def shown(value: object) -> tuple[str, str]:
+        text = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+        return text, hashlib.sha256(text.encode()).hexdigest()
+
+    policy = {"on_unavailable": "substitute", "substitutes": ["role:steward", "role:coder"]}
+    proposals = {
+        "req-consent": ("open", {
+            "kind": "foreign_agent", "target": 1,
+            "values": {"role": "steward", "role_base": "writer", "availability_policy": policy},
+            "canonical": {"role": shown("steward")[0], "availability_policy": shown(policy)[0]},
+            "sha256": {"role": shown("steward")[1], "availability_policy": shown(policy)[1]},
+        }),
+        "req-base": ("open", {"action": "patch",
+                              "values": {"role": "steward", "role_base": "steward"}}),
+        "req-builtin": ("open", {"action": "patch",
+                                 "values": {"role": "coder", "role_base": "coder"}}),
+        "req-closed": ("withdrawn", {"action": "patch",
+                                     "values": {"role": "steward", "role_base": "writer"}}),
+    }  # fmt: skip
+    with engine.begin() as conn:
+        conn.execute(update(t.project).where(t.project.c.id == shop).values(roles=[role]))
+        conn.execute(insert_membership(shop, human, now, True))
+        asker = conn.execute(
+            select(t.membership.c.id).where(t.membership.c.project_id == shop)
+        ).scalar_one()
+        for request_id, (status, proposal) in proposals.items():
+            conn.execute(
+                insert(t.request).values(
+                    id=request_id, project_id=shop, title="Change", options=[],
+                    priority="normal", to_kind="owner", asked_by=asker, while_open="wait",
+                    status=status, created_at=now, proposal=proposal, **{"class": "consent"},
+                )
+            )  # fmt: skip
+    migrate(engine)
+    with engine.connect() as conn:
+        stored = dict(conn.execute(select(t.request.c.id, t.request.c.proposal)).all())
+    consent = stored["req-consent"]
+    renamed_policy = {**policy, "substitutes": ["role:steward-custom", "role:coder"]}
+    assert consent["values"] == {
+        "role": "steward-custom",
+        "role_base": "writer",  # a built-in base, never renamed
+        "availability_policy": renamed_policy,
+    }
+    assert consent["canonical"] == {
+        "role": shown("steward-custom")[0],
+        "availability_policy": shown(renamed_policy)[0],
+    }
+    assert consent["sha256"] == {
+        "role": shown("steward-custom")[1],
+        "availability_policy": shown(renamed_policy)[1],
+    }
+    assert stored["req-base"]["values"] == {"role": "steward-custom", "role_base": "steward-custom"}
+    assert stored["req-builtin"] == proposals["req-builtin"][1]
+    assert stored["req-closed"] == proposals["req-closed"][1]  # history keeps what it applied
+
+
 def test_the_steward_migration_takes_the_next_free_name_and_logs_it(
     engine: Engine, caplog: pytest.LogCaptureFixture
 ) -> None:
