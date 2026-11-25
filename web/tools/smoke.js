@@ -916,7 +916,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && byId("message-body").value === "Ship it, @shop-dev.", "global names: a short handle two agents share is refused with the long forms, the text kept");
   byId("message-body").value = "Ship it, @anna/shop-dev.";
   main.querySelector("form.message-form").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
-  expect(gnPosts.length === 2 && text(main).includes("mentioned and notified: Anna's Shop Dev"), "global names: the long form is sent and resolves to that agent");
+  expect(gnPosts.length === 2 && text(main).includes("mentioned: Anna's Shop Dev"), "global names: the long form is sent and resolves to that agent");
   win.Maity.api.post = gnPost;
   await go("#/maintainer/sample/messages"); for (let k = 0; k < 4; k++) await tick();
   expect(main.querySelectorAll(".pmsg a.mention").some((a) => text(a) === "@anna/shop-dev"), "global names: the message's stored mention by the long name where the short one is shared");
@@ -5689,12 +5689,17 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   main.querySelector("form.message-form").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
   expect(JSON.stringify(msgPosts[0]) === JSON.stringify(["/projects/maintainer/maity/events", { kind: "message", type: "handover", to: "role:reviewer",
     body: "Please look at the join path, @agent-b; mail x@agent-c is no mention.", task_id: "tsk-0006" }]), "message: the POST as §8.4 has it, no mentions sent");
-  expect(text(main).includes("Sent to every reviewer; mentioned and notified: Agent B.") && byId("message-body").value === "",
+  expect(text(main).includes("Sent to every reviewer; mentioned: Agent B.") && byId("message-body").value === "",
     "message: sent, with whom the hub's mentions told");
   win.Maity.api.post = (p) => Promise.reject(new win.Maity.api.ApiError("too many", 400, p, "invalid", { fields: { body: "too_many_mentions" } }));
   byId("message-body").value = "@agent-a @agent-b";
   main.querySelector("form.message-form").dispatch("submit"); for (let k = 0; k < 3; k++) await tick();
   expect(text(main).includes("Not sent: too many mentions: at most 10 members"), "message: the hub's mention cap, in words");
+  // An isolated agent is listed in To but takes no message: said as such, not "nobody by that address" (A2568).
+  win.Maity.api.post = (p) => Promise.reject(new win.Maity.api.ApiError("the agent is isolated", 400, p, "invalid", { fields: { to: "isolated" } }));
+  main.querySelector("form.message-form").dispatch("submit"); for (let k = 0; k < 3; k++) await tick();
+  expect(text(main).includes("Not sent: that agent is isolated and takes no message") && !text(main).includes("nobody by that address"),
+    "message: an isolated recipient is said to take no message");
   // While it is on its way the fields are held; the confirmation speaks of what was sent, and
   // what was typed meanwhile stays.
   let releasePost = null;
@@ -5704,7 +5709,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(byId("message-to").disabled && byId("message-body").disabled && btn(main, "Send").disabled, "message: the fields are held while it is sent");
   byId("message-to").value = "all"; byId("message-body").value = "A second thought";
   releasePost(); for (let k = 0; k < 4; k++) await tick();
-  expect(text(main).includes("Sent to Agent B; mentioned and notified: Agent B.") && byId("message-body").value === "A second thought"
+  expect(text(main).includes("Sent to Agent B; mentioned: Agent B.") && byId("message-body").value === "A second thought"
     && !byId("message-body").disabled, "message: the confirmation names what was sent; a draft typed meanwhile is kept");
   win.Maity.api.post = mPost0;
   expect(byId("message-to").querySelectorAll("option").some((o) => o.attrs.value === "trust:owner"), "message: the owners are a trust to write to");
@@ -10156,17 +10161,17 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await go("#/account"); for (let k = 0; k < 4; k++) await tick();
   expect(byId("meat-proxy") && mpState() === "000" && mpNote() === "This person says: I am a meat proxy. " + MP_LEAD + " " + MP_HANDS
     && text(byId("meat-proxy-lead").parentNode).includes(MP_LEAD)
-    && text(byId("meat-proxy-hands").parentNode).includes(MP_HANDS) && text(byId("meat-proxy-hint")).includes("switched on, they would read:"),
+    && text(byId("meat-proxy-hands").parentNode).includes(MP_HANDS) && text(byId("meat-proxy-hint")).includes("Switched on, they would read:"),
     "meat proxy: the switch off with its two parts under it, and the note switching on would send (§5.2)");
   byId("meat-proxy").checked = true; byId("meat-proxy").dispatch("change"); for (let k = 0; k < 4; k++) await tick();
   expect(JSON.stringify(mpSent[0]) === JSON.stringify(["/me", { meat_proxy: true }]) && mpState() === "111"
-    && text(main).includes("Saved: your agents and the agents of your projects are told the text above.") && text(byId("meat-proxy-hint")).includes("in these words:"),
+    && text(main).includes("Saved: your profile tells your agents and the agents of your projects the text above.") && text(byId("meat-proxy-hint")).includes("In these words:"),
     "meat proxy: switched on, both parts ticked, said so");
   byId("meat-proxy-hands").checked = false; byId("meat-proxy-hands").dispatch("change"); for (let k = 0; k < 4; k++) await tick();
   expect(JSON.stringify(mpSent[1]) === JSON.stringify(["/me", { meat_proxy_hands: false }]) && mpState() === "110"
     && mpNote() === "This person says: I am a meat proxy. " + MP_LEAD, "meat proxy: a part cleared alone, the note as the hub now sends it");
   byId("meat-proxy-lead").checked = false; byId("meat-proxy-lead").dispatch("change"); for (let k = 0; k < 4; k++) await tick();
-  expect(mpState() === "000" && text(main).includes("Saved: they are no longer told.") && mpNote().endsWith(MP_HANDS),
+  expect(mpState() === "000" && text(main).includes("Saved: your profile no longer tells agents.") && mpNote().endsWith(MP_HANDS),
     "meat proxy: the last part cleared turns the mode off");
   byId("meat-proxy-hands").checked = true; byId("meat-proxy-hands").dispatch("change"); for (let k = 0; k < 4; k++) await tick();
   expect(JSON.stringify(mpSent[3]) === JSON.stringify(["/me", { meat_proxy_hands: true }]) && mpState() === "101"
@@ -12824,8 +12829,19 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "group chat: every message shows its seq after its time");
   // Writing, with mentions that reach only someone in the chat.
   byId("chat-text").value = "@agent-c look"; byId("chat-text").dispatch("input");
-  expect(!main.querySelector(".group-chat .mention-hint").hidden && text(main.querySelector(".group-chat .mention-hint")) === "@agent-c is not in this chat: it reaches nobody.",
+  expect(!main.querySelector(".group-chat .mention-hint").hidden && text(main.querySelector(".group-chat .mention-hint")) === "@agent-c is no handle of anyone in this chat; a mention of someone outside it reaches nobody.",
     "group chat: a mention of someone not in it is said to reach nobody");
+  // A global name (@owner/agent) is the hub's to resolve: no hint on its first part (A2568).
+  byId("chat-text").value = "@guest/spare look"; byId("chat-text").dispatch("input");
+  expect(main.querySelector(".group-chat .mention-hint").hidden, "group chat: a global @owner/agent name gives no hint");
+  // Nor on part of a hyphenated owner, nor on a run the hub reads as no mention (A2594): the whole run, as the hub scans it.
+  const gcHints = ["@my-owner/spare look", "@team-lead/agent-a look", "@agent-c_foo look", "@agent-a- look", "@agent-c-, look"].map((v) => {
+    byId("chat-text").value = v; byId("chat-text").dispatch("input");
+    const hint = main.querySelector(".group-chat .mention-hint");
+    return hint.hidden ? "" : text(hint).split(" ")[0];
+  });
+  expect(JSON.stringify(gcHints) === JSON.stringify(["", "", "", "", "@agent-c"]),
+    "group chat: hyphenated global names, a run with _ after it and a participant with a trailing - give no hint; a trailing - is not the handle's " + JSON.stringify(gcHints));
   byId("chat-text").value = "@agent-a go ahead"; byId("chat-text").dispatch("input");
   expect(main.querySelector(".group-chat .mention-hint").hidden, "group chat: a mention of a participant gives no hint");
   main.querySelector(".group-chat form.compose").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
@@ -13095,7 +13111,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       participants: v.participants.filter((x) => x.member_id !== "hum-maintainer").concat([{ member_id: "hum-ops", kind: "human", handle: "ops", owner_id: null, joined_at: v.created_at }]) }))
     : gcGet(p));
   await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/chat/cnv-0007");
-  expect(!byId("chat-text") && text(main).includes("You read along as the owner of an agent in this chat") && !main.querySelector(".group-manage")
+  expect(!byId("chat-text") && text(main).includes("You read along in this chat without taking part") && !main.querySelector(".group-manage")
     && !gcList().querySelectorAll("button").some((b) => b.textContent === "Remove" || b.textContent === "Quote")
     && text(main.querySelector(".group-observers")).includes("Also read by: you (owner of Agent A, Agent B), an owner outside the project, an agent not listed for you. They read"),
     "group chat: an owner reads along, writes and manages nothing, and is named as reading along; one owning no agent in it is named alone, an agent the list lacks neutrally "
@@ -13189,8 +13205,16 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && main.querySelector(".chat-list a.conv").getAttribute("href") === "#/observe/guest/guestlab/cnv-0301" && !main.querySelector("a.new-group")
     && !gcOutGets.some((p) => p.startsWith("/projects/guest/guestlab/members") || p === "/projects/guest/guestlab" || p.startsWith("/projects/guest/guestlab/events")),
     "read along: the chats one's agent is in, nothing else of the project read");
+  // Reading along where one's agents are in no group chat yet: said so, never "you own no agents" (A2568).
+  const gcObsGetAll = win.Maity.api.getAll;
+  win.Maity.api.getAll = (p, ...rest) => (p.startsWith("/projects/guest/guestlab/conversations") ? Promise.resolve({ items: [] }) : gcObsGetAll(p, ...rest));
+  await go("#/all"); await go("#/observe/guest/guestlab"); for (let k = 0; k < 4; k++) await tick();
+  const gcObsText = text(main);
+  win.Maity.api.getAll = gcObsGetAll;
+  expect(!main.querySelectorAll(".chat-list a.conv").length && gcObsText.includes("Your agents are in no group chat in this project yet.") && !gcObsText.includes("You own no agents"),
+    "read along: with no group chat of one's agents yet, the list says so, not that one owns no agents");
   await go("#/observe/guest/guestlab/cnv-0301");
-  expect(!byId("chat-text") && text(main).includes("You read along as the owner of an agent in this chat") && text(main.querySelector(".group-observers")).includes("you (owner of Spare)")
+  expect(!byId("chat-text") && text(main).includes("You read along in this chat without taking part") && text(main.querySelector(".group-observers")).includes("you (owner of Spare)")
     && main.querySelector(".group-chat a.chat-back").getAttribute("href") === "#/observe/guest/guestlab" && main.querySelectorAll(".group-chat li.msg").length === 1
     && text(main.querySelector(".group-chat li.msg")).includes("@guest"), "read along: the chat read only, its people by handle");
   // §9.7 from outside the project: the reader's own verdict under their own name, and others'

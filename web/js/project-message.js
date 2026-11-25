@@ -29,6 +29,8 @@ window.Maity = window.Maity || {};
     const fields = err.code === "invalid" && err.details && err.details.fields;
     if (fields && fields.body === "too_many_mentions") return { message: M.t("projectmessage.refused.too_many_mentions", { members: 10, mentions: 50 }) };
     if (err.code === "rate_limited") return { message: M.t("projectmessage.refused.rate_limited") };
+    // An isolated agent is listed in To and is a member, but takes no message (§6.2).
+    if (fields && fields.to === "isolated") return { message: M.t("projectmessage.refused.isolated") };
     if (fields && fields.to) return { message: M.t("projectmessage.refused.to") };
     return err;
   }

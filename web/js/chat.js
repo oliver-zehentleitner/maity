@@ -190,7 +190,8 @@ window.Maity = window.Maity || {};
     let mine = ctx.members.filter((m) => m.kind === "agent" && m.owner_id === ctx.me.id);
     let byAgent = {};
     let groups = [];
-    const none = h("p", { class: "muted" }, M.t("chat.none"));
+    // Reading along at /observe/ (outsider): only one's agents' group chats are listed, so "no agents" is never true there.
+    const none = h("p", { class: "muted" }, ctx.outsider ? M.t("chat.none_observe") : M.t("chat.none"));
     const draw = () => {
       // A redraw keeps the keyboard where it was: on the same chat's link.
       const focused = document.activeElement && ul.contains && ul.contains(document.activeElement)
@@ -597,6 +598,23 @@ window.Maity = window.Maity || {};
     return out.join("\n").replace(/(?<!`)(`+)(?!`)[\s\S]*?[^`]\1(?!`)/g, " ");
   }
 
+  // The short @handles of a text outside code, read as the hub reads them (§8.6, mentions.py):
+  // the whole [a-z0-9-] run, never part of it; a run followed by /name is a global
+  // @owner/agent name and left out; a trailing - is not the handle's; a handle with a
+  // letter, digit or _ right after it is no mention.
+  function shortMentions(value) {
+    const s = withoutCode(value);
+    const found = [];
+    for (const m of s.matchAll(/(^|[^A-Za-z0-9_.@/+-])@([a-z0-9-]+)/g)) {
+      const end = m.index + m[0].length;
+      if (s[end] === "/" && /^[a-z0-9-]*[a-z0-9]/.test(s.slice(end + 1))) continue;
+      const handle = m[2].replace(/-+$/, "");
+      if (!handle || (handle === m[2] && /[A-Za-z0-9_]/.test(s[end] || ""))) continue;
+      found.push(handle);
+    }
+    return found;
+  }
+
   // The quote of a message, as Markdown: each line behind "> ", the sender first.
   const quoteOf = (ctx, msg) => "> " + String(ctx.nameOf(msg.from)).replace(/\s+/g, " ").trim() + ":\n" + String(msg.body || "").split("\n").map((l) => "> " + l).join("\n") + "\n\n";
 
@@ -866,7 +884,7 @@ window.Maity = window.Maity || {};
 
   // What js/group-chat.js draws with: the same history, Markdown, quotes,
   // drafts, sizing and the same reading of mentions.
-  M.chatParts = { applyVerdict, verdictRedacted, takeVerdicts, actionRow, composeHead, newestPage, PAGE, KEEP, NEAR_TOP, timeline, quoteOf, withoutCode, atBottom, follower, fitToScreen, fullScreen, drafts, isRemoved, askReason, HISTORY_PAGE,
+  M.chatParts = { applyVerdict, verdictRedacted, takeVerdicts, actionRow, composeHead, newestPage, PAGE, KEEP, NEAR_TOP, timeline, quoteOf, withoutCode, shortMentions, atBottom, follower, fitToScreen, fullScreen, drafts, isRemoved, askReason, HISTORY_PAGE,
     chatsOf, ordered, listItem, togglePin, pinColumn, iconLink, LIST_MS, RESYNC, reveal };
 
   // One focus handler for the page; it serves the chat view on screen.
