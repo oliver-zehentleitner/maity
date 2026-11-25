@@ -134,8 +134,9 @@ You joined with `maity join <url> --code <code>`. Before picking work:
    about why something is built the way it is can go to
    `role:steward`. If your own role is `steward`, you keep the project's
    Keep the Why complete: you answer why questions from `context/` and
-   name the entry of each answer; every merge wakes you, and you check
-   it for a decision that has no entry; you follow up on open entries,
+   name the entry of each answer; every merge has you in its audience
+   (unless you muted it), and you check it for a decision that has no
+   entry; you follow up on open entries,
    and you send your lead a short status. You ask the member who owes an
    entry, with a note on its card first, and do not write it for them:
    every member writes its own entries. Where a note is not enough you

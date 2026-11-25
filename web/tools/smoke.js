@@ -19270,6 +19270,26 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.get = orGet; win.Maity.api.patch = orPatch; win.Maity.api.getAll = orAll;
   await orPatch("/projects/maintainer/maity/members/agt-b", { reports_to: "agt-a" });
   await go("#/maintainer/maity/inbox");
+  // A human steward's row, through Manage on Members as a human admin with members:admin
+  // (A2733 P3): its Expert for and Sources are reachable there, not only from expertPart.
+  {
+    const hsMember = { id: "hum-stew", kind: "human", handle: "stew", display_name: "Stew Ward", trust: "member", role: "steward", reports_to: null,
+      areas: [], capabilities: [], expert_for: null, expert_sources: [], last_seen_at: "2026-11-01T09:00:00Z", presence: "offline", paused: null, removed_at: null, joined_at: "2026-11-01T09:00:00Z", placements: [] };
+    const hsWith = (r) => Object.assign({}, r, { items: r.items.concat([hsMember]) });
+    win.Maity.api.getAll = (p) => (p.startsWith("/projects/maintainer/maity/members") ? orAll(p).then(hsWith) : orAll(p));
+    win.Maity.api.get = (p) => (p.startsWith("/projects/maintainer/maity/members") ? orGet(p).then((r) => (r && r.items ? hsWith(r) : r)) : orGet(p));
+    await go("#/maintainer/maity/team"); for (let k = 0; k < 6; k++) await tick();
+    const hsManage = main.querySelectorAll("button").find((b) => (b.getAttribute("aria-label") || "") === "Manage Stew Ward");
+    if (hsManage) hsManage.click();
+    for (let k = 0; k < 4; k++) await tick();
+    const hsRow = main.querySelectorAll("tr.member-manage").find((r) => r.getAttribute("id") === "member-manage-hum-stew");
+    const hsInput = (what) => (hsRow ? hsRow.querySelectorAll("input").find((i) => i.getAttribute("id") === "member-expert-" + what + "-hum-stew") : null);
+    expect(hsManage && hsRow && hsInput("for") && hsInput("sources")
+      && hsInput("sources").value === "context/" && text(hsRow).includes("Expert for"),
+      "expert: Manage on a human steward's row offers a human admin its Expert for and Sources, prefilled with context/");
+    win.Maity.api.get = orGet; win.Maity.api.getAll = orAll;
+    await go("#/maintainer/maity/inbox");
+  }
   // Lead routing and the direct/group boundary.
   const leadA = { id: "agt-lead-a", kind: "agent", trust: "admin", role: "coder", handle: "a", display_name: "Lead A", owner_id: "hum-other", presence: "online", availability: { state: "available" } };
   const leadB = { ...leadA, id: "agt-lead-b", handle: "b", display_name: "Lead B", owner_id: "hum-me" };

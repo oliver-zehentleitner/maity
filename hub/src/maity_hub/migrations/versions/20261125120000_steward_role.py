@@ -25,10 +25,11 @@ that from the dashboard. Every rename is logged with the project and the name it
 
 A project whose project role `steward` was removed while a request waited to apply it keeps
 that request open. The name in its proposal would now mean the built-in role, which the owner
-never agreed to, so the proposal is marked `role_gone` and a `go` stays refused as
-`role_unknown` (`_mark_gone`, A2692 P2-1). Binding every proposal to what its role resolved to
-when it was filed would change how a rebase applies to a waiting request (§2.3), which is
-outside this revision.
+never agreed to, so the proposal is marked `role_gone` and a `go` is refused as
+`409 role_unknown` (`_mark_gone`, A2692 P2-1). Before this revision only another owner's
+consent answered so, for a removed `role` (A2733 P2). Binding every proposal to what its
+role resolved to when it was filed would change how a rebase applies to a waiting request
+(§2.3), which is outside this revision.
 
 The downgrade does nothing: the built-in role and the renamed project role cannot be told
 apart from the name the code before this revision reads.
@@ -298,11 +299,14 @@ def _names_old(values: dict[str, Any]) -> bool:
 def _mark_gone(conn: Any, renamed: set[str]) -> None:
     """An open request, in a project that has no project role `steward` any more, whose
     proposal still names it. Before this revision the name could only have meant a project role
-    that was removed while the request waited, so a `go` was refused as `role_unknown`. After
-    it, the name resolves to the built-in steward. So the proposal is marked `role_gone`, and
-    every `go` on it is refused as before (`proposals.settle`): the owner never consented to the
-    built-in role. The request stays open for a `no` or a withdrawal (A2692 P2-1), and a new
-    change asks again. A project in `renamed` had its proposals renamed above instead."""
+    that was removed while the request waited. A `go` then depended on the path: another
+    owner's consent refused a removed `role` as `409 role_unknown`, an admin agent's change
+    refused a removed `role:` substitute as `400 invalid`, and the rest applied the change as
+    filed. After it, the name resolves to the built-in steward. So the proposal is marked
+    `role_gone`, and every `go` on it is refused as `409 role_unknown` (`proposals.settle`,
+    new for every path but the first): the owner never consented to the built-in role. The
+    request stays open for a `no` or a withdrawal (A2692 P2-1), and a new change asks again.
+    A project in `renamed` had its proposals renamed above instead."""
     rows = conn.execute(
         sa.select(_request.c.id, _request.c.project_id, _request.c.proposal).where(
             _request.c.status == "open", _request.c.proposal.is_not(None)

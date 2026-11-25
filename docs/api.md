@@ -1076,15 +1076,18 @@ role table above says what it does. Its scopes are the coder's.
   `merge` item of the ticker (§17) has every steward in its computed
   audience (`steward` in `reasons`, §17.3), whatever paths it touches,
   and the steward checks that pull request. The delivery rules of §17.3
-  then apply as to every member: a steward that muted a matching area
-  or type is removed, and a human steward sees the item as "for me" in
-  the dashboard rather than being woken. It goes over the open entries at
-  resume (§5.2) and with the first merge it is woken by after 24 hours
-  without such a round, and whenever it is asked. Without the ticker
-  (`settings.ticker.enabled: false`) no merge wakes it, and it sweeps
-  at resume and when asked. The wake does not read `memory.provider`
-  (§6.1): under `none` a steward that exists anyway is still in the
-  audience of every merge, with the same delivery rules.
+  then apply as to every member (§17.8): a steward whose mute matches
+  the item and no follow of it is removed from the audience; one whose
+  follow matches too stays listed with `muted: true` and `wake: false`,
+  so the item is `for_me` for it without waking it; and a human steward sees
+  the item as "for me" in the dashboard rather than being woken. It
+  goes over the open entries at resume (§5.2) and with the first merge
+  it is woken by after 24 hours without such a round, and whenever it
+  is asked. Without the ticker (`settings.ticker.enabled: false`) no
+  merge wakes it, and it sweeps at resume and when asked. The audience
+  does not read `memory.provider` (§6.1): under `none` a steward that
+  exists anyway is still in the computed audience of every merge, with
+  the same delivery rules.
 - **Its place in the project.** One steward per project is the
   default; the hub sets no limit. A large project may have one per
   part, each with that part's `context/` as its sources, each checking
@@ -1107,11 +1110,21 @@ role table above says what it does. Its scopes are the coder's.
   role memory. The event log keeps the audiences it was written with.
   Where the project role `steward` was removed while a request waited
   to apply it, the upgrade has nothing to rename, and the name would
-  now mean the built-in role, which no one agreed to. A `go` on such an
-  open request is refused with `409 role_unknown`, as it was before the
-  upgrade, and the request stays open for a `no` or a withdrawal. The
-  same holds where the waiting change names `role:steward` in
-  `substitutes`. A new change asks again.
+  now mean the built-in role, which no one agreed to. The upgrade marks
+  such an open request, whether its change names `steward` as the
+  `role` or `role:steward` in `substitutes`, and whatever kind of
+  request it is (another owner's consent, an admin agent's change, a
+  manager's change, §6.2). A `go` on it is refused with
+  `409 role_unknown`, and the request stays open for a `no` or a
+  withdrawal. A new change asks again. This answer is new for most of
+  these requests. Before the upgrade, another owner's consent refused a
+  removed `role` with the same `409 role_unknown`; an admin agent's
+  change refused a removed `role:` token in `substitutes` with
+  `400 invalid` (`details.fields["availability_policy.substitutes"]:
+  "unknown_role"`, §6.12); and the rest applied the change as filed: a
+  removed `role` in an admin agent's or a manager's change, and a
+  removed `role:` token in another owner's consent or a manager's
+  change.
   Its members keep their base;
   in a project that already has a project role `steward-custom` it
   takes the next free name, `steward-custom-2`, then `-3` and on, and
@@ -6980,7 +6993,7 @@ choice are §6.21.
 
 | Field | Values | Meaning |
 |---|---|---|
-| `memory.provider` | `none`, `keep-the-why` (default) | `keep-the-why`: joining agents are told to load the Keep the Why skill and read the repository's `context/` (§5.2 `keep_the_why`), the rules text carries the Keep the Why line (§6.9), and the project may use `ktw_ref` on cards and `steward_writes`; `none`: nothing of that, the project works completely without a memory provider, and the dashboard hides the role `steward` in **Join an agent** and **Manage** (§2.3, "The steward"; the hub does not refuse it, and a steward that exists is still woken by merges, §17.3). Other providers may be added later; a value the hub does not know is `invalid` (`details.fields["memory.provider"]: "unknown_provider"`) |
+| `memory.provider` | `none`, `keep-the-why` (default) | `keep-the-why`: joining agents are told to load the Keep the Why skill and read the repository's `context/` (§5.2 `keep_the_why`), the rules text carries the Keep the Why line (§6.9), and the project may use `ktw_ref` on cards and `steward_writes`; `none`: nothing of that, the project works completely without a memory provider, and the dashboard hides the role `steward` in **Join an agent** and **Manage** (§2.3, "The steward"; the hub does not refuse it, and a steward that exists is still in the computed audience of every merge, with the delivery rules of §17.3 and §17.8). Other providers may be added later; a value the hub does not know is `invalid` (`details.fields["memory.provider"]: "unknown_provider"`) |
 | `setup` | `{keep_the_why_init, keep_the_why_badge, keep_the_why_ci, keep_the_why_dashboard, dashboard_path, maity_badge, cards}` | the setup options chosen at creation: the five options each a boolean, `dashboard_path` the path given (`null` while `keep_the_why_dashboard` is `false`, as under `none`), and `cards`: the ids of the setup cards the hub created for them (§6.21). A project created before `keep_the_why_ci`, `keep_the_why_dashboard` and `dashboard_path` existed reads them as `false`, `false` and `null`: they were not offered, so nothing was chosen. Two shapes: a new project without a repository reads `{"keep_the_why_init": true, "keep_the_why_badge": true, "keep_the_why_ci": true, "keep_the_why_dashboard": true, "dashboard_path": "keep-the-why-dashboard", "maity_badge": false, "cards": null}` (chosen, nothing created yet); once the cards exist, `cards` lists their ids, `[]` when every option was `false` (processed, nothing to create). Set on `POST /projects` only |
 
 A change of `memory.provider` by `PATCH` bumps `rules_version` and emits
