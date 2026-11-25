@@ -1560,7 +1560,7 @@ def test_a_deleted_account_leaves_nothing_its_link_read(
     assert _answered(name, owner) == []
 
 
-@pytest.mark.parametrize("then", ["confirmed", "unlinked"])
+@pytest.mark.parametrize("then", ["confirmed", "unlinked", "removed"])
 def test_another_owners_confirmation_leaves_nothing_the_replaced_link_read(
     owner: flow.Human,
     app: FakeApp,
@@ -1573,7 +1573,8 @@ def test_another_owners_confirmation_leaves_nothing_the_replaced_link_read(
     """Review A2606 P2-1: another owner of the organisation confirms the repository that the
     owner with the link confirmed. The replaced owner's grants end with it (§11.4): neither the
     confirmation's reply nor §11.3 (also forced), the project view or the list answers anything
-    read through their link, the owner's or a guest's, nor after that owner unlinks."""
+    read through their link, the owner's or a guest's, nor after that owner unlinks or is
+    removed from the organisation."""
     second = flow.human(make_client, migrated, "second")
     org = make_org(owner, "oz-team", "OZ Team")
     add_member(migrated, org["id"], second.id, "owner")
@@ -1591,11 +1592,19 @@ def test_another_owners_confirmation_leaves_nothing_the_replaced_link_read(
     assert "secret-plan" not in replaced.text, replaced.text
     if then == "unlinked":
         assert second.delete(f"/me/forge/github/links/{link_id}").status_code == 204
+    elif then == "removed":
+        assert owner.delete(f"/orgs/oz-team/members/{second.id}").status_code == 204
     assert ktw.CACHE.cached(project_id) is None
     assert _answered(name, owner, guest) == []
 
 
-@pytest.mark.parametrize("how", ["demoted", "removed", "left", "moved"])
+OTHER_URL = "https://github.com/acme/other-thing"
+# each one ends the grants in a way that only one clause of `_still_serves` sees: the project's
+# confirmation, its URL, or whose grants count (review A2605 P3-2)
+ONE_CLAUSE = ("unconfirmed", "url_changed", "reconfirmed")
+
+
+@pytest.mark.parametrize("how", ["demoted", "removed", "left", "moved", *ONE_CLAUSE])
 def test_grants_ended_before_the_cache_reads_keep_nothing_of_the_link(
     owner: flow.Human,
     app: FakeApp,
@@ -1609,9 +1618,12 @@ def test_grants_ended_before_the_cache_reads_keep_nothing_of_the_link(
     grants end with the link left as it is: the confirming organisation owner is demoted,
     removed or leaves, or the project moves. That call keeps nothing, and §11.3 (also forced),
     the project view and the list answer nothing read through the link, the owner's or a
-    guest's."""
+    guest's. Review A2605 P3-2, one case per clause of the project's check: the URL changes and
+    changes back, which leaves it unconfirmed with the same URL and the same grants; the URL
+    changes and the owner confirms the new one, which leaves it confirmed with the same grants;
+    another owner of the organisation confirms, which leaves it confirmed with the same URL."""
     org = make_org(owner, "oz-team", "OZ Team")
-    if how == "moved":
+    if how in ("moved", "unconfirmed", "url_changed"):
         confirmer, name = owner, "maintainer/maity"
         _confirm(owner)
     else:
@@ -1629,8 +1641,8 @@ def test_grants_ended_before_the_cache_reads_keep_nothing_of_the_link(
     real_walk = ktw.walk
 
     def walk(reader: forge.Forge, repository: str, deadline: float | None = None) -> Any:
-        if reader.token == LINK_TOKEN:
-            return _family("secret-plan")
+        if reader.token == LINK_TOKEN:  # the other repository has nothing of the first
+            return _family("secret-plan" if repository == REPO else "other-plan")
         return real_walk(reader, repository, deadline)
 
     monkeypatch.setattr(ktw, "walk", walk)
@@ -1644,6 +1656,20 @@ def test_grants_ended_before_the_cache_reads_keep_nothing_of_the_link(
                 done = owner.post(f"/projects/{name}/transfer", {"to": org["id"]})
                 assert done.status_code == 200, done.text
                 ended.append("oz-team/maity")
+            elif how in ("unconfirmed", "url_changed"):
+                ended.append(name)
+                away = owner.patch(f"/projects/{name}", {"repository": {"url": OTHER_URL}})
+                assert away.status_code == 200, away.text
+                if how == "unconfirmed":
+                    back = owner.patch(f"/projects/{name}", {"repository": {"url": URL}})
+                    assert back.status_code == 200, back.text
+                else:
+                    done = owner.post(f"/projects/{name}/repository/confirm", {"url": OTHER_URL})
+                    assert done.status_code == 200, done.text
+            elif how == "reconfirmed":
+                ended.append(name)
+                done = owner.post(f"/projects/{name}/repository/confirm", {"url": URL})
+                assert done.status_code == 200, done.text
             elif how == "demoted":
                 done = owner.patch(f"/orgs/oz-team/members/{confirmer.id}", {"role": "admin"})
                 assert done.status_code == 200, done.text
