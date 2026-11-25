@@ -1560,6 +1560,41 @@ def test_a_deleted_account_leaves_nothing_its_link_read(
     assert _answered(name, owner) == []
 
 
+@pytest.mark.parametrize("then", ["confirmed", "unlinked"])
+def test_another_owners_confirmation_leaves_nothing_the_replaced_link_read(
+    owner: flow.Human,
+    app: FakeApp,
+    repo: FakeForge,
+    migrated: Engine,
+    make_client: ClientFactory,
+    monkeypatch: pytest.MonkeyPatch,
+    then: str,
+) -> None:
+    """Review A2606 P2-1: another owner of the organisation confirms the repository that the
+    owner with the link confirmed. The replaced owner's grants end with it (§11.4): neither the
+    confirmation's reply nor §11.3 (also forced), the project view or the list answers anything
+    read through their link, the owner's or a guest's, nor after that owner unlinks."""
+    second = flow.human(make_client, migrated, "second")
+    org = make_org(owner, "oz-team", "OZ Team")
+    add_member(migrated, org["id"], second.id, "owner")
+    assert owner.post("/projects/maintainer/maity/transfer", {"to": org["id"]}).status_code == 200
+    link_id = _org_link(migrated, second.id, checked=timedelta(minutes=1), ok=timedelta(minutes=1))
+    name = "oz-team/maity"
+    confirmed = second.post(f"/projects/{name}/repository/confirm", {"url": URL})
+    assert confirmed.status_code == 200, confirmed.text
+    project_id = _project_id(migrated)
+    guest = flow.human(make_client, migrated, "bob")
+    factory.membership(migrated, project_id, role="guest", human_id=guest.id)
+    _read_through_the_link(owner, name, monkeypatch)
+    replaced = owner.post(f"/projects/{name}/repository/confirm", {"url": URL})
+    assert replaced.status_code == 200, replaced.text
+    assert "secret-plan" not in replaced.text, replaced.text
+    if then == "unlinked":
+        assert second.delete(f"/me/forge/github/links/{link_id}").status_code == 204
+    assert ktw.CACHE.cached(project_id) is None
+    assert _answered(name, owner, guest) == []
+
+
 @pytest.mark.parametrize("how", ["demoted", "removed", "left", "moved"])
 def test_grants_ended_before_the_cache_reads_keep_nothing_of_the_link(
     owner: flow.Human,

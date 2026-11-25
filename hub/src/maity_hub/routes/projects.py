@@ -1713,6 +1713,13 @@ def confirm_repository(
             .where(t.project.c.id == project.id)
             .values(repository_owner_confirmed=True, repository_confirmed_by=mine.row.human_id)
         )
+        if not project.repository_owner_confirmed or (
+            project.repository_confirmed_by != mine.row.human_id
+        ):
+            # Another owner's confirmation ends the grants of the one it replaces (§11.4):
+            # nothing read with them is answered after it, the reply to this call included;
+            # now and again after the commit.
+            wakeups.forget_repository_everywhere(conn, project.id)
         return idempotency.Outcome(
             200, "project", project.id, _view(conn, _load(conn, project.id), request)
         )
