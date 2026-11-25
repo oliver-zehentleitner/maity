@@ -780,7 +780,7 @@ def test_registering_with_the_invited_address_then_accepting_runs_through(
     made = issue(owner, address="anna@example.org")
     closed = hub(MAITY_MAIL_SIGNING_KEY=SIGNING, MAITY_REGISTRATION_APPROVAL="automatic", **MAIL)
     row = requested(make_client, migrated, closed, address="anna@example.org")
-    done = complete(migrated, closed, row.id, handle="anna")
+    done = complete(migrated, closed, row.id, handle="anna-lee")
     assert (done.kind, done.account_status) == ("created", "active")
     anna = signed_in(make_client, done)
     accepted = accept(anna, token_of(made))

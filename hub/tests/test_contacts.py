@@ -96,8 +96,8 @@ def test_the_people_page_says_only_whether_the_person_is_a_contact(
 
 
 def test_the_people_page_has_no_contact_field_for_an_organisation(anna: flow.Human) -> None:
-    make_org(anna, "acme", "Acme")
-    assert "contact" not in anna.get("/people/acme").json()
+    make_org(anna, "acme-inc", "Acme")
+    assert "contact" not in anna.get("/people/acme-inc").json()
 
 
 def test_who_may_add_whom(anna: flow.Human, make_client: ClientFactory, migrated: Engine) -> None:
@@ -112,11 +112,13 @@ def test_who_may_add_whom(anna: flow.Human, make_client: ClientFactory, migrated
     assert make_client().put("/api/v1/people/anna/contact").status_code in (401, 403)
     assert agent.get("/me/contacts").status_code == 403
     assert _reason(put(anna, "anna")) == "self"
-    make_org(anna, "acme", "Acme")
-    assert _reason(put(anna, "acme")) == "not_a_person"
+    make_org(anna, "acme-inc", "Acme")
+    assert _reason(put(anna, "acme-inc")) == "not_a_person"
     with migrated.begin() as conn:
-        conn.execute(update(t.org).where(t.org.c.handle == "acme").values(deleted_at=clock.now()))
-    assert put(anna, "acme").status_code == 404  # as GET /people answers a deleted one
+        conn.execute(
+            update(t.org).where(t.org.c.handle == "acme-inc").values(deleted_at=clock.now())
+        )
+    assert put(anna, "acme-inc").status_code == 404  # as GET /people answers a deleted one
     assert put(anna, "nobody-here").status_code == 404
     agent_handle = owner.get(f"/projects/maintainer/maity/members/{agent.id}").json()["handle"]
     assert put(anna, agent_handle).status_code == 404  # an agent's handle names nobody here

@@ -108,7 +108,7 @@ def test_registration_takes_both_languages_to_the_account(
     link = found.group(1)
     page = client.get(link)
     assert '<html lang="de"' in page.text
-    assert answer(client, link, page, handle="lin", display_name="Lin").status_code == 303
+    assert answer(client, link, page, handle="lin-wei", display_name="Lin").status_code == 303
     me = client.get("/api/v1/me").json()["member"]
     assert me["interface_language"] == "de"
     assert client.get("/api/v1/me/notification-settings").json()["email"]["language"] == "sw"
