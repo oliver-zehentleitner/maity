@@ -301,7 +301,7 @@ that of the mail settings and cannot be repaired by setting the variable again.
 **See:** packaging.md#the-wheel-carries-the-dashboard — df58484e-1f02-4949-bd3c-3d32456fb57a — as of 2026-11-05
 **Revisit when:** the post-launch card tsk-ss7h63d902dh gives the hub or the chart an explicit API-only switch, or `config.dashboard` is reworked or removed
 
-`config.dashboard: false` renders `MAITY_WEB_DIR` as an empty value, which the hub reads as unset (`config.py`), so an installed hub
+`config.dashboard: false` renders `MAITY_WEB_DIR` as an empty value, which the hub reads as unset (hub/src/maity_hub/config.py:246), so an installed hub
 then serves the dashboard its wheel carries (`maity_hub/web`). The switch was written when the image's `/app/web` was the only
 dashboard; since the wheel carries one too, it no longer switches the dashboard off. The chart README and `values.yaml` say so.
 Pointing `MAITY_WEB_DIR` at a missing path is no way around it: an explicitly set one that is no directory stops the hub at start.

@@ -103,8 +103,8 @@ forge:
     # Optional. The name of a Secret whose `key` holds a GitHub token for the
     # forge probe (MAITY_FORGE_GITHUB_TOKEN; read access to pull requests,
     # contents and checks is enough). May be the same Secret as the database's.
-    # The probe and release readiness come with a later hub version; until
-    # then the token is read and unused.
+    # The forge probe (docs/api.md §11) reads pull requests, checks and tags
+    # with it; with it, releases can become ready.
     existingSecret: ""
     key: github-token
     # The operator's own namespaces, comma separated (MAITY_FORGE_INSTANCE_NAMESPACES): the
