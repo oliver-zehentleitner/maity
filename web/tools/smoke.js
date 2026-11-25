@@ -18715,6 +18715,16 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       expect(open.includes("Claim for @outer") && open.includes("@outer") && open.filter((l) => l.startsWith("Claim for")).length === 1
         && held.includes("@outer") && !held.some((l) => l.startsWith("Claim for")),
       "claim for: an open card nobody holds offers Claim for @… for the outsider's agent alone; a held card offers only the assign " + JSON.stringify([open, held]));
+      // One's own outsider's agent is placed neither way: that would go round its confirmation (§6.5, slice B ruling b).
+      const outer = fxMembers.find((m) => m.id === "agt-outer");
+      outer.owner_id = M_.api.fixturesLive()["me.json"].member.id;
+      await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/board"); for (let k = 0; k < 8; k++) await tick();
+      const ownOpen = (await ocItems("tsk-out01")).map((b) => text(b).trim());
+      ocCard("tsk-out01").querySelector(".card-assign .menu-button").click(); await tick();
+      expect(!ownOpen.includes("@outer") && !ownOpen.some((l) => l.startsWith("Claim for")),
+        "claim for: one's own outsider's agent is offered neither the assign nor Claim for " + JSON.stringify(ownOpen));
+      outer.owner_id = "hum-visitor";
+      await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/board"); for (let k = 0; k < 8; k++) await tick();
       await ocPick("tsk-out01", "Claim for @outer");
       const claimed = fxTasks.find((t) => t.id === "tsk-out01");
       expect(JSON.stringify(ocSent[ocSent.length - 1]) === JSON.stringify(["/projects/maintainer/maity/tasks/tsk-out01/claim", { holder: "agt-outer#o1x9" }])

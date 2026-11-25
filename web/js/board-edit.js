@@ -228,16 +228,19 @@ window.Maity = window.Maity || {};
     // In plan and review a claim needs a reason (§6.5), archived takes none: not offered there
     // until the menu asks for one.
     const free = !!handOver && c.status === "open" && !c.claim && !["plan", "review", "archived"].includes(ctx.project.state);
+    // Nobody places their own outsider's agent, by an assign or a claim with holder: that would go round its
+    // confirmation (§6.5, the lead's ruling of 2026-11-25 on slice B, b). Not offered; the hub refuses it.
+    const ownOutside = (m) => m.kind === "agent" && m.trust === "outside" && m.owner_id === ctx.me.id;
     const menu = M.menuButton({
       label: c.assigned_to ? M.t("cards.reassign.label", { id: c.id }) : M.t("cards.assign.label", { id: c.id }),
       face: [word, h("span", { "aria-hidden": "true" }, " ▾")],
       // A guest is never assigned a card (§2.3).
-      items: () => ctx.members.filter((m) => m.id !== c.assigned_to && !M.trust.guest(m)).map((m) => ({
+      items: () => ctx.members.filter((m) => m.id !== c.assigned_to && !M.trust.guest(m) && !ownOutside(m)).map((m) => ({
         key: "member:" + m.id,
         label: [M.avatar(m, 16), " @" + M.dom.handleOf(ctx, m)],
         title: m.display_name,
         onSelect: () => assign(c, m.id, "assign:" + c.id),
-      })).concat(free ? ctx.members.filter((m) => m.kind === "agent" && m.trust === "outside" && !m.removed_at).map((m) => ({
+      })).concat(free ? ctx.members.filter((m) => m.kind === "agent" && m.trust === "outside" && !m.removed_at && !ownOutside(m)).map((m) => ({
         key: "claim-for:" + m.id,
         label: [M.avatar(m, 16), " ", M.t("cards.claim_for", { handle: M.dom.handleOf(ctx, m) })],
         title: m.display_name,
