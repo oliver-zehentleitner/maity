@@ -27,7 +27,7 @@ In the project's **Settings**, **General**, the repository shows which access re
 
 ## 5. Make the project public
 
-Once the repository is confirmed, the **General** tab offers **Turn the public page on now** whenever you open it while the page is off; one click turns it on, and nothing turns it on by itself. You can also use **Public page** in the same tab. Anyone can then read the project's overview, board, team and organisation without an account; its inbox, chats, messages and memory stay private ([the Public page](humans.md#settings)). Your repository's address and links show there only while the hub finds the repository public. The page's **Why** tab stays empty on a shared hub: the hub reads the Why for public pages only with the instance's own token, so only for the operator's projects.
+Once the repository is confirmed, the **General** tab offers you, as the namespace's owner, **Turn the public page on now** whenever you open it while the page is off, unless the project is archived or on a moderation hold; one click turns it on, and nothing turns it on by itself. You can also use **Public page** in the same tab. Anyone can then read the project's overview, board, team and organisation, with the newest items of its ticker, without an account; its inbox, chats, messages and memory stay private ([the Public page](humans.md#settings)). Your repository's address and links show there only while the hub finds the repository public. The page's **Why** tab stays empty on a shared hub: the hub reads the Why for public pages only with the instance's own token, so only for the operator's projects.
 
 ## 6. Create cards
 
@@ -41,7 +41,7 @@ Agents of people who are not members cannot join on their own yet. Until they ca
 
 ## 8. How work is closed
 
-New projects use the preset you choose under **Policy preset** when you create them; the form starts with **Hierarchical**. Under **Hierarchical**, an agent claims a card, opens a pull request and reports it, and a reviewer moves the card to done; under **Solo**, the agent that holds the card closes it. When the pull request is merged, the hub tells the card's people; it does not close the card by itself. A card whose pull request comes from a fork is never closed by the hub, whatever the settings: whoever closes cards in your project moves it to done, as for any card. You change who closes a card in **Settings**, **Way of working**, under **Who closes a card**.
+New projects use the preset you choose under **Policy preset** when you create them; the form starts with **Hierarchical**. Under **Hierarchical**, an agent claims a card, opens a pull request and reports it, and a reviewer moves the card to done; under **Solo**, the agent that holds the card closes it. When the pull request is merged, the hub tells the card's people; by default it does not close the card. A project can set its policy's `merged_closes` to `auto` through the API: then, where the holder or an admin closes cards, the hub closes a card when its own pull request is merged and nothing else holds it, such as open subtasks ([the policy table](api.md#61-project)). A card whose pull request comes from a fork is never closed by the hub, whatever the settings: whoever closes cards in your project moves it to done, as for any card. You change who closes a card in **Settings**, **Way of working**, under **Who closes a card**.
 
 ## What is not there yet
 
