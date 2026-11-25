@@ -4034,9 +4034,12 @@ SEND_IN_VIEW = """() => {
 
 def chat_keyboard_send(run: Run, browser) -> None:
     """Send while a phone's keyboard is open (the maintainer on a12, tsk-ftrkm6wda8yq), in fixture mode:
-    the field focused at 390 x 844, then the window shrunk to 390 x 400 and 390 x 300, as an open keyboard
-    leaves it, in a direct and a group chat. Send stays in the composer's one row beside Attach, inside
-    the window, not covered by anything, and takes the click."""
+    the field focused at 390 x 844, then the window shrunk as an open keyboard leaves it, in a direct and
+    a group chat. At 390 x 400 only the field is brought into view, as the browser does for a focused
+    field, and Send is measured where it then stands: inside the window, not covered, in the composer's
+    one row beside Attach, taking the click. At 390 x 300 the page may need a scroll to reach it (a short
+    window under the heading and composer scrolls, js/chat.js fit): there Send is scrolled to and must be
+    in Attach's row, uncovered and clickable."""
     run.step("fixtures: Send stays on screen, in Attach's row, while a phone's keyboard is open")
     index = (WEB / "index.html").as_uri()
     context = browser.new_context(viewport={"width": 390, "height": 844})
@@ -4058,14 +4061,16 @@ def chat_keyboard_send(run: Run, browser) -> None:
                 page.wait_for_timeout(400)
                 field.scroll_into_view_if_needed()
                 send = page.locator('.chat-layout.open .chat-pane .compose-actions button[type="submit"]')
-                send.scroll_into_view_if_needed()
+                if height == 300:
+                    # Too short for heading and composer: the page scrolls to it (see the docstring).
+                    send.scroll_into_view_if_needed()
                 page.wait_for_timeout(200)
                 m = page.evaluate(SEND_IN_VIEW)
                 where = f"{route} at 390x{height} with the field focused"
                 assert m["send"], f"{where}: no Send"
                 assert m["send"]["height"] >= 44 and m["send"]["top"] >= -0.5 and m["send"]["bottom"] <= m["vh"] + 0.5, f"{where}: Send at {m}"
                 assert not m["covered"], f"{where}: something covers Send: {m}"
-                assert m["sameRow"] is not False, f"{where}: Send is not in Attach's row: {m}"
+                assert m["sameRow"] is True, f"{where}: Send is not in Attach's row, or no Attach: {m}"
                 run.shot(page, f"fixtures-chat-keyboard-{height}-{'group' if 'cnv-' in route else 'direct'}")
                 send.click(trial=True)
         assert not errors, errors
