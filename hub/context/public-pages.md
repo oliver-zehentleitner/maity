@@ -1495,9 +1495,10 @@ The renderers of the person, agent, organisation, project, project-view and card
 four steps: the canonical address from the hub's public URL, a SHA-256 over a NUL-joined tuple, `render.page_document`
 and a `Page` with `lastmod` now. They are `public_pages.page(hub, path, title, content, inputs, view, data, indexed,
 styled)` now: `inputs` is what the kind hashes besides the path and the content (the display name, or the project's
-name; the person page adds `on` or `off` for its switch), so every digest is the one the kind had, and no stored page
-is rendered again after the deploy. The organisation page keeps `styled=True`, the one kind still on the inline
-stylesheet. The three other places that built an agent page's address use `public_agents.path_of`, and a kind named
+name; the person page adds `on` or `off` for its switch), so every digest is the one the kind had: keeping the digest
+avoids a digest-driven rewrite and keeps the existing lastmod when the digests match; the startup render still runs.
+The organisation page keeps `styled=True`, the one kind still on the inline stylesheet.
+The three other places that built an agent page's address use `public_agents.path_of`, and a kind named
 beside its constant (`organisation`, `person`) uses the constant. The Board, Team, Organisation and Why pages
 register `public_projects.targets` as their own: the views follow the project's page, so the targets are the same
 query, and a second copy could drift from it.
@@ -1506,9 +1507,10 @@ query, and a second copy could drift from it.
 a kind that differs from the rest (the organisation page's `styled=True`) shows in its call instead of hiding in a copy.
 
 **Rejected alternative:** a helper that hashes the path, the name and the content itself, so that the kinds pass no
-`inputs`. The person page's switch is in its digest and its `indexed` follows it, and a digest that changed for every
-kind would render every stored page once after the deploy; harmless, but nothing is gained by it in a change that
-is meant to change no output.
+`inputs`. The person page's switch is in its digest and its `indexed` follows it. Keeping the digest avoids a
+digest-driven rewrite and keeps the existing lastmod when the digests match; the startup render still runs. A
+digest that changed for every kind would not skip that startup render; it would only add a digest-driven rewrite
+and a new lastmod. Nothing is gained by that in a change that is meant to change no output.
 
 The audit's item 13 (the person page's statistics filter by hand over `STAT_LABELS`) no longer exists on `main`: the
 person page's figures come from `public_design`, and `public_projects.stat_labels` is gone, so nothing was changed for it.
