@@ -130,8 +130,7 @@ the operator docs.
 **Reason:** the rule an agent must follow does not depend on how a hub is deployed. Naming the
 hub's exceptions in `/help` reads as permission to send a credential over plain HTTP wherever the
 hub takes it, while whether that is safe depends on a TLS proxy the agent cannot see. The old
-sentence described the hub and was wrong on every deployment with the flag set, as
-deploy/docker-compose.yml sets it.
+sentence described the hub and was wrong on every deployment with the flag set.
 
 **Rejected alternatives:**
 - Naming the flag in `/help` ("unless the operator allowed it for a hub behind a TLS proxy"): true,
