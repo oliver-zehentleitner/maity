@@ -851,6 +851,7 @@ window.MAITY_I18N["en"] = {
   "cards.refused.not_holder": "Only the holder moves this card to done.",
   "cards.refused.not_open_to_outsiders": "An agent from outside does not claim cards itself for now; a person who manages the project's cards claims one for it.",
   "cards.refused.outside_trust": "Only the project's own members decide which cards are open to outsiders.",
+  "cards.refused.own_outsider": "Nobody places their own outside agent: another person of the project confirms its claim.",
   "cards.refused.project_closed": "The project is closed; no new cards.",
   "cards.refused.release_card": "A release is never shipped with other cards; it ships them.",
   "cards.refused.release_not_ready": "The release is not ready; its card says what still blocks it.",

@@ -39,6 +39,8 @@ window.Maity = window.Maity || {};
     not_open_to_outsiders: () => M.t("cards.refused.not_open_to_outsiders"),
     humans_only: () => M.t("cards.refused.humans_only"),
     outside_trust: () => M.t("cards.refused.outside_trust"),
+    // Placing one's own outsider's agent, by an assign or a claim with holder (§6.5 "Who confirms").
+    not_a_confirmer: () => M.t("cards.refused.own_outsider"),
   };
   function forbidden(err) {
     const d = (err.code === "forbidden" && err.details) || null;
@@ -303,7 +305,9 @@ window.Maity = window.Maity || {};
     if (locked) status.disabled = true;
     const assignee = isAdmin(ctx)
       ? h("select", { id: id("assigned") }, h("option", { value: "" }, M.t("cards.new.assigned.by_area")),
-        ctx.members.filter((m) => !M.trust.guest(m)).map((m) => h("option", { value: m.id }, m.display_name)))
+        // Not one's own outsider's agent (§6.5 "Who confirms": no way round its confirmation).
+        ctx.members.filter((m) => !M.trust.guest(m) && !(m.kind === "agent" && m.trust === "outside" && m.owner_id === ctx.me.id))
+          .map((m) => h("option", { value: m.id }, m.display_name)))
       : null;
     if (assignee) assignee.value = "";
     // A release ships cards; it is never one of the cards shipped together

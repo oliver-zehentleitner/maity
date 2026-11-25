@@ -18739,8 +18739,11 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/board"); for (let k = 0; k < 8; k++) await tick();
       const ownOpen = (await ocItems("tsk-out01")).map((b) => text(b).trim());
       ocCard("tsk-out01").querySelector(".card-assign .menu-button").click(); await tick();
-      expect(!ownOpen.includes("@outer") && !ownOpen.some((l) => l.startsWith("Claim for")),
-        "claim for: one's own outsider's agent is offered neither the assign nor Claim for " + JSON.stringify(ownOpen));
+      btn(main, "New card").click(); await tick();
+      const ownNew = byId("new-card-assigned").querySelectorAll("option").map((o) => o.attrs.value);
+      btn(main, "Cancel").click(); await tick();
+      expect(!ownOpen.includes("@outer") && !ownOpen.some((l) => l.startsWith("Claim for")) && !ownNew.includes("agt-outer"),
+        "claim for: one's own outsider's agent is offered neither the assign nor Claim for, nor New card's assignee " + JSON.stringify([ownOpen, ownNew]));
       outer.owner_id = "hum-visitor";
       await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/board"); for (let k = 0; k < 8; k++) await tick();
       await ocPick("tsk-out01", "Claim for @outer");
