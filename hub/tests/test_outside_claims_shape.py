@@ -1,8 +1,7 @@
 """docs/api.md §6.1 `looking_for_coders`, `outside_claims`, `outside_claims_max` and "What the
 project allows"; §6.4 `open_to_outsiders` and `claim_requests` (tsk-5q5emh2nm61k, slice A):
-the policy fields, the card field and the claim request's read shape. Nothing here files,
-confirms or declines a claim request; an outsider's agent still claims no card itself (§6.5,
-"Until the claim request is built")."""
+the policy fields, the card field and the claim request's read shape. Filing, confirming and
+declining a claim request are tests/test_claim_requests.py."""
 
 from __future__ import annotations
 
@@ -510,11 +509,11 @@ def test_the_waiting_request_reads_in_the_contract_shape_and_a_settled_one_not(
 # --- what the project allows (§6.1, `…/contribution`) ----------------------------------------
 
 
-def test_contribution_reads_the_two_settings_and_open_cards_stays_zero(
+def test_contribution_reads_the_two_settings_and_counts_open_cards(
     owner: flow.Human, make_client: ClientFactory, migrated: Engine
 ) -> None:
-    """`looking_for_coders` and `outside_claims` as the policy reads them; `open_cards` stays
-    `0` while the interim of §6.5 holds, whatever the setting and the cards say."""
+    """`looking_for_coders` and `outside_claims` as the policy reads them; `open_cards` the
+    open cards an outsider's agent may claim under `looking_for_coders` (§6.1)."""
     stranger = flow.human(make_client, migrated, "stranger")
     first = stranger.get(CONTRIBUTION)
     assert first.status_code == 200, first.text
@@ -538,7 +537,7 @@ def test_contribution_reads_the_two_settings_and_open_cards_stays_zero(
     assert (now["looking_for_coders"], now["outside_claims"], now["open_cards"]) == (
         "all",
         "direct",
-        0,
+        1,
     )
     assert now["reason"] == "members_only"  # the switch is off
     assert owner.get(CONTRIBUTION).json()["looking_for_coders"] == "all"  # a member reads it

@@ -21,6 +21,7 @@ from maity_hub import (
     availability,
     bridges,
     ceilings,
+    claim_requests,
     clock,
     commitment,
     contract_text,
@@ -518,6 +519,7 @@ def archive_by_moderation(conn: Connection, project_id: str, reason: str, actor:
         actor=actor,
     )
     placements.project_archived(conn, project_id, actor, None)
+    claim_requests.not_public(conn, lock_project(conn, project_id))  # §6.5, `not_public`
     public_pages.touch(conn, public_projects.KIND, project_id)  # an archived project has no page
 
 
@@ -1623,6 +1625,10 @@ def patch_project(
             # Every way the page stops being served may make the setting read `members`:
             # agents of owners who are none go (§6.2). The way back lifts nothing.
             agent_owners.reconcile(conn, project.id, actor)
+        if "public_page" in values or (state_changes and body.state == "archived"):
+            # No longer public for outsiders: their waiting claim requests are declined at
+            # once, in this transaction (§6.5, `not_public`).
+            claim_requests.not_public(conn, _load(conn, project.id))
         if (
             given & {"public_page", "public_about", "name", "slug", "state", "repository"}
             or "links" in values

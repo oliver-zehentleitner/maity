@@ -1,8 +1,9 @@
 """docs/api.md §3.1 "An outsider's agent", §6.1 "The outsiders' opt-in", §2.3 "Outside", §6.5
-"Until the claim request is built": a signed-in outsider of a public project whose admins
-opted in adds an agent of their own at trust `outside`; the join is behind one switch
-(`outsiders.JOINS_ON`) and one predicate (`outsiders.joins_open`), and such an agent takes no
-card itself (tsk-enfbkj0xqq5m)."""
+"Only a human, or a confirmation, puts an outsider to work": a signed-in outsider of a public
+project whose admins opted in adds an agent of their own at trust `outside`; the join is behind
+one switch (`outsiders.JOINS_ON`) and one predicate (`outsiders.joins_open`), and such an agent
+takes a card only from a human or by a confirmed claim request (tsk-enfbkj0xqq5m,
+tsk-5q5emh2nm61k)."""
 
 from __future__ import annotations
 
@@ -1146,15 +1147,19 @@ def test_an_agents_assign_of_its_owners_expired_card_to_it_is_humans_only(
 def test_its_own_claim_is_refused_before_the_cards_state(
     on: None, owner: flow.Human, outsider: flow.Human, make_client: ClientFactory
 ) -> None:
-    """§6.5's order: after the card's existence, before its state. A held card answers the
-    outsider's agent `not_open_to_outsiders`, not `already_claimed`; an unknown card
-    `not_found`."""
+    """§6.5's order: the checks of any claim first, then the outsider's two. A held card
+    answers the outsider's agent `already_claimed` even where the card is not open to it; an
+    open card that is not open to it `not_open_to_outsiders`; an unknown card `not_found`."""
     agent = _outside_agent(make_client, owner, outsider)
     member = flow.agent(make_client, owner)
     card = _card(owner)
+    free = _card(owner, "Free")
     assert member.post(f"{P}/tasks/{card}/claim", {}).status_code == 200
     held = agent.post(f"{P}/tasks/{card}/claim", {})
-    assert (held.status_code, _reason(held)) == (403, "not_open_to_outsiders"), held.text
+    assert held.status_code == 409, held.text
+    assert held.json()["error"]["code"] == "already_claimed"
+    refused = agent.post(f"{P}/tasks/{free}/claim", {})
+    assert (refused.status_code, _reason(refused)) == (403, "not_open_to_outsiders")
     unknown = agent.post(f"{P}/tasks/tsk-000000000000/claim", {})
     assert unknown.status_code == 404, unknown.text
 
@@ -1203,9 +1208,9 @@ def test_agent_owners_null_is_refused_once_set(owner: flow.Human) -> None:
 def test_cover_hands_it_no_card(
     on: None, owner: flow.Human, outsider: flow.Human, make_client: ClientFactory, migrated: Engine
 ) -> None:
-    """Cover (§6.12) is no way round the interim: `role:coder` reaches the outsider's coder,
-    and the walk skips it, so with nobody else to take the card it stays with the covered
-    member (§6.5, "Until the claim request is built")."""
+    """Cover (§6.12) is no way round the rule: `role:coder` reaches the outsider's coder, and
+    the walk skips it, so with nobody else to take the card it stays with the covered member
+    (§6.5, "Only a human, or a confirmation, puts an outsider to work")."""
     moment = [clock.now().replace(microsecond=0)]
     clock.set_source(lambda: moment[0])
     agent = _outside_agent(make_client, owner, outsider)

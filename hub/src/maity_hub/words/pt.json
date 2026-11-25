@@ -99,6 +99,7 @@
   "notify.asks": "{who} pergunta: {title}",
   "notify.asks_you": "{who} pergunta a você: {title}",
   "notify.chat": "{who} em {chat}",
+  "notify.claim_asks": "{who} pede para trabalhar em: {title}",
   "notify.forge_added": "Acesso à forge adicionado: {login} ({source})",
   "notify.forge_not_admin": "Acesso à forge interrompido: você não é mais proprietário de {login}",
   "notify.jf_no_moderator": "Reunião fixa ignorada, ninguém para moderar: {topic}",

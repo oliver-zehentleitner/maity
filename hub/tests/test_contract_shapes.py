@@ -72,6 +72,7 @@ SHAPES: dict[str, tuple[str, set[str]]] = {
     ),  # fmt: skip
     "/projects/{}/{}/limits": ("**The overview.**", {"project", "agents", "runners"}),
     "/projects/{}/{}/members": PAGE,
+    "/projects/{}/{}/outsiders": PAGE,  # §3.1 "The outsiders of a project", by handle
     "/projects/{}/{}/requests": PAGE,
     "/projects/{}/{}/roles": (
         '`GET` with `project:read` answers `{"builtin": [{name, description, guide, scopes}], '

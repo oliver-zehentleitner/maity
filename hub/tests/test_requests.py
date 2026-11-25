@@ -19,6 +19,8 @@ REQUEST_KEYS = {
     "cover",  # §6.12: null unless a substitute covers it
     "action",  # §2.3: a proxy's call, null otherwise
     "held",  # §7, §9.6: the agents of other owners it is held for, [] when none
+    "claim_request_id",  # §6.5: the lapse's decision only, null otherwise
+    "claim_notice",  # §6.5: the outside owner's notice only, null otherwise
     "id",
     "class",
     "title",

@@ -331,6 +331,28 @@ def refuse_coordinator_out(conn: Connection, mine: Any, what: str) -> None:
         )
 
 
+def substitute_stands_in(conn: Connection, project: Any) -> bool:
+    """Whether `policy.coordinator_substitute` stands in for the coordinator now (§6.12): one
+    is set, and the coordinator — under `trust:admin` every agent admin — is out beyond its
+    grace, as `coordinator_gate` reads it. The confirmers of an outsider's claim count the
+    substitute only then (§6.5, "Who confirms")."""
+    if project.coordinator_substitute is None:
+        return False
+    ids = coordinator_ids(conn, project)
+    if not ids:
+        return False
+    now = clock.now()
+    rows = conn.execute(select(t.membership).where(t.membership.c.id.in_(ids))).all()
+    presences = presences_of(conn, rows)
+    dormant = dormants_of(conn, rows)
+    return all(
+        _out_beyond_grace(
+            r, computed(r, presences[r.id], None, project, now, dormant=r.id in dormant), now
+        )
+        for r in rows
+    )
+
+
 def coordinator_gate(conn: Connection, project: Any) -> dict[str, Any] | None:
     """`{coordinator, until}` while new assignments by agents are held (§6.12): the
     coordinator — under `trust:admin` every agent admin — is out beyond its grace, and

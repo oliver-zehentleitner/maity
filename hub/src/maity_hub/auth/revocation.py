@@ -118,6 +118,11 @@ def revoke(
         from maity_hub import longpoll
 
         longpoll.registry.end_keys_after(conn, {credential_id})
+    if won == 1:
+        # An outsider's waiting claim request of this instance is declined `gone` (§6.5).
+        from maity_hub import claim_requests
+
+        claim_requests.instances_gone(conn, [(m.id, m.attachment_instance) for m in attached])
     if won == 1 and not holder_moves:  # a holder that stops (§6.5)
         from maity_hub import holder_stalled
 

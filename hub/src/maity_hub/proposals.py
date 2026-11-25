@@ -57,11 +57,21 @@ class Stale(Exception):
     answering route withdraws the request in a transaction of its own and answers
     `error`, so that nothing else changes."""
 
-    def __init__(self, error: ApiError, request_id: str, reason: str) -> None:
+    def __init__(
+        self,
+        error: ApiError,
+        request_id: str,
+        reason: str,
+        *,
+        then: Callable[[Connection], None] | None = None,
+    ) -> None:
         super().__init__(error.message)
         self.error = error
         self.request_id = request_id
         self.reason = reason
+        # What else stands after the rollback, in the withdrawal's transaction, before it:
+        # an outsider's claim request a failed re-check declines (§6.5, "The lapse").
+        self.then = then
 
 
 # A kind's own rule on who answers, beyond the scope: a `details.reason` for a caller it

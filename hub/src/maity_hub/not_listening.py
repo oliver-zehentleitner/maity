@@ -367,6 +367,14 @@ class Worker:
                         except Exception:
                             log.exception("the lease expiry failed")
                         try:
+                            # An outsider's waiting claim requests: the hub's declines and
+                            # the lapse (§6.5).
+                            from maity_hub import claim_requests
+
+                            claim_requests.sweep(self.engine)
+                        except Exception:
+                            log.exception("the claim request pass failed")
+                        try:
                             chat_unread.sweep(self.engine)  # the unread nudge (§9.2)
                         except Exception:
                             log.exception("the unread nudge's sweep failed")

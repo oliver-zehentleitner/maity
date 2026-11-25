@@ -31,6 +31,7 @@ EVENT_KINDS = (
     "mentioned",
     "jour_fixe_skipped",
     "jour_fixe_reported",
+    "claim_requested",  # an outsider's claim request, for its human confirmers (§6.5)
 )
 NOT_MESSAGES = tuple(kind for kind in EVENT_KINDS if kind != "message")
 ADDRESSED = ("request_created", "request_forwarded")  # one item per request, the latest
@@ -645,6 +646,31 @@ def _classify(
             title=_cut(where.say("jf_reported", topic=found.topic)),
             target={"type": "jour_fixe_round", "id": str(payload.get("round_id"))},
             url=_url(where, f"{home}/jour-fixe/{payload.get('round_id')}"),
+            **base,
+        )
+    if row.kind == "claim_requested" and readable and f"member:{principal}" in (row.audience or []):
+        # One item for each human confirmer its audience names (§6.5, §18.1); not a request.
+        # Fails closed: listed only while the human still confirms that claim.
+        from maity_hub import claim_requests
+
+        filed = look.conn.execute(
+            select(t.claim_request.c.owner_id).where(
+                t.claim_request.c.id == (payload.get("claim_request") or {}).get("id")
+            )
+        ).first()
+        if filed is None or not claim_requests.is_confirmer(look.conn, mine, filed.owner_id):
+            return None
+        task_id = str(payload.get("task_id"))
+        card_title = look.conn.execute(
+            select(t.card.c.title).where(t.card.c.id == task_id)
+        ).scalar()
+        return Item(
+            kind="inbox",
+            title=_cut(
+                where.say("claim_asks", who=look.name(row.actor_membership), title=card_title)
+            ),
+            target={"type": "task", "id": task_id},
+            url=_url(where, f"{home}/tasks/{task_id}"),
             **base,
         )
     if row.kind == "mentioned" and readable and f"member:{principal}" in (row.audience or []):

@@ -1827,6 +1827,11 @@ request = Table(
     # The instance admin's request about a new abuse report (§16.8): the report it stands for,
     # whose resolution or expiry withdraws it; null for every other request.
     _ref("report_id", "abuse_report.id", index=True),
+    # An outsider's claim request (§6.5): the `clr-` id on the `decision` request its lapse
+    # files to `trust:admin`, and on the owner's notice, whose `{claim_request_id, reason,
+    # decided_by}` is `claim_notice`; hub only, null on every other request.
+    Column("claim_request_id", String(ID)),
+    Column("claim_notice", JSON_VALUE),
     Column("status", String(16), nullable=False),
     Column("answer", JSON_VALUE),
     _membership_ref("answered_by"),

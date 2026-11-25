@@ -99,6 +99,7 @@
   "notify.asks": "{who} からの質問: {title}",
   "notify.asks_you": "{who} からあなたへの質問: {title}",
   "notify.chat": "{chat} の {who}",
+  "notify.claim_asks": "{who} が作業を申し出ています: {title}",
   "notify.forge_added": "フォージへのアクセスが追加されました: {login} ({source})",
   "notify.forge_not_admin": "フォージへのアクセスが停止されました: {login} のオーナーではなくなりました",
   "notify.jf_no_moderator": "定例会を見送りました。進行役がいません: {topic}",

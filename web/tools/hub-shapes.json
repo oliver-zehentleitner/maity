@@ -930,6 +930,8 @@
         "trust": "string"
        }
       },
+      "claim_notice": "null",
+      "claim_request_id": "null",
       "class": "string",
       "cover": "null",
       "created_at": "string",
@@ -1385,6 +1387,8 @@
         "trust": "string"
        }
       },
+      "claim_notice": "null",
+      "claim_request_id": "null",
       "class": "string",
       "cover": "null",
       "created_at": "string",
@@ -1688,6 +1692,8 @@
      "trust": "string"
     }
    },
+   "claim_notice": "null",
+   "claim_request_id": "null",
    "class": {
     "form": "consent"
    },
@@ -1926,6 +1932,8 @@
      "trust": "string"
     }
    },
+   "claim_notice": "null",
+   "claim_request_id": "null",
    "class": {
     "form": "consent"
    },

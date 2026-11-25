@@ -99,6 +99,7 @@
   "notify.asks": "{who} chiede: {title}",
   "notify.asks_you": "{who} ti chiede: {title}",
   "notify.chat": "{who} in {chat}",
+  "notify.claim_asks": "{who} chiede di lavorare a: {title}",
   "notify.forge_added": "Accesso al forge aggiunto: {login} ({source})",
   "notify.forge_not_admin": "Accesso al forge interrotto: non sei più proprietario di {login}",
   "notify.jf_no_moderator": "Jour fixe saltato, nessuno a moderare: {topic}",

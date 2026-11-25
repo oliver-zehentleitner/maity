@@ -51,6 +51,22 @@ def uncursor(text: str, bound: str | None = None) -> tuple[datetime, str]:
         raise invalid({"cursor": "invalid"}) from None
 
 
+def after_cursor(key: str, bound: str) -> str:
+    """After the item whose sort key is `key`, for a list ordered by a unique text key (a
+    handle, §3.1's outsiders)."""
+    return _encode(["after", key, bound])
+
+
+def unafter(text: str, bound: str) -> str:
+    try:
+        tag, key, given = _decode(text)
+        if tag != "after" or given != bound or not isinstance(key, str):
+            raise ValueError
+        return key
+    except (ValueError, TypeError):
+        raise invalid({"cursor": "invalid"}) from None
+
+
 def key_cursor(
     anchor: tuple[str, Sequence[Any]],
     following: tuple[str, Sequence[Any]],

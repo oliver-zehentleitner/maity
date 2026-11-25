@@ -99,6 +99,7 @@
   "notify.asks": "{who} 提问：{title}",
   "notify.asks_you": "{who} 向你提问：{title}",
   "notify.chat": "{who} 在 {chat}",
+  "notify.claim_asks": "{who} 申请处理：{title}",
   "notify.forge_added": "已添加代码托管平台访问权限：{login}（{source}）",
   "notify.forge_not_admin": "代码托管平台访问权限已停止：你已不再是 {login} 的所有者",
   "notify.jf_no_moderator": "例会已跳过，无人主持：{topic}",

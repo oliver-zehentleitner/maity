@@ -22,6 +22,7 @@ from maity_hub import (
     card_search,
     card_watches,
     cards,
+    claim_requests,
     clock,
     contract_text,
     cover,
@@ -36,6 +37,7 @@ from maity_hub import (
     outsiders,
     own_approvals,
     paging,
+    policy,
     project_roles,
     ranks,
     releases,
@@ -1372,6 +1374,16 @@ def patch_task(
         if "assigned_to" in given:
             _require_assigner(conn, mine, new_assignee, card.assigned_to, card.claim_holder)
             availability.refuse_coordinator_out(conn, mine, "new assignments")
+            if new_assignee is not None:
+                # Its owner assigns an outsider's agent nothing (§6.5, "Who confirms"), and
+                # nothing else of the PATCH takes effect.
+                claim_requests.refuse_placement(
+                    conn,
+                    mine,
+                    conn.execute(
+                        select(t.membership).where(t.membership.c.id == new_assignee)
+                    ).one(),
+                )
             if assigns_away and not cards.holds(mine, card):
                 takeovers.guard_move(conn, mine, card, to=new_assignee)
             values["assigned_to"] = new_assignee
@@ -1666,15 +1678,33 @@ def claim(
             holder_row = conn.execute(
                 select(t.membership).where(t.membership.c.id == holder_id)
             ).one()
-            # Before the holder's instance, as §6.5's interim orders it ("Until the claim
-            # request is built"): only a human with tasks:admin gives an outsider's agent a card.
+            # Before the holder's instance (§6.5, "Only a human, or a confirmation, puts an
+            # outsider to work"): its owner places it nowhere, and only a human with
+            # tasks:admin gives an outsider's agent a card.
+            claim_requests.refuse_placement(conn, mine, holder_row)
             outsiders.refuse_taking(holder_row, mine)
+            waiting = claim_requests.pending(conn, card.id)
+            if waiting is not None and waiting.member_id == holder_id:
+                # A human admin's claim with `holder` naming the requesting agent is the
+                # confirmation (§6.5, "Settled by another call"), by a confirmer only.
+                if not claim_requests.is_confirmer(conn, mine, waiting.owner_id):
+                    raise claim_requests.not_a_confirmer()
+                if named is not None and named != waiting.instance:
+                    raise invalid({"holder": "not_the_requester"})
+                card = claim_requests.confirm(
+                    conn,
+                    mine.project,
+                    card,
+                    waiting,
+                    mine.row,
+                    mine.instance,
+                    caller.actor(mine.id),
+                )
+                return idempotency.Outcome(200, "task", card.id, task_view(conn, card, fg, mine))
             # An address names the instance; a member id must come down to one (§6.5).
             instance = instances.resolve(conn, holder_row, named, "holder")
             session_id = None  # the holder's next call moves it to its session
-        # An outsider's agent claims nothing itself (§6.5, "Until the claim request is built"):
-        # after the scope, the project's state and the card's existence, before its state.
-        outsiders.refuse_taking(holder_row, mine)
+        own_outside = holder_id == mine.id and claim_requests.is_outside(mine.row)
         _refuse_paused(conn, holder_id, instance)  # also when an admin claims on its behalf
         if card.claim_holder is not None:
             raise _already_claimed(conn, card)
@@ -1684,6 +1714,22 @@ def claim(
             raise cards.invalid_transition(card.status, "in_progress")
         if mine.project.claim_policy == "assign-only" and card.assigned_to != holder_id:
             raise ApiError(409, "assign_only", "this project hands cards out by assignment")
+        if own_outside:
+            # An outsider's own claim (§6.5, "An outsider's claim"): the two checks and the
+            # card's pending request, then a request under `human` and `agent`.
+            waiting = claim_requests.refuse_own_claim(conn, mine, card)
+            if waiting is None and policy.outside_claims(mine.project) != "direct":
+                waiting = claim_requests.file(conn, mine, card, caller.actor(mine.id))
+            if waiting is not None:
+                return idempotency.Outcome(
+                    202,
+                    "task",
+                    card.id,
+                    {
+                        **task_view(conn, card, fg, mine),
+                        "claim_request": claim_requests.view(conn, waiting),
+                    },
+                )
         now = clock.now()
         lease_until = now + timedelta(seconds=mine.project.lease_seconds)
         # The claim: one conditional UPDATE, the row count decides (§6.5).
@@ -1707,6 +1753,10 @@ def claim(
         if won != 1:
             raise _already_claimed(conn, _card(conn, card.id))
         cover.touch(conn, card, mine.principal_id)  # a substitute claimed what it was handed
+        # A claim that takes the card declines its waiting request (§6.5, `taken`).
+        settled = claim_requests.taken(
+            conn, card.id, mine.id, caller.actor(mine.id), task_updated=False
+        )
         card = _card(conn, card.id)
         emit(
             conn,
@@ -1722,26 +1772,99 @@ def claim(
             actor=caller.actor(mine.id),
             subject=("task", card.id),
         )
-        status_moved(conn, card, mine.project.state, caller.actor(mine.id))  # to in_progress
+        # To in_progress, with `claim_requests` when it settled one.
+        status_moved(conn, card, mine.project.state, caller.actor(mine.id), settled=settled)
         return idempotency.Outcome(200, "task", card.id, task_view(conn, card, fg, mine))
 
-    return idempotency.run(engine_of(request), request, caller, action)
+    return claim_requests.run(
+        engine_of(request), lambda: idempotency.run(engine_of(request), request, caller, action)
+    )
 
 
-def status_moved(conn: Connection, card: Any, project_state: str, actor: Any) -> None:
+class ConfirmIn(Strict):
+    request_id: str
+
+
+class DeclineIn(Strict):
+    request_id: str
+    reason: Any = None  # one of the list, checked by hand after the request (§6.5, step 5)
+
+
+def _claim_request_call(
+    slug: str, card_id: str, request: Request, caller: Caller, decide: Callable[..., Any]
+) -> JSONResponse:
+    """`…/claim/confirm` and `…/claim/decline` (§6.5): the checks in their order, then
+    `decide(conn, mine, card, waiting)`."""
+    fg = reader_of(request)
+
+    def action(conn: Connection) -> idempotency.Outcome:
+        mine = membership(conn, caller, slug)  # an outsider, a non-member: not_found
+        if not mine.may("project:read"):
+            raise not_found()
+        mine = _locked(conn, mine)
+        card = _project_card(conn, mine, card_id)
+        claim_requests.refuse_confirmer(conn, mine, card)
+        card = decide(conn, mine, card)
+        return idempotency.Outcome(200, "task", card.id, task_view(conn, card, fg, mine))
+
+    return claim_requests.run(
+        engine_of(request), lambda: idempotency.run(engine_of(request), request, caller, action)
+    )
+
+
+@router.post("/projects/{owner}/{slug}/tasks/{card_id}/claim/confirm")
+def confirm_claim(
+    slug: str, card_id: str, body: ConfirmIn, request: Request, caller: AnyCaller
+) -> JSONResponse:
+    def decide(conn: Connection, mine: Membership, card: Any) -> Any:
+        waiting = claim_requests.named(conn, card, body.request_id)
+        return claim_requests.confirm(
+            conn, mine.project, card, waiting, mine.row, mine.instance, caller.actor(mine.id)
+        )
+
+    return _claim_request_call(slug, card_id, request, caller, decide)
+
+
+@router.post("/projects/{owner}/{slug}/tasks/{card_id}/claim/decline")
+def decline_claim(
+    slug: str, card_id: str, body: DeclineIn, request: Request, caller: AnyCaller
+) -> JSONResponse:
+    def decide(conn: Connection, mine: Membership, card: Any) -> Any:
+        waiting = claim_requests.named(conn, card, body.request_id)
+        reason = body.reason if body.reason is not None else "declined"
+        if not isinstance(reason, str) or reason not in claim_requests.CONFIRMER_REASONS:
+            raise invalid({"reason": "unknown"})
+        claim_requests.decline(conn, waiting, reason, mine.id, caller.actor(mine.id))
+        return _card(conn, card.id)
+
+    return _claim_request_call(slug, card_id, request, caller, decide)
+
+
+def status_moved(
+    conn: Connection,
+    card: Any,
+    project_state: str,
+    actor: Any,
+    *,
+    settled: list[str] | None = None,
+) -> None:
     """The `task_updated` of a status moved under an event of another kind (a claim, a release,
     a report, a request that blocks or unblocks the card, a holder's isolation or removal): the
     one a card's watchers are reached by (§6.4, §8.2). It follows the event that caused the
-    move. `actor` is None where no member acts."""
+    move. `actor` is None where no member acts. `settled` when the move also settled an
+    outsider's claim request (§6.5): `fields` name `claim_requests` too, and the confirmers of
+    that moment, these tokens, read it besides the card's readers."""
+    fields = ["status"] if settled is None else ["claim_requests", "status"]
     emit(
         conn,
         card.project_id,
         "task_updated",
-        audience(conn, card),
+        list(dict.fromkeys([*audience(conn, card), *(settled or [])])),
         {
             "id": card.id,
-            "fields": ["status"],
+            "fields": fields,
             "status": card.status,
+            **({"claim_requests": []} if settled is not None else {}),
             "history": [],  # the event beside this one is the record of the change
             "project_state": project_state,
         },
@@ -1997,10 +2120,28 @@ def assign(
             _require_assigner(conn, mine, assignee, card.assigned_to, card.claim_holder)
         availability.refuse_coordinator_out(conn, mine, "new assignments")  # after the right
         assignee_row = conn.execute(select(t.membership).where(t.membership.c.id == assignee)).one()
+        # Its owner assigns an outsider's agent nothing, whatever the card (§6.5, "Who
+        # confirms"): before every other check of the call.
+        claim_requests.refuse_placement(conn, mine, assignee_row)
         takes = card.claim_holder is not None and card.claim_holder != assignee
+        waiting = claim_requests.pending(conn, card.id)
+        confirms = waiting is not None and waiting.member_id == assignee
         if body.instance is not None:
             instances.require_active(conn, assignee_row, body.instance, "instance")
-        if body.instance is None and card.assigned_to == assignee:
+        if confirms:
+            # An assign to the requesting agent is its confirmation (§6.5, "Settled by another
+            # call"): by a human confirmer, to the request's instance, after the re-check.
+            assert waiting is not None
+            outsiders.refuse_taking(assignee_row, mine)
+            if not claim_requests.is_confirmer(conn, mine, waiting.owner_id):
+                raise claim_requests.not_a_confirmer()
+            if body.instance is not None and body.instance != waiting.instance:
+                raise invalid({"instance": "not_the_requester"})
+            card = claim_requests.confirm(
+                conn, mine.project, card, waiting, mine.row, mine.instance, caller.actor(mine.id)
+            )
+            chosen = waiting.instance
+        elif body.instance is None and card.assigned_to == assignee:
             # The same team again: its instance stays; a new turn only for a new team.
             chosen = card.assigned_instance
         else:
@@ -2031,7 +2172,8 @@ def assign(
             # An expired claim moves to the assignee (§6.4): a claim on its behalf.
             # Held by exactly one instance: named, or the one the team's rules give,
             # else `instance_required` as on a claim (§6.17, §6.5).
-            # Before the holder's instance is chosen (§6.5, "Until the claim request is built").
+            # Before the holder's instance is chosen (§6.5, "Only a human, or a confirmation,
+            # puts an outsider to work").
             outsiders.refuse_taking(assignee_row, mine)
             instance = chosen or instances.resolve(conn, assignee_row, body.instance, "instance")
             _refuse_paused(conn, assignee, instance)
@@ -2093,10 +2235,15 @@ def assign(
             actor=caller.actor(mine.id),
             subject=("task", card.id),
         )
+        if waiting is not None and not confirms:
+            # An assign to another member declines the waiting request (§6.5, `taken`).
+            claim_requests.taken(conn, card.id, mine.id, caller.actor(mine.id))
         _after_move(conn, mine, caller, before, takes, (assignee, card.claim_instance))
         return idempotency.Outcome(200, "task", card.id, task_view(conn, card, fg, mine))
 
-    return idempotency.run(engine_of(request), request, caller, action)
+    return claim_requests.run(
+        engine_of(request), lambda: idempotency.run(engine_of(request), request, caller, action)
+    )
 
 
 # --- checkpoint and report (§6.4, §6.6) -------------------------------------------------

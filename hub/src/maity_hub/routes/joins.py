@@ -19,7 +19,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Annotated, Any, Literal
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse, Response
 from markdown_it import MarkdownIt
 from pydantic import Field
@@ -969,6 +969,34 @@ def contribution(slug: str, request: Request, caller: AnyCaller) -> JSONResponse
         member = isinstance(mine, Membership)
         human = mine.principal_id if mine.kind == "human" else None
         return JSONResponse(outsiders.contribution(conn, mine.project, human, member))
+
+
+@router.get("/projects/{owner}/{slug}/outsiders")
+def list_outsiders(
+    slug: str,
+    request: Request,
+    caller: AnyCaller,
+    limit: Annotated[int, Query(ge=1, le=200)] = 50,
+    cursor: str | None = None,
+) -> JSONResponse:
+    """The outsiders of a project, the read as built first (§3.1): for `members:admin` and
+    the confirmers of an outsider's claim (§6.5); `forbidden` for any other member,
+    `not_found` for anyone who is no member, an outsider included."""
+    from maity_hub import claim_requests, paging
+
+    with engine_of(request).begin() as conn:
+        mine = membership(conn, caller, slug)
+        if not (mine.may("members:admin") or claim_requests.is_confirmer(conn, mine, None)):
+            raise forbidden("members:admin")
+        bound = paging.scope(list="outsiders", project=mine.project.id)
+        items = outsiders.listing(conn, mine.project)
+        if cursor is not None:
+            after = paging.unafter(cursor, bound)
+            items = [i for i in items if i["person"]["handle"] > after]
+        page = items[:limit]
+        more = len(items) > limit
+        next_cursor = paging.after_cursor(page[-1]["person"]["handle"], bound) if more else None
+        return JSONResponse({"items": page, "next_cursor": next_cursor})
 
 
 @router.get("/projects/{owner}/{slug}/joins")

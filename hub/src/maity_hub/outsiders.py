@@ -12,9 +12,9 @@ Two things live here and nowhere else, so that each is one change (hub/context/j
 - `JOINS_ON` and `joins_open`, the one answer to "may an outsider bring an agent into this
   project now". The gate (`access.gate`), the joins routes and the exchange all ask it.
 - `refuse_taking`, the one check of a card coming to be held by an agent with trust
-  `outside` (§6.5, "Until the claim request is built"): such an agent claims nothing itself,
-  and gets a card only from a human member with `tasks:admin`, who claims it on the agent's
-  behalf (`POST …/claim` with `holder`) or moves an expired claim to it (`assign`).
+  `outside` through another's call (§6.5, "Only a human, or a confirmation, puts an outsider
+  to work"): only a human member with `tasks:admin` gives it a card, and no takeover does. Its
+  own claim is a claim request (`claim_requests`).
 """
 
 from __future__ import annotations
@@ -94,12 +94,11 @@ def contribution(
     """`GET …/contribution` (§6.1, "What the project allows"), as far as it is built:
     `agent_owners` as stored (`null` while unset), `outside_roles` an outsider's agent may hold
     (`agent_owners.outside_role_allowed`), `looking_for_coders` and `outside_claims` as the
-    policy reads them, `open_cards` (`0`: until the claim request is built, an outsider's
-    agent claims no card, §6.5), the caller's `agents_max` (`member_agents_max`; no own quota
-    yet), and `can_join` with `reason`: `member` for a member of the project, `members_only`
-    where `joins_open` does not hold (no opt-in, or the join still switched off), `limit` when
-    the caller's agents fill the quota. Not built yet: `sponsor_url` and the reason
-    `blocked`."""
+    policy reads them, `open_cards` (`open_cards` below), the caller's `agents_max`
+    (`member_agents_max`; no own quota yet), and `can_join` with `reason`: `member` for a
+    member of the project, `members_only` where `joins_open` does not hold (no opt-in, or
+    the join still switched off), `limit` when the caller's agents fill the quota. Not built
+    yet: `sponsor_url` and the reason `blocked`."""
     from maity_hub import policy
     from maity_hub.routes import joins  # the member rule's count, one rule for both
 
@@ -120,43 +119,175 @@ def contribution(
         ],
         "looking_for_coders": policy.looking_for_coders(project),
         "outside_claims": policy.outside_claims(project),
-        "open_cards": 0,
+        "open_cards": open_cards(conn, project),
         "agents_max": limit,
         "can_join": reason is None,
         "reason": reason,
     }
 
 
+def listing(conn: Connection, project: Any) -> list[dict[str, Any]]:
+    """`GET …/outsiders` as built first (§3.1, "The outsiders of a project"): every human who
+    is no member and has an agent, an open first join or a pending claim request in the
+    project, by handle; `agents_max` and `blocked` `null` until those settings are built."""
+    from maity_hub import avatars, clock
+    from maity_hub.views import principal_ids
+
+    m, p, j, c = t.membership.c, t.agent_profile.c, t.join_link.c, t.claim_request.c
+    agents = conn.execute(
+        select(m.id, m.agent_id, m.trust, m.role, m.isolated_since, p.handle, p.owner_id)
+        .join(t.agent_profile, p.id == m.agent_id)
+        .where(m.project_id == project.id, m.active.is_(True))
+    ).all()
+    joins = conn.execute(
+        select(j.id, j.created_by).where(
+            j.project_id == project.id,
+            j.placement_id.is_(None),
+            j.used_at.is_(None),
+            j.burned_at.is_(None),
+            j.revoked_at.is_(None),
+            j.expires_at > clock.now(),
+        )
+    ).all()
+    waiting = conn.execute(
+        select(c.id, c.task_id, c.member_id, c.owner_id).where(
+            c.project_id == project.id, c.pending.is_(True)
+        )
+    ).all()
+    members = set(
+        conn.execute(
+            select(m.human_id).where(
+                m.project_id == project.id, m.active.is_(True), m.human_id.is_not(None)
+            )
+        ).scalars()
+    )
+    people = (
+        {a.owner_id for a in agents if a.trust == OUTSIDE}
+        | {row.created_by for row in joins}
+        | {row.owner_id for row in waiting}
+    ) - members
+    if not people:
+        return []
+    humans = {
+        row.id: row for row in conn.execute(select(t.human).where(t.human.c.id.in_(sorted(people))))
+    }
+    pictures = avatars.urls(conn, sorted(people))
+    owned = {a.id: a for a in agents if a.owner_id in people}
+    held = conn.execute(
+        select(t.card.c.id, t.card.c.claim_holder).where(
+            t.card.c.project_id == project.id, t.card.c.claim_holder.in_(sorted(owned) or [-1])
+        )
+    ).all()
+    ids = principal_ids(conn, [*owned, *(row.member_id for row in waiting)])
+    items = []
+    for human_id in people:
+        human = humans.get(human_id)
+        if human is None or human.deleted_at is not None:
+            continue
+        mine = sorted((a for a in owned.values() if a.owner_id == human_id), key=lambda a: a.handle)
+        claims = [
+            {
+                "task_id": row.id,
+                "member_id": ids.get(row.claim_holder),
+                "pending": False,
+                "request_id": None,
+            }
+            for row in held
+            if owned[row.claim_holder].owner_id == human_id
+        ] + [
+            {
+                "task_id": row.task_id,
+                "member_id": ids.get(row.member_id),
+                "pending": True,
+                "request_id": row.id,
+            }
+            for row in waiting
+            if row.owner_id == human_id
+        ]
+        items.append(
+            {
+                "person": {
+                    "handle": human.handle,
+                    "display_name": human.display_name,
+                    "avatar_url": pictures.get(human_id),
+                },
+                "agents": [
+                    {
+                        "id": a.agent_id,
+                        "handle": a.handle,
+                        "trust": a.trust,
+                        "role": a.role,
+                        "isolated": a.isolated_since is not None,
+                    }
+                    for a in mine
+                ],
+                "open_joins": sorted(row.id for row in joins if row.created_by == human_id),
+                "claims": sorted(claims, key=lambda x: (x["task_id"], x["member_id"] or "")),
+                "agents_max": None,
+                "blocked": None,
+            }
+        )
+    return sorted(items, key=lambda item: item["person"]["handle"])
+
+
+def open_cards(conn: Connection, project: Any) -> int:
+    """`open_cards` of "What the project allows" (§6.1): the `open` cards an outsider's agent
+    may claim under `looking_for_coders`: those with `open_to_outsiders` under `per_card`,
+    every `open` card under `all`, none under `off`."""
+    from sqlalchemy import func
+
+    from maity_hub import policy, public_cards
+
+    looking = policy.looking_for_coders(project)
+    if looking == "off":
+        return 0
+    query = (
+        select(func.count())
+        .select_from(t.card)
+        .where(
+            t.card.c.project_id == project.id,
+            t.card.c.status == "open",
+            public_cards.outside_clause(),  # only cards an outsider reads (§2.3)
+        )
+    )
+    if looking == "per_card":
+        query = query.where(t.card.c.open_to_outsiders.is_(True))
+    return int(conn.execute(query).scalar_one())
+
+
 def handed_only_by_a_human(row: Any) -> bool:
     """Whether the membership `row` gets a card only from a human of the project with
-    `tasks:admin` (§6.5, "Until the claim request is built"): trust `outside`. The one test
+    `tasks:admin` or a confirmation (§6.5, "Only a human, or a confirmation, puts an outsider
+    to work"): trust `outside`. The one test
     `refuse_taking` and the cover walk (`cover.cover_order`, which skips such an entry, §6.12)
     both ask."""
     return bool(row.trust == OUTSIDE)
 
 
 def refuse_taking(holder: Any, by: Any, *, takeover: bool = False) -> None:
-    """The interim of §6.5, "Until the claim request is built" (req-yzt08c2qgx6g): the one
-    check of a card coming to be held by a membership with trust `outside`. `holder` is the
-    membership row that would hold it, `by` the caller's `Membership`; anyone else's card
-    passes untouched. Refused with `forbidden`:
+    """§6.5, "Only a human, or a confirmation, puts an outsider to work": the one check of a
+    card coming to be held by a membership with trust `outside` through another's call (its
+    own claim is a claim request, `claim_requests`). `holder` is the membership row that
+    would hold it, `by` the caller's `Membership`; anyone else's card passes untouched.
+    Refused with `forbidden`:
 
-    - `not_open_to_outsiders` for its own claim, and for a takeover that would leave it
-      holding the card, whoever starts it;
+    - `not_open_to_outsiders` for a takeover that would leave it holding the card, whoever
+      starts it;
     - `humans_only` when an agent gives it the card (a claim with `holder`, an `assign` that
-      moves an expired claim), an admin agent and the coordinator's agent included;
+      moves an expired claim or confirms its request), an admin agent and the coordinator's
+      agent included;
     - `details.scope: tasks:admin` for a human without it (a manager's or a lead's reach).
 
-    So a card reaches such an agent only from a human member with `tasks:admin`; cover hands
-    it none (`handed_only_by_a_human`)."""
+    So a card reaches such an agent only from a human member with `tasks:admin`, or by a
+    confirmation; cover hands it none (`handed_only_by_a_human`). The human who owns it is
+    refused before this (`claim_requests.refuse_placement`)."""
     if not handed_only_by_a_human(holder):
         return
-    if takeover or holder.id == by.id:
+    if takeover:
         raise ApiError(
             403,
             "forbidden",
-            "an outsider's agent takes no card itself; a human of the project with "
-            "tasks:admin assigns it one",
+            "no takeover leaves a card with an outsider's agent; it asks with its own claim",
             {"reason": "not_open_to_outsiders"},
         )
     if by.kind != "human":

@@ -143,7 +143,8 @@ def _receiver(conn: Connection, mine: Membership, to: str | None) -> tuple[Any, 
     from maity_hub import outsiders
 
     if to is None:
-        # An outsider's agent takes no card over (§6.5, "Until the claim request is built").
+        # An outsider's agent takes no card over (§6.5, "Only a human, or a confirmation, puts
+        # an outsider to work").
         outsiders.refuse_taking(mine.row, mine, takeover=True)
         _refuse_paused(conn, mine.id, mine.instance)  # its own takeover is new work too
         return mine.row, mine.instance

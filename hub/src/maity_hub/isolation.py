@@ -154,6 +154,9 @@ def isolate(
     )
     released = release_claims(conn, target.id)
     takeovers.membership_removed(conn, target.id, actor)  # no party any more (§6.19)
+    from maity_hub import claim_requests
+
+    claim_requests.member_left(conn, target.id, "isolated", actor)  # its waiting claims (§6.5)
     group_chats.membership_removed(conn, target, actor, human_id, REASON)
     if target.agent_id is not None:
         from maity_hub import cross_chats

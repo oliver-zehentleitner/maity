@@ -463,6 +463,9 @@ def _view(conn: Connection, row: Any, known: _Known) -> dict[str, Any]:
         "held": list(row.held or []),  # the agents `to` reached without their owner's yes
         "action": _action_view(row),
         "report": _report_view(known, row),  # set by the hub only (§16.8)
+        # An outsider's claim request (§6.5): the lapse's decision and the owner's notice.
+        "claim_request_id": row.claim_request_id,
+        "claim_notice": row.claim_notice,
     }
 
 
@@ -1752,8 +1755,10 @@ def answer(
         if mine.project.owner_org_id != found.project.owner_org_id:
             raise orgs.project_moved()  # moved meanwhile: its new owner is unlocked
         row = _project_request(conn, mine, request_id)
-        if row.filed_by == "hub":
-            raise not_found()  # no asker reads a hub notice through the project (§7)
+        # No asker reads a hub notice through the project (§7); the decision an outsider's
+        # waiting claim request files to `trust:admin` is answered there (§6.5, "The lapse").
+        if row.filed_by == "hub" and (row.personal or row.claim_request_id is None):
+            raise not_found()
         if row.personal:  # answered by its human through POST /requests/{id}/answer (§7)
             # `self_answer` is the membership's: every instance of the asking agent asked it.
             if inbox.is_asker(row, mine):
@@ -1869,6 +1874,8 @@ def answer(
     except proposals.Stale as stale:
         # The go no longer applies: the request is withdrawn, and nothing else changes.
         with events.transaction(engine_of(request)) as conn:
+            if stale.then is not None:
+                stale.then(conn)
             close_request(conn, stale.request_id, "withdrawn", None, reason=stale.reason)
         raise stale.error from None
 
@@ -3084,11 +3091,20 @@ SEEN = [{"id": "seen", "label": "Seen", "detail": None}]
 
 
 def file_hub_notice(
-    conn: Connection, project_id: str, member_id: int, agent_id: str, title_text: str, summary: str
+    conn: Connection,
+    project_id: str,
+    member_id: int,
+    agent_id: str,
+    title_text: str,
+    summary: str | None,
+    *,
+    task_id: str | None = None,
+    claim_notice: dict[str, Any] | None = None,
 ) -> str:
     """A notice the hub files to the owner of agent profile `agent_id` on the agent's
     behalf (`filed_by: hub`, §7): class `info`, one option `seen`, `asked_by` the agent's
-    member with no instance. Its events reach the owner only, and only when a member."""
+    member with no instance. Its events reach the owner only, and only when a member. The
+    notice of an outsider's claim request carries the card and `claim_notice` (§6.5)."""
     owner = conn.execute(
         select(t.agent_profile.c.owner_id).where(t.agent_profile.c.id == agent_id)
     ).scalar_one()
@@ -3110,6 +3126,8 @@ def file_hub_notice(
                 "filed_by": "hub",
                 "asked_by": member_id,
                 "asked_session_id": None,
+                "task_id": task_id,
+                "claim_notice": claim_notice,
                 "while_open": "wait",
                 "status": "open",
                 "created_at": clock.now(),
@@ -3124,6 +3142,61 @@ def file_hub_notice(
         "request_created",
         _asker_audience(conn, row),
         _payload(row, request_view(conn, row)),
+        subject=("request", request_id),
+    )
+    return request_id
+
+
+def file_lapse(
+    conn: Connection,
+    project_id: str,
+    title_text: str,
+    proposal: dict[str, Any],
+    *,
+    to: inbox.Addressee,
+    options: list[dict[str, str]],
+    task_id: str,
+    claim_request_id: str,
+    humans_only: bool,
+) -> str:
+    """The `decision` request a waiting claim request of an outsider's agent files to
+    `trust:admin` once it waited past the window (§6.5, "The lapse"): `filed_by: hub`, no
+    asker, `claim_request_id` set, `while_open: proceed_provisionally`, its two replies
+    settled by the proposal's kind (`claim_requests`)."""
+    proposals.check_kind(proposal)
+    request_id = new_id("request")
+    conn.execute(
+        insert(t.request).values(
+            {
+                "id": request_id,
+                "project_id": project_id,
+                "class": "decision",
+                "title": title_text[: t.TITLE],
+                "summary": None,
+                "options": options,
+                "priority": "normal",
+                "to_kind": to.kind,
+                "to_member": to.member,
+                "to_role": to.role,
+                "filed_by": "hub",
+                "asked_by": None,
+                "asked_session_id": None,
+                "task_id": task_id,
+                "claim_request_id": claim_request_id,
+                "proposal": proposal,
+                "humans_only": humans_only,
+                "while_open": "proceed_provisionally",
+                "status": "open",
+                "created_at": clock.now(),
+            }
+        )
+    )
+    emit(
+        conn,
+        project_id,
+        "request_created",
+        _audience_of(conn, project_id, to),
+        request_view(conn, _row(conn, request_id)),
         subject=("request", request_id),
     )
     return request_id

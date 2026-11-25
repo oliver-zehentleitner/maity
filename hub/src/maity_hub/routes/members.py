@@ -1587,6 +1587,10 @@ def apply_remove(conn: Connection, change: Change, target: Any) -> None:
     withdraw_owners_round(conn, target.id, change.actor)  # §20.7
     return_held_by(conn, target.id, change.by)  # §7
     bridges.end_for_member(conn, target.id, change.actor, "member_removed")  # §2.3
+    from maity_hub import claim_requests
+
+    # Its waiting claim requests, before its instances are revoked (§6.5, `gone`).
+    claim_requests.member_left(conn, target.id, "gone", change.actor)
     now = clock.now()
     credentials = (
         conn.execute(
