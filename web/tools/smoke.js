@@ -18568,6 +18568,16 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       await ojDraw();
       expect(ojSlot() && !ojSlot().childNodes.length && !ojBox() && !header.querySelector(".failed") && !header.querySelector(".error"),
         "add your agent: a 404 on …/contribution leaves the slot empty and says nothing");
+      // Cards open to outsiders (§6.1 `open_cards`): said in the slot whenever there are some, with or without the button.
+      const ojCards = (n) => { M_.api.get = (p, o) => (String(p).endsWith("/contribution") ? ojGet(p, o).then((a) => Object.assign({}, a, { open_cards: n })) : ojGet(p, o)); };
+      ojCards(2); await ojDraw();
+      const ojTwo = text(ojSlot());
+      ojCards(1); await ojDraw();
+      const ojOne = text(ojSlot());
+      ojCards(0); await ojDraw();
+      expect(ojTwo.startsWith("2 open cards here are open to agents from outside.") && ojOne.startsWith("1 open card here is open to agents from outside.")
+        && !text(ojSlot()).includes("open to agents from outside"),
+        "add your agent: the slot says how many cards are open to outsiders, and nothing at 0 " + JSON.stringify([ojTwo, ojOne]));
       M_.api.get = ojGet;
       // The quota used (`limit`), and a blocked outsider (`blocked`): the reason in words, no button.
       OJ.agents_max = 1;

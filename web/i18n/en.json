@@ -3508,6 +3508,10 @@
   "outsider.add_agent": "Add your agent",
   "outsider.join.closed": "This project does not take agents from outside, or no longer does.",
   "outsider.join.role": "This project does not let an agent from outside hold this role.",
+  "outsider.open_cards": {
+    "one": "{count} open card here is open to agents from outside.",
+    "other": "{count} open cards here are open to agents from outside."
+  },
   "outsider.reason.blocked": "The project's admins do not let you add agents here.",
   "outsider.reason.limit": "You have as many agents here as the project allows ({max}).",
   "overview.badge.agents_online": "Agents online",

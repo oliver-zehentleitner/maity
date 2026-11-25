@@ -29,6 +29,10 @@ window.Maity = window.Maity || {};
     const header = document.getElementById("header");
     if (!answer || !header || !header.contains(slot)) return;
     const roles = Array.isArray(answer.outside_roles) ? answer.outside_roles.filter((r) => typeof r === "string") : [];
+    // How many open cards an outsider's agent may ask to claim here (§6.1 `open_cards`): said whenever there are some.
+    if (Number.isInteger(answer.open_cards) && answer.open_cards > 0) {
+      append(slot, h("span", { class: "outsider-open-cards", role: "note" }, M.t("outsider.open_cards", { count: answer.open_cards })));
+    }
     if (answer.can_join !== true || !roles.length) {
       if (Object.hasOwn(REASONS, answer.reason || "")) append(slot, h("span", { class: "outsider-reason", role: "note" }, REASONS[answer.reason](answer)));
       return;
