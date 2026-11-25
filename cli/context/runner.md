@@ -3956,7 +3956,10 @@ rights, the runner sets the value `clone`, and it stays in `.git/maity`,
 made through the descriptor. A directory inside the clone, a link or a
 relative path is refused. Without the device, the inode or that
 variable maity runs no git: a session started by an older runner needs
-a restart. On Windows (local mode) no directory opens, so device and
+a restart. A `.git` renamed or replaced is a different case: the pair is
+compared at every call, so maity refuses only as long as it stays so,
+and runs git again without a restart once the original directory is
+back. On Windows (local mode) no directory opens, so device and
 inode are compared by name. The check of the clone (`_inspect`) and the objects
 and index git reads still go through the name `.git`: under an exchange
 the check reads the replacement and passes on only a plain clone's keys,
@@ -3981,10 +3984,12 @@ both, at the cost of two spellings (GNU's `-c`, BSD's and macOS's `-f`).
 - Denying writes to `.git`: the whole directory turns read-only, and
   commit, fetch and push write refs, the index, objects and logs there.
 - Denying writes to the `.git` entry itself, in the clone's root
-  (tsk-er1nymh4te1h): it breaks commit and fetch, and whether a deny of
-  that one name could leave them working needs a check in a real
-  sandbox, which nobody ran; the pin already keeps maity outside the
-  sandbox off a renamed or replaced `.git`.
+  (tsk-er1nymh4te1h), so that it cannot be renamed: a recursive deny on
+  `.git` blocks writes to everything under it, which breaks commit and
+  fetch (the alternative above), but a deny of the entry alone was never
+  tried in a real sandbox, so its effect on git is unknown
+  (unverified). Not chosen now for that reason; the pin already keeps
+  maity outside the sandbox off a renamed or replaced `.git`.
 - Making `.git` a mount point in the sandbox settings (a rename then
   fails with EBUSY): the settings cannot ask for it.
 - Recording the inode without the device (as shipped with #1683, until
@@ -5164,8 +5169,9 @@ last name with `O_NOFOLLOW` and `O_NONBLOCK` and reads only a regular file
 with one link. Reason: maity runs outside the sandbox, and any name maity
 looks up twice can point elsewhere the second time. This covers every
 directory and file below the clone's root. `.git` itself is the one
-`clonecheck.opened_git` checked against the inode the runner recorded at
-the start (#1683): the walk compares with that descriptor, and the
+`clonecheck.opened_git` checked against the device and inode the runner
+recorded at the start (#1683 pinned the inode, tsk-er1nymh4te1h added
+the device): the walk compares with that descriptor, and the
 runner's record is read through it, never through the name `.git` again
 (round 5 had exchanged `.git` for a decoy). Round 3 swapped a
 directory between a check and an open by name. Round 4 exchanged a
@@ -5201,8 +5207,10 @@ own `PATH`, where `maity gh` looks it up at each call (the entry
 Closed gap (review of #1663, round 5): under the harness's sandbox, code
 that can write the clone's root could exchange `.git` with a directory
 of its own, and with it the record that names gh. Since #1683
-(tsk-er1nymh4te1h) the runner records `.git`'s inode at launch and maity
-opens `.git` once from the root's descriptor, refusing a different one;
+(tsk-er1nymh4te1h) the runner records `.git`'s inode at launch (and its
+device since a later change on the same card), and maity opens `.git`
+once from the root's descriptor, refusing a directory with another
+device or inode;
 `maity gh` reads the record and compares the walk through that
 descriptor.
 
@@ -6114,9 +6122,9 @@ as the clone's. Walking down from the anchor refuses that swap.
   killed `sudo` leaves them waiting.
 - `dd` with `iflag=nofollow,nonblock`: macOS's `dd` has no `iflag`
   (aa29acab).
-- Comparing `.git`'s inode with the one seen at the listing (as
-  `MAITY_GIT_INODE` does for git's own runs): it covers `.git` alone,
-  not the other directories on the way to a log or the limit file, and
+- Comparing `.git`'s device and inode with those seen at the listing (as
+  `MAITY_GIT_DEVICE` and `MAITY_GIT_INODE` do for git's own runs): it
+  covers `.git` alone, not the other directories on the way to a log or the limit file, and
   leaves a window between the comparison and the open.
 - Walking from `/` without following any link: refuses ordinary
   configured paths that run through a link (`/home` on some systems,
