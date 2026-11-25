@@ -816,10 +816,14 @@ manager's change sets neither. The upgrade marks such an open proposal
 `role_gone`, and every `go` on it is refused as `409 role_unknown`.
 Before the upgrade that answer came only from another owner's consent
 naming the removed `role`; an admin agent's change naming a removed
-`role:` token in `substitutes` was refused as `400 invalid`, and the
-other cases applied the change as filed, or for an admin agent's change
-to another owner's agent passed the role on to that owner's consent
-(A2733 P2, A2742 P2). The common 409 is new, and chosen because the
+`role:` token in `substitutes` was refused as `400 invalid`. An admin
+agent's change naming a removed `role` was applied as filed, except
+that for an outsider's agent under `agent_owners: anyone` the `go` was
+refused as `400 invalid` (`role: outside_owner`, since
+`admin_agents.py` checks the assignment before it files any consent),
+and for another owner's agent otherwise the `go` passed the role on to
+that owner's consent. A removed `role:` token in another owner's
+consent was applied as filed (A2733 P2, A2742 P2, A2746 P2). The common 409 is new, and chosen because the
 request fails for the same reason on every path.
 That fails closed and keeps the request open for a `no` or a withdrawal,
 and a new change asks again. Rejected: binding every proposal to what
