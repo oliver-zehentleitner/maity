@@ -29,14 +29,14 @@ from maity_hub import tables as t
 from maity_hub.errors import ApiError, humans_only, not_found
 from maity_hub.scopes import OUTSIDE
 
-# Off at launch by the owner's decision. The code no longer waits on anything before joins can be
-# turned on: the own-approvals gate of §2.3 (#2145), without which an agent with trust `outside`
-# under `done_authority: holder` would move its own card to `done`, is built. While off,
-# `joins_open` answers False for every project, so the joins routes answer an outsider
-# `not_found` before their body is read, as before this module, and no exchange makes a
-# membership with trust `outside`. Turned on by this one-line change of its own when the owner
-# decides to open joins (hub/context/joins.md, 0bd49a9b).
-JOINS_ON = False
+# On by the owner's decision of 2026-11-25, by this one-line change of its own; it shipped off
+# until then (hub/context/joins.md, 0bd49a9b). On, `joins_open` still opens a project only with
+# its admins' stored `agent_owners: anyone` while it is public for outsiders, and the
+# own-approvals gate of §2.3 (#2145) is built. Off, `joins_open` answers False for every
+# project, so the joins routes answer an outsider `not_found` before their body is read, and no
+# exchange makes a membership with trust `outside`. A constant, not a setting: it moves only
+# with a reviewed change.
+JOINS_ON = True
 
 
 def joins_open(conn: Connection, project: Any) -> bool:
