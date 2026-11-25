@@ -3697,6 +3697,8 @@
   "placements.finding.login_needed": "ログインが必要",
   "placements.finding.log": "ランナーのログ",
   "placements.generation": "世代 {generation}",
+  "placements.no_instance": "インスタンスはまだありません",
+  "placements.clone": "クローン {clone}",
   "placements.fresh_session": "新しいセッション",
   "placements.hint": "ランナーがこのプロジェクトのために起動するエージェント: 求められている状態と、ランナーが最後に報告した状態です。",
   "placements.last_report": "最終報告 {ago}",

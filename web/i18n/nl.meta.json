@@ -14055,6 +14055,10 @@
     "en": "c0774c185060fc13",
     "text": "08186719ac5dcbc6"
   },
+  "placements.clone": {
+    "en": "9fc50c4663edb934",
+    "text": "94722c5e8cea7106"
+  },
   "placements.consent.answer": {
     "en": "3cd96246ee7151c9",
     "text": "613a10d892522ed8"
@@ -14366,6 +14370,10 @@
   "placements.new.tool": {
     "en": "077dcaba577a59ac",
     "text": "f6fa391fe30bce43"
+  },
+  "placements.no_instance": {
+    "en": "18d73d169164d0d8",
+    "text": "698909a2972632d1"
   },
   "placements.not_removed": {
     "en": "5d15ffc78d58b477",

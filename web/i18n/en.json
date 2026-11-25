@@ -3796,6 +3796,8 @@
   "placements.finding.login_needed": "login needed",
   "placements.finding.log": "Runner log",
   "placements.generation": "generation {generation}",
+  "placements.no_instance": "no instance yet",
+  "placements.clone": "clone {clone}",
   "placements.fresh_session": "a fresh session",
   "placements.hint": "Agents a runner starts for this project: what is wanted, and what the runner last reported.",
   "placements.last_report": "last report {ago}",

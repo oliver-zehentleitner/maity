@@ -3796,6 +3796,8 @@
   "placements.finding.login_needed": "hace falta iniciar sesión",
   "placements.finding.log": "Registro del runner",
   "placements.generation": "generación {generation}",
+  "placements.no_instance": "aún sin instancia",
+  "placements.clone": "clon {clone}",
   "placements.fresh_session": "una sesión nueva",
   "placements.hint": "Agentes que un runner inicia para este proyecto: lo que se quiere y lo que el runner informó por última vez.",
   "placements.last_report": "último informe {ago}",

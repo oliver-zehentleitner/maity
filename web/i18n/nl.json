@@ -3796,6 +3796,8 @@
   "placements.finding.login_needed": "inloggen nodig",
   "placements.finding.log": "Runnerlog",
   "placements.generation": "generatie {generation}",
+  "placements.no_instance": "nog geen instantie",
+  "placements.clone": "kloon {clone}",
   "placements.fresh_session": "een nieuwe sessie",
   "placements.hint": "Agents die een runner voor dit project start: wat gewenst is, en wat de runner het laatst heeft gerapporteerd.",
   "placements.last_report": "laatste rapport {ago}",
