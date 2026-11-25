@@ -665,6 +665,22 @@ window.Maity = window.Maity || {};
     let watch = null;
     let uncover = null;
     const isFull = () => held !== null;
+    // The full pane covers what is seen (tsk-ftrkm6wda8yq): the visual viewport, which a phone's
+    // keyboard shrinks while 100dvh does not, so the composer stays above the keyboard. Without a
+    // visualViewport the stylesheet's 100dvh holds; on a desktop both are the window.
+    let vv = null; // the visual viewport watched while full
+    const fitFull = () => {
+      if (!vv || !pane.style || !pane.style.setProperty) return;
+      pane.style.setProperty("--chat-full-h", Math.round(vv.height) + "px");
+      pane.style.setProperty("--chat-full-top", Math.round(vv.offsetTop) + "px");
+    };
+    const unfitFull = () => {
+      if (!vv) return;
+      vv.removeEventListener("resize", fitFull);
+      vv.removeEventListener("scroll", fitFull);
+      vv = null;
+      if (pane.style && pane.style.removeProperty) { pane.style.removeProperty("--chat-full-h"); pane.style.removeProperty("--chat-full-top"); }
+    };
     const label = () => {
       const text = isFull() ? M.t("chat.full.leave") : M.t("chat.full.enter");
       button.setAttribute("aria-label", text);
@@ -688,6 +704,7 @@ window.Maity = window.Maity || {};
       if (fullEnd === end) fullEnd = null;
       root.classList.toggle("chat-full", false);
       pane.classList.toggle("chat-full-pane", false);
+      unfitFull();
       if (uncover) { uncover(); uncover = null; }
       document.removeEventListener("keydown", onKey);
       if (watch) { watch.disconnect(); watch = null; }
@@ -702,6 +719,9 @@ window.Maity = window.Maity || {};
       if (!fullHooked && ctx.onDispose) { fullHooked = true; ctx.onDispose(endFull); }
       root.classList.toggle("chat-full", true);
       pane.classList.toggle("chat-full-pane", true);
+      vv = window.visualViewport || null;
+      if (vv) { vv.addEventListener("resize", fitFull); vv.addEventListener("scroll", fitFull); }
+      fitFull();
       uncover = coverRest(pane);
       document.addEventListener("keydown", onKey);
       // Chats replaces a pane in place: the one that left takes the full screen with it.

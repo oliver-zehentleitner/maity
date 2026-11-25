@@ -4033,45 +4033,50 @@ SEND_IN_VIEW = """() => {
 
 
 def chat_keyboard_send(run: Run, browser) -> None:
-    """Send while a phone's keyboard is open (the maintainer on a12, tsk-ftrkm6wda8yq), in fixture mode:
-    the field focused at 390 x 844, then the window shrunk as an open keyboard leaves it, in a direct and
-    a group chat. At 390 x 400 only the field is brought into view, as the browser does for a focused
-    field, and Send is measured where it then stands: inside the window, not covered, in the composer's
-    one row beside Attach, taking the click. At 390 x 300 the page may need a scroll to reach it (a short
-    window under the heading and composer scrolls, js/chat.js fit): there Send is scrolled to and must be
-    in Attach's row, uncovered and clickable."""
+    """Send while a phone's keyboard is open (the maintainer on a12, tsk-ftrkm6wda8yq), in fixture mode,
+    in a direct and a group chat: the field focused at 390 x 844, then the window shrunk as an open
+    keyboard leaves it. Send is never scrolled to: only the field is brought into view, as the browser
+    does for a focused field, and Send is measured where it then stands: inside the window, not covered,
+    in the composer's one row beside Attach, taking the click.
+    - Full screen (the reported case), at 390 x 400 and 390 x 300: the pane is sized from the visual
+      viewport (js/chat.js fullScreen). Headless Chromium shrinks the layout and the visual viewport
+      together, so this proves the sizing, not an Android keyboard, which shrinks the visual one only.
+    - The chat in the page, at 390 x 400 only. At 390 x 300 the page's sticky header (about 200 px on a
+      phone) leaves the composer no room below it, and a header that scrolls away is a layout change
+      beyond this card."""
     run.step("fixtures: Send stays on screen, in Attach's row, while a phone's keyboard is open")
     index = (WEB / "index.html").as_uri()
     context = browser.new_context(viewport={"width": 390, "height": 844})
     page = context.new_page()
     errors: list[str] = []
     page.on("pageerror", lambda err: errors.append(str(err)))
+    cases = [(mode, height) for mode, heights in (("full", (400, 300)), ("page", (400,))) for height in heights]
     try:
         for route in ("#/maintainer/maity/chat/agt-a", "#/maintainer/maity/chat/cnv-0007"):
-            for height in (400, 300):
+            for mode, height in cases:
                 page.set_viewport_size({"width": 390, "height": 844})
                 page.goto("about:blank")
                 page.goto(f"{index}?lang=en{route}")
                 field = page.locator(".chat-layout.open .chat-pane .compose textarea")
                 field.wait_for()
                 page.evaluate("() => { const b = document.querySelector('main .signin-banner'); if (b) b.remove(); }")
+                if mode == "full":
+                    page.locator(".chat-layout.open .chat-pane .chat-full-toggle").click()
+                    page.locator("html.chat-full .chat-pane.chat-full-pane").wait_for()
                 field.click()
                 field.fill("When is the deploy?")
                 page.set_viewport_size({"width": 390, "height": height})
                 page.wait_for_timeout(400)
                 field.scroll_into_view_if_needed()
                 send = page.locator('.chat-layout.open .chat-pane .compose-actions button[type="submit"]')
-                if height == 300:
-                    # Too short for heading and composer: the page scrolls to it (see the docstring).
-                    send.scroll_into_view_if_needed()
                 page.wait_for_timeout(200)
                 m = page.evaluate(SEND_IN_VIEW)
-                where = f"{route} at 390x{height} with the field focused"
+                where = f"{route} {mode} at 390x{height} with the field focused"
                 assert m["send"], f"{where}: no Send"
                 assert m["send"]["height"] >= 44 and m["send"]["top"] >= -0.5 and m["send"]["bottom"] <= m["vh"] + 0.5, f"{where}: Send at {m}"
                 assert not m["covered"], f"{where}: something covers Send: {m}"
                 assert m["sameRow"] is True, f"{where}: Send is not in Attach's row, or no Attach: {m}"
-                run.shot(page, f"fixtures-chat-keyboard-{height}-{'group' if 'cnv-' in route else 'direct'}")
+                run.shot(page, f"fixtures-chat-keyboard-{mode}-{height}-{'group' if 'cnv-' in route else 'direct'}")
                 send.click(trial=True)
         assert not errors, errors
     finally:
