@@ -796,6 +796,10 @@ window.Maity = window.Maity || {};
         // the page may scroll.
         px = Math.max(240, floor + HISTORY_LEAST, toFooter);
       }
+      // The pane's floor, its parts but the history (tsk-ftrkm6wda8yq): whatever --chat-h says, the
+      // composer's last row stays in the pane rather than past its end.
+      const least = Math.ceil(Math.max(0, floor)) + "px";
+      if (!layout.style.getPropertyValue || layout.style.getPropertyValue("--chat-min") !== least) layout.style.setProperty("--chat-min", least);
       const value = Math.max(0, px) + "px";
       if (layout.style.getPropertyValue && layout.style.getPropertyValue("--chat-h") === value) return;
       layout.style.setProperty("--chat-h", value);

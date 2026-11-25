@@ -983,6 +983,7 @@ def main() -> int:
                     chat_height_views(run, browser)
                     chat_phone_views(run, browser)
                     chat_phone_head(run, browser)
+                    chat_keyboard_send(run, browser)
                     chat_bubble_width(run, browser)
                     paths_views(run, browser)
                     notification_sessions_layout(run, browser)
@@ -4017,6 +4018,59 @@ def chat_height_views(run: Run, browser) -> None:
             run.shot(page, f"fixtures-chat-{width}")
         finally:
             context.close()
+
+
+SEND_IN_VIEW = """() => {
+  const send = document.querySelector('.chat-layout.open .chat-pane .compose-actions button[type="submit"]');
+  const attach = document.querySelector('.chat-layout.open .chat-pane .compose-actions .attach-button');
+  if (!send) return { send: null };
+  const r = send.getBoundingClientRect(), vh = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+  const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+  const a = attach ? attach.getBoundingClientRect() : null;
+  return { send: { top: r.top, bottom: r.bottom, height: r.height }, vh, covered: !(hit && (hit === send || send.contains(hit))),
+           sameRow: a ? Math.abs((a.top + a.bottom) / 2 - (r.top + r.bottom) / 2) <= Math.max(a.height, r.height) / 2 : null };
+}"""
+
+
+def chat_keyboard_send(run: Run, browser) -> None:
+    """Send while a phone's keyboard is open (the maintainer on a12, tsk-ftrkm6wda8yq), in fixture mode:
+    the field focused at 390 x 844, then the window shrunk to 390 x 400 and 390 x 300, as an open keyboard
+    leaves it, in a direct and a group chat. Send stays in the composer's one row beside Attach, inside
+    the window, not covered by anything, and takes the click."""
+    run.step("fixtures: Send stays on screen, in Attach's row, while a phone's keyboard is open")
+    index = (WEB / "index.html").as_uri()
+    context = browser.new_context(viewport={"width": 390, "height": 844})
+    page = context.new_page()
+    errors: list[str] = []
+    page.on("pageerror", lambda err: errors.append(str(err)))
+    try:
+        for route in ("#/maintainer/maity/chat/agt-a", "#/maintainer/maity/chat/cnv-0007"):
+            for height in (400, 300):
+                page.set_viewport_size({"width": 390, "height": 844})
+                page.goto("about:blank")
+                page.goto(f"{index}?lang=en{route}")
+                field = page.locator(".chat-layout.open .chat-pane .compose textarea")
+                field.wait_for()
+                page.evaluate("() => { const b = document.querySelector('main .signin-banner'); if (b) b.remove(); }")
+                field.click()
+                field.fill("When is the deploy?")
+                page.set_viewport_size({"width": 390, "height": height})
+                page.wait_for_timeout(400)
+                field.scroll_into_view_if_needed()
+                send = page.locator('.chat-layout.open .chat-pane .compose-actions button[type="submit"]')
+                send.scroll_into_view_if_needed()
+                page.wait_for_timeout(200)
+                m = page.evaluate(SEND_IN_VIEW)
+                where = f"{route} at 390x{height} with the field focused"
+                assert m["send"], f"{where}: no Send"
+                assert m["send"]["height"] >= 44 and m["send"]["top"] >= -0.5 and m["send"]["bottom"] <= m["vh"] + 0.5, f"{where}: Send at {m}"
+                assert not m["covered"], f"{where}: something covers Send: {m}"
+                assert m["sameRow"] is not False, f"{where}: Send is not in Attach's row: {m}"
+                run.shot(page, f"fixtures-chat-keyboard-{height}-{'group' if 'cnv-' in route else 'direct'}")
+                send.click(trial=True)
+        assert not errors, errors
+    finally:
+        context.close()
 
 
 def chat_phone_head(run: Run, browser) -> None:
