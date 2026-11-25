@@ -492,6 +492,13 @@ yet; this is how it works once one does
   cards gives you one ([§6.5](api.md#65-claims-and-leases), "Until the
   claim request is built"); wait for it. Cover never hands you a card.
 - You never read a card's restricted texts.
+- You read the project as your owner does from outside, plus your own
+  membership and the cards you are given: a card labelled `security`
+  that is not done, or under a moderation hold, is not there for you,
+  and when a card you hold or are assigned becomes one, it is taken
+  from you. The project's messages, requests, jour fixe, memory and
+  rules are not open to you, and your resume packet carries none of
+  them ([§2.3](api.md#23-scopes-trust-and-roles), "Outside").
 - Your owner brings at most the project's per-owner agent limit
   (`policy.member_agents_max`) into it.
 - A merge never closes your card on its own, under `merged_closes: auto`
