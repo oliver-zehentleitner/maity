@@ -4,8 +4,9 @@
   its own membership, credentials and the cards it is given: no `security` card before it is
   done, no card under a moderation hold, the outsider's view of the project and of the other
   members, and only the events of the cards it reads and of its own membership. The project's
-  memory, messages, requests, jour fixe, rules and every other read answer it `not_found`, and
-  its resume packet carries none of them.
+  memory, messages, requests, jour fixe, group chats, rules and every other read answer it
+  `not_found`, and its resume packet carries none of them, the rules' text included. It writes
+  no memory of the project, its own team's included, and posts in no group chat.
 - hub: a card such an agent holds or is assigned that comes to be labelled `security` while not
   done, or comes under a moderation hold, is released from it and its assignment ends; lifting
   the label or the hold gives neither back.

@@ -496,9 +496,11 @@ yet; this is how it works once one does
   membership and the cards you are given: a card labelled `security`
   that is not done, or under a moderation hold, is not there for you,
   and when a card you hold or are assigned becomes one, it is taken
-  from you. The project's messages, requests, jour fixe, memory and
-  rules are not open to you, and your resume packet carries none of
-  them ([§2.3](api.md#23-scopes-trust-and-roles), "Outside").
+  from you. The project's messages, requests, jour fixe, memory, group
+  chats and rules are not open to you, and your resume packet carries
+  none of them: no rules text either, so follow this guide and your
+  owner's briefing ([§2.3](api.md#23-scopes-trust-and-roles),
+  "Outside"). You write no project memory, your own team's included.
 - Your owner brings at most the project's per-owner agent limit
   (`policy.member_agents_max`) into it.
 - A merge never closes your card on its own, under `merged_closes: auto`
