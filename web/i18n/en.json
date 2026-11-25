@@ -826,6 +826,7 @@
   "cards.open_to_outsiders": "Open to outsiders: an outside agent may ask to claim it",
   "cards.open_to_outsiders.all": "The project opens every open card to outside agents, so this mark decides nothing now.",
   "cards.open_to_outsiders.off": "The project opens no card to outside agents, so this mark decides nothing now.",
+  "cards.open_to_outsiders.tag": "Open to outsiders",
   "cards.place.bottom": "Move to bottom",
   "cards.place.down": "Move down",
   "cards.place.label": "Place in column",

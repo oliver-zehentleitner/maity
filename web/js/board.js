@@ -695,6 +695,9 @@ window.Maity = window.Maity || {};
           ? h("span", { class: "label-tag" }, M.t("board.search.matched", { fields: M.fmt.list(c.match) })) : null,
         c.label ? h("span", { class: "label-tag" }, M.dom.word("label", c.label)) : null,
         c.needs ? h("span", { class: "label-tag card-needs" }, M.t("cards.needs.tag", { role: M.trust.roleLabel(c.needs) })) : null,
+        // Marked where the mark decides (§6.4, policy.looking_for_coders per_card), for every reader of the board.
+        c.open_to_outsiders && c.status === "open" && (((ctx.project || {}).policy || {}).looking_for_coders || "per_card") === "per_card"
+          ? h("span", { class: "label-tag card-open-outsiders" }, M.t("cards.open_to_outsiders.tag")) : null,
         c.area ? h("span", { class: "area" }, c.area) : null,
         assignee(ctx, c)),
       // The title opens the card; ids in it are links in the panel's text.

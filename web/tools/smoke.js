@@ -15424,6 +15424,14 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await crOpen();
   expect(crBox() && text(crBox()).startsWith("agent-b#k7mq from outside asks to claim it") && !byId("claim-confirm-" + crCard.id) && !byId("claim-decline-" + crCard.id),
     "claim request: shown with who asks; the agent's own owner confirms nothing " + (crBox() && text(crBox())));
+  // The card's mark: shown on an open card marked open to outsiders under per_card, not under all.
+  crCard.open_to_outsiders = true; await crOpen();
+  const crTagged = !!stPanel().querySelector("header .card-open-outsiders");
+  const crPolicy = crFx["maity/project.json"].policy;
+  crPolicy.looking_for_coders = "all"; await crOpen();
+  const crAll = !!stPanel().querySelector("header .card-open-outsiders");
+  delete crPolicy.looking_for_coders; crCard.open_to_outsiders = false;
+  expect(crTagged && !crAll, "board: an open card marked open to outsiders says so under per_card, not under all " + JSON.stringify([crTagged, crAll]));
   crAgent.owner_id = "hum-other";
   await crOpen();
   expect(byId("claim-confirm-" + crCard.id) && byId("claim-decline-" + crCard.id) && byId("claim-decline-reason-" + crCard.id).value === "declined"
