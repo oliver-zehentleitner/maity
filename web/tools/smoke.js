@@ -18235,6 +18235,15 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       + JSON.stringify([M_.route.current().path, tool && tool.getAttribute("href"), !!viView()]));
     expect(otStar() && otStar().getAttribute("aria-pressed") === "false" && otStar().getAttribute("aria-label") === "Star Tool" && otStar().getAttribute("title") === "Star Tool",
       "outsider: this session's dashed tab carries an empty star of its own, the project's id known from its view");
+    // Drawn as a member's tab, only dashed (the maintainer, tsk-q8s9dfjmjsxy): mark, name, state dot from
+    // the project's view, the words for a screen reader; the star last in the same box.
+    const otDot = tool.querySelector("span.dot");
+    const otKids = Array.from(tool.childNodes).map((n) => (n.nodeType === 3 ? "text" : n.getAttribute("class") || n.tagName));
+    expect(otDot && /\bstate-dot-[a-z_]+\b/.test(otDot.getAttribute("class")) && otDot.getAttribute("aria-label")
+      && otKids.indexOf("text") < otKids.findIndex((c) => /\bdot\b/.test(c)) && /visually-hidden/.test(otKids[otKids.length - 1])
+      && /\boutsider-tab\b/.test(tool.parentNode.getAttribute("class") || "")
+      && Array.from(tool.parentNode.childNodes).pop() === otStar(),
+    "outsider: the dashed tab draws a member tab's mark, name and state dot, the star last inside its box " + JSON.stringify(otKids));
     expect(otSession() === "stranger/tool" && JSON.parse(ssStore[SESSION])[0].id === TOOL && !Object.keys(lsStore).some((k) => k.includes("outsider")) && !(lsStore[LOCAL] || "").includes("stranger"),
       "outsider: the dashed tab is kept in sessionStorage with the project's id, not in localStorage " + JSON.stringify([ssStore, Object.keys(lsStore)]));
     expect(JSON.stringify(otShown()) === JSON.stringify([["Overview", "/stranger/tool/overview", true], ["Board", "/stranger/tool/board", false],

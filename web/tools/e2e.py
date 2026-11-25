@@ -5680,7 +5680,10 @@ def report_pages_round(run: Run, browser) -> None:
 
 
 OUTSIDER_TAB = "header nav.switcher a.outsider[data-outsider='owner/e2e-alpha']"
-DASHED = ("(s) => { const e = document.querySelector(s);"
+# The dashed outline is drawn by the tab's box, which holds the link and its star where there is
+# one (tsk-q8s9dfjmjsxy), else by the link alone.
+EDGE = "e => getComputedStyle(e.closest('.outsider-tab') || e).borderTopStyle"
+DASHED = ("(s) => { const a = document.querySelector(s); const e = a && (a.closest('.outsider-tab') || a);"
           " return !!e && getComputedStyle(e).borderTopStyle === 'dashed'; }")
 CONTRIBUTION = "{base}/api/v1/projects/owner/e2e-alpha/contribution"
 
@@ -5787,8 +5790,15 @@ def outsider_tab_round(run: Run, browser) -> None:
     expect(tab).to_have_attribute("aria-current", "page")
     expect(tab).to_have_attribute("href", "/owner/e2e-alpha/overview")
     settle(page, DASHED, OUTSIDER_TAB)
-    assert tab.evaluate("e => getComputedStyle(e).borderTopStyle") == "dashed", "the outsider's tab is not dashed"
-    # The slot for the outsider's own actions: in the head, empty, taking no room.
+    assert tab.evaluate(EDGE) == "dashed", "the outsider's tab is not dashed"
+    # A member's tab, only dashed (the maintainer, tsk-q8s9dfjmjsxy): the project's state dot after the name,
+    # from the project's view the page read, inside the dashed outline.
+    dot = tab.locator("span.dot")
+    expect(dot).to_have_count(1)
+    expect(dot).to_have_class(re.compile(r"\bstate-dot-[a-z_]+\b"))
+    expect(dot).to_be_visible()
+    assert tab.evaluate("e => { const d = e.querySelector('span.dot'); const t = Array.from(e.childNodes).findIndex((n) => n.nodeType === 3);"
+                        " return t >= 0 && Array.from(e.childNodes).indexOf(d) > t; }"), "the state dot does not follow the name"
     slot = page.locator("header .project-state #outsider-actions")
     expect(slot).to_have_count(1)
     expect(slot).to_have_attribute("data-slot", "outsider-add-agent")
@@ -5836,9 +5846,18 @@ def outsider_tab_round(run: Run, browser) -> None:
             expect(star_tab).to_have_count(1)
             # The dashed edge as the stylesheet draws it, waited for before it is read once (tsk-z4ps7cg7ve25).
             settle(fresh, DASHED, OUTSIDER_TAB)
-            assert star_tab.evaluate("e => getComputedStyle(e).borderTopStyle") == "dashed", f"{where}: not dashed"
+            assert star_tab.evaluate(EDGE) == "dashed", f"{where}: not dashed"
             box = star.bounding_box()
             assert box and box["width"] >= 24 and box["height"] >= 24, f"{where}: the star's target is {box}"
+            # Inside the dashed outline, right of the name (the maintainer, tsk-q8s9dfjmjsxy).
+            # filter(has=) looks for its locator inside each box, so it takes the link's own selector,
+            # not OUTSIDER_TAB, which starts at the header and so is inside no box.
+            outline = (fresh.locator("header nav.switcher .outsider-tab")
+                       .filter(has=fresh.locator("a.outsider[data-outsider='owner/e2e-alpha']")).bounding_box())
+            name = star_tab.bounding_box()
+            assert (outline and name and outline["x"] <= box["x"] and box["x"] + box["width"] <= outline["x"] + outline["width"] + 0.5
+                    and outline["y"] <= box["y"] + 0.5 and box["y"] + box["height"] <= outline["y"] + outline["height"] + 0.5
+                    and box["x"] >= name["x"] + name["width"] - 0.5), f"{where}: the star {box} is not inside {outline}, right of {name}"
             settle(fresh, NOT_WIDER, None)
             wide = fresh.evaluate("document.documentElement.scrollWidth - document.documentElement.clientWidth")
             assert wide <= 0, f"{where}: {wide} px wider than the window"
