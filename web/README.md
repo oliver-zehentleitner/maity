@@ -1239,9 +1239,10 @@ instance's humans for the instance admin, by handle: name and handle
 ("(you)" for oneself), whether instance admin, active or disabled, when
 created, last signed in and last seen, and how many projects they are in
 and how many agents they own — counts and times only; being the instance
-admin opens no project, and the view links into none. A search by handle
-or name (case-insensitive, 1–64 characters, read 300 ms after typing
-stops) and a filter by active or disabled ask the hub (`q`, `disabled`);
+admin opens no project, and the view links into none. A search by current
+or earlier handle, name or sign-in address (case-insensitive, 1–64
+characters, read 300 ms after typing stops) asks the hub (`q`); there is
+no filter by disabled accounts while the hub lists none (§16.1).
 **Load more** follows its cursor. Anyone but the instance admin gets
 neither the link nor the list. On a phone each row is a
 card. **Reset two-factor sign-in** on another person's row (§2.8.3) asks a
