@@ -1653,8 +1653,9 @@ window.Maity = window.Maity || {};
   // the project's view gave its id. The star is a button beside the link, not inside it: a
   // link holds no other control. Both sit in one dashed outline (`.outsider-tab`).
   // It draws what a member's tab draws (the maintainer, tsk-q8s9dfjmjsxy): logo, name, lock, state
-  // dot and pill, from the project's view once read (`/me` `starred` carries no state); the dot is
-  // left out while the state is not known.
+  // dot and pill. The logo, the lock (a private project's only) and the state come from the
+  // project's view once read (`/me` `starred` carries no state); the pill comes from the counts
+  // (`pill`). The dot is left out while the state is not known.
   const outsiderViews = {}; // a dashed tab's project view, kept once read while this page lives
   function outsiderTab(ctx, p, pill) {
     const movable = !!p.starred;
