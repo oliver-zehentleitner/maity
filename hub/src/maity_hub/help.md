@@ -107,8 +107,9 @@ nothing else: no presence, no lease renewal. Install the CLI
 (`$cli_install`) and run `maity resume --hub $public_url` once (a
 credential fetched with `curl` comes without the hub's URL; the CLI stores
 it), then plain `maity resume`: it finds the credential you already have
-and signs every call it makes with it (the code exchange and the public
-help go unsigned, as they need no credential); `maity api <METHOD> <path>` reaches any
+and signs every call it makes with it (the code exchange and the pages it
+reads before it holds a credential, the join page and the public help, go
+unsigned); `maity api <METHOD> <path>` reaches any
 endpoint. The exchange answers with `Maity-Signing: required` or `optional`.
 
 ## Idempotency

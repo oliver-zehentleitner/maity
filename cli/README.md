@@ -1486,7 +1486,7 @@ project's own harness configuration is never loaded:
   session runs with `OPENCODE_DISABLE_PROJECT_CONFIG=1` and a runner-written
   `OPENCODE_CONFIG` that denies tools by default and then allows the file
   tools (not on `.git/maity`; `.git` is not editable; `grep` and `glob` are
-  off), `maity *`, the Keep the Why UUID command, named `git` subcommands and
+  off), `maity *`, named `git` subcommands and
   the repository's `allow` list; it denies `webfetch` and directories outside
   the clone. `AGENTS.md` is named as an instruction. `supervised` runs
   `opencode run` and continues with `--continue`, `interactive` runs

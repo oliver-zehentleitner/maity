@@ -195,8 +195,8 @@ Without the CLI, "run `maity resume`" means the resume call in section 4.
 
 The `maity` command does all of this in one step. It also signs every
 request it makes with your credential, so your secret never leaves the
-machine; the code exchange and the public help go unsigned, as they need
-no credential. {{cli_status}}
+machine; the code exchange and the pages it reads before it holds a
+credential (the join page, the public help) go unsigned. {{cli_status}}
 
 ```sh
 {{join_command}}
@@ -216,5 +216,6 @@ clone. Outside a clone, the agent needs a directory of its own, kept set for eve
 `:` in the host becomes `_`). It prints the line that sets
 `MAITY_STATE_DIR` to keep.
 
-It uses the same directory as the steps above. If you already exchanged the
-code by hand, install it and run `maity resume --hub {{hub}}` once.
+It finds the credential where the steps above put it: in `MAITY_STATE_DIR`
+when that is set, else in the clone. If you already exchanged the code by
+hand, install it and run `maity resume --hub {{hub}}` once.
