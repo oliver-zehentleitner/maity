@@ -6218,6 +6218,45 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && !text(plRow("plc-0002")).includes("Session:"), "placements: the runner's owner sees how to look at it, each command in its box with Copy");
   expect(plRow("plc-0003").querySelector(".placement-state").classList.contains("pill-bad") && plRow("plc-0004").querySelector(".placement-consent").classList.contains("pill-warn"),
     "placements: the state is a pill, a failure red, a consent waiting amber");
+  // Why the runner acted (§15.7 `reported.finding`, tsk-q96rs34sf581): the cause in words, when it was
+  // seen and the signals that say something; the runner's log lines under a closed disclosure, as
+  // text, only when the hub sent `log` (a non-admin member gets the finding without it); no finding,
+  // nothing extra; a cause the web has no words for shows as its code.
+  {
+    const fiGetAll = win.Maity.api.getAll;
+    let fiOf = {};
+    win.Maity.api.getAll = (p) => (p === "/projects/maintainer/maity/placements"
+      ? fiGetAll(p).then((r) => ({ ...r, items: r.items.map((x) => (Object.hasOwn(fiOf, x.id)
+        ? { ...x, reported_current: true, reported: Object.assign({ state: "failed", reason: "join_failed", detail: "handle_taken", since: "2026-10-22T13:00:00Z" }, x.reported || {}, { finding: fiOf[x.id] }) } : x)) }))
+      : fiGetAll(p));
+    const fiShow = async () => { await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/placements"); for (let k = 0; k < 8; k++) await tick(); };
+    const signals = (more) => Object.assign({ process: "alive", exit_code: null, below: "unknown", pane_match: [], login: "ok", pickup_code: null }, more);
+    fiOf = {
+      "plc-0003": { cause: "pickup_refused", seen_at: "2026-10-22T13:58:00Z", signals: signals({ process: "gone", pickup_code: "handle_taken" }),
+        log: [{ at: "2026-10-22T13:57:59Z", line: "plc-0003 pickup refused: why handle_taken <b>bold</b>" },
+          { at: "2026-10-22T13:58:00Z", line: "plc-0003 <script>window.fiRan = true</script>" }] },
+      "plc-0002": { cause: "login_invalid", seen_at: "2026-10-22T13:58:00Z", signals: signals({ process: "gone", exit_code: 3, login: "needed" }) },
+      "plc-0001": null,
+    };
+    await fiShow();
+    const fiLog = plRow("plc-0003").querySelector("details.placement-log");
+    const fiPre = fiLog && fiLog.querySelector("pre");
+    const withLog = [plFacts("plc-0003").includes("Whythe hub refused the start · seen "), plFacts("plc-0003").includes(" · hub code handle_taken"),
+      !plFacts("plc-0003").includes("the harness process was gone"), !!fiLog && !fiLog.attrs.open && text(fiLog.querySelector("summary")) === "Runner log",
+      !!fiPre && text(fiPre).includes("plc-0003 pickup refused: why handle_taken <b>bold</b>") && text(fiPre).includes("<script>window.fiRan = true</script>"),
+      !!fiPre && !fiPre.querySelector("b") && !fiPre.querySelector("script") && !win.fiRan];
+    const noLog = [plFacts("plc-0002").includes("Whythe harness needs a new login"), plFacts("plc-0002").includes(" · exit code 3"),
+      plFacts("plc-0002").includes(" · login needed"), !plRow("plc-0002").querySelector("details.placement-log")];
+    const none = [!plRow("plc-0001").querySelector(".placement-finding"), !plFacts("plc-0001").includes("Why")];
+    fiOf = { "plc-0001": { cause: "new_cause", seen_at: "2026-10-22T13:58:00Z", signals: signals({}), log: [] } };
+    await fiShow();
+    const unknownCode = [plFacts("plc-0001").includes("Whynew_cause · seen "), !plRow("plc-0001").querySelector("details.placement-log")];
+    win.Maity.api.getAll = fiGetAll;
+    await fiShow();
+    expect([...withLog, ...noLog, ...none, ...unknownCode].every(Boolean),
+      "placements: the finding's cause, seen and signals; its log closed and as text; none without log, a null finding or an empty log; an unknown cause as its code "
+        + JSON.stringify({ withLog, noLog, none, unknownCode }));
+  }
   const plStop = btn(plRow("plc-0001"), "Stop");
   plStop.click(); plStop.click(); for (let k = 0; k < 6; k++) await tick();
   expect(plPatches.length === 1 && plPatches[0][0] === "/projects/maintainer/maity/placements/plc-0001" && JSON.stringify(plPatches[0][1]) === JSON.stringify({ desired: "stopped" })

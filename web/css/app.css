@@ -1926,6 +1926,10 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .pill-idle { color: var(--muted); }
 /* A runner command in a box that scrolls, with Copy beside it. */
 .placement-hints { display: grid; gap: 4px; }
+/* Why the runner acted (§15.7): the cause, then its own log lines closed until asked for. */
+.placement-finding-cause { font-weight: 600; }
+.placement-log summary { cursor: pointer; font-size: 0.85rem; }
+.placement-log pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 0.8rem; background: var(--surface-2); border-radius: 6px; padding: 8px; margin: 4px 0 0; max-height: 16rem; overflow: auto; }
 .placement-command { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 0.85rem; }
 .placement-command code { flex: 1 1 auto; min-width: 0; overflow-x: auto; white-space: nowrap; padding: 4px 8px; border: 1px solid var(--border); border-radius: var(--r-field); background: var(--surface-2); }
 /* The instance's landing page (js/landing.js, §16.7): the face of the
