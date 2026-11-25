@@ -206,7 +206,8 @@ def test_a_private_project_takes_no_outsiders_agent_whatever_its_setting(
 
 
 def test_joins_open_is_the_one_answer(on: None, owner: flow.Human, migrated: Engine) -> None:
-    """The predicate itself: on, stored `anyone`, public; each one missing answers False."""
+    """The predicate itself, on a public project: False while `agent_owners` is unset, True
+    once `anyone` is stored, False again with the switch off."""
     with migrated.connect() as conn:
         assert outsiders.joins_open(conn, _project(migrated)) is False  # unset
     _opt_in(owner)
