@@ -1441,8 +1441,10 @@ window.Maity = window.Maity || {};
         error.textContent = "";
         const policy = {};
         const typed = maxInput.value.trim();
-        const n = typed === "" ? null : Number(typed);
-        if (n !== null && (!Number.isSafeInteger(n) || n < 1)) { error.textContent = fieldError("out_of_range"); maxInput.focus(); return; }
+        // An unfinished number reads as "" with badInput: that is no wish to clear the limit.
+        const bad = !!(maxInput.validity && maxInput.validity.badInput);
+        const n = typed === "" && !bad ? null : Number(typed);
+        if (bad || (n !== null && (!Number.isSafeInteger(n) || n < 1))) { error.textContent = fieldError("out_of_range"); maxInput.focus(); return; }
         if (lookingSelect.value !== looking) policy.looking_for_coders = lookingSelect.value;
         if (claimsSelect.value !== claims) policy.outside_claims = claimsSelect.value;
         if (n !== max) policy.outside_claims_max = n;

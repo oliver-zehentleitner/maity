@@ -5847,6 +5847,24 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "outside claims: an admin's change sends the limit alone, never the stored agent " + JSON.stringify(ocPatches[1]));
   win.Maity.api.get = ocMe; win.Maity.api.patch = ocPatch;
   await oaHub({ outside_claims: "human" });
+  // With a cap stored, an unfinished number (the field reads "" with badInput) keeps the cap: refused at the
+  // field, nothing sent; a field the owner empties on purpose clears it (null).
+  await oaHub({ outside_claims_max: 3 });
+  win.Maity.onWrite("/projects/maintainer/maity");
+  await projectSettings("work");
+  win.Maity.api.patch = (p, b) => { ocPatches.push(b); return Promise.resolve({}); };
+  const ocMax = byId("outside-claims-max");
+  const ocCapShown = ocMax.value;
+  ocMax.value = ""; ocMax.validity = { badInput: true }; byId("outside-claims-reason").value = "typo";
+  ocForm().dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  expect(ocCapShown === "3" && ocPatches.length === 2 && text(byId("outside-claims-error")) === "Enter a whole number of at least 1, or leave it empty for no limit.",
+    "outside claims: an unfinished number with a cap stored is refused, the cap is not cleared " + ocCapShown + " " + ocPatches.length);
+  ocMax.validity = { badInput: false };
+  ocForm().dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+  expect(ocPatches.length === 3 && JSON.stringify(ocPatches[2]) === JSON.stringify({ policy: { outside_claims_max: null }, reason: "typo" }),
+    "outside claims: a field emptied on purpose clears the cap " + JSON.stringify(ocPatches[2]));
+  win.Maity.api.patch = ocPatch;
+  await oaHub({ outside_claims_max: null });
   const ocAnswers = [await oaHub({ looking_for_coders: "some" }), await oaHub({ outside_claims: "anyone" }), await oaHub({ outside_claims_max: 0 }),
     await oaHub({ outside_claims_max: null })];
   expect(JSON.stringify(ocAnswers) === JSON.stringify(['invalid:{"fields":{"policy.looking_for_coders":"unknown"}}', 'invalid:{"fields":{"policy.outside_claims":"unknown"}}',
