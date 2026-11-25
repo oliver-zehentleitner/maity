@@ -622,7 +622,17 @@ too.
    (state and reason in words, a crash loop with its count, a retry time,
    since when; "waiting for the runner to act on generation N" while the
    report is older than the placement), the generation and the last
-   report's time. A placement waiting for consent says so and links to
+   report's time. When the current report carries the runner's finding
+   (§15.7 `reported.finding`), a **Why** line follows: the cause in words
+   (a code without words shows as itself), when it was seen, and the
+   signals that say something to a person (the hub's code of a refused
+   pickup, the harness's exit code or that its process was gone, a login
+   needed); the rest of the signals stay out. Where the hub sent the
+   runner's own log lines (`finding.log`, only to the runner's owner, the
+   profile's owner and project owners and admins), they sit under a
+   closed **Runner log** disclosure as text, never as markup; an absent or
+   empty `log` shows none, and a placement without a finding shows no
+   **Why** line. A placement waiting for consent says so and links to
    its request in the inbox, which answers it, and offers nothing else
    here: a stop would withdraw the request and a restart approve it. A
    human with `members:admin` who owns the runner (its `owner_id`, not

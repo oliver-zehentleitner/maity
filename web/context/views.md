@@ -8025,3 +8025,35 @@ hub's notification count, and these messages are not notifications.
 - Loading `js/cross-chat.js` only on the first `/chats/cross` route,
   to keep it out of the shell's budget: no other view is loaded that
   way, and the budget is raised in the same change instead.
+
+## A placement row says why the runner acted: a few signals in words, its log closed under Runner log
+
+**Id:** 92a657fe-6b2e-48fc-8bf3-80d812943ecd
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-q96rs34sf581 (the maintainer's decision before the launch, request req-nar99635by27, 2026-11-25); the lead's and the review lead's OK on the plan the same day
+**Revisit when:** the contract adds a cause, a pane code or a signal, or the placement history shows findings (tsk-n50ez67he2pz)
+
+The placement row in **Managed agents** (`web/js/placements.js`) shows the runner's finding
+(`docs/api.md` §15.7, `reported.finding`) as a **Why** line under the reported state: the cause
+in words, when it was seen, and of the signals only these: the hub's code of a refused pickup, the
+harness's exit code, that its process was gone (not for a refused pickup, where the harness never
+ran), and a login needed. The runner's log lines (`finding.log`) sit under a closed **Runner
+log** disclosure, as text, only when the hub sent them. The Runners view's line per placement
+shows no finding, since `GET /runners/{id}/placements` carries none.
+
+**Reason:** a person reading the row wants to know what went wrong and what to do. The cause and
+these few signals say that. `below`, `pane_match` and `process: alive` are the runner's inputs
+to its own diagnosis and say little to a reader. The log can be long and is for diagnosis, so
+it stays closed until someone asks for it. Who gets it is the hub's decision (the runner's
+owner, the profile's owner, project owners and admins); the web shows what it was sent and asks
+for nothing more.
+
+**Rejected alternatives:**
+- Every signal in the row: most are the runner's internals, and the line would grow past what a
+  person reads at a glance.
+- The log open by default: a long list of lines would push the actions and the next placement
+  off the screen.
+- A finding on the Runners view's line too: that answer carries `state` only, and adding the
+  finding there is a hub change the card leaves out.
