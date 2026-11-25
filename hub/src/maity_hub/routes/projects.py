@@ -118,9 +118,16 @@ class PolicyIn(Strict):
     own_agents: Any = None
     # §6.1, an outsider's claim: two choices, and `null` or an integer ≥ 1, checked in
     # `_apply_policy` so that a bool or a string is named `out_of_range` as for `own_approvals`.
-    looking_for_coders: str | None = None
-    outside_claims: str | None = None
+    # The two choices take anything here, so that `null` and a value that is no string are
+    # `unknown` as the contract's rows say, not a skipped field or a `string_type`.
+    looking_for_coders: Any = None
+    outside_claims: Any = None
     outside_claims_max: Any = None
+
+
+# Choices of the policy whose `null` in a body is `unknown` (§6.1 rows), checked atomically
+# with the rest of the PATCH in `_apply_policy`.
+NEVER_NULL_CHOICES = ("looking_for_coders", "outside_claims")
 
 
 class AbsenceIn(Strict):
@@ -676,6 +683,11 @@ def _apply_policy(
     if "keep_the_why" in change.model_fields_set and change.keep_the_why is None:
         # Only `required` or `optional` (§6.1): a null would clear the human's value.
         errors["policy.keep_the_why"] = "unknown"
+    for name in NEVER_NULL_CHOICES:
+        # Only the row's choices (§6.1): an explicit null is `unknown` too, never a skipped
+        # field that lets the rest of the PATCH apply. A non-string is already `unknown` above.
+        if name in change.model_fields_set and getattr(change, name) is None:
+            errors[f"policy.{name}"] = "unknown"
     if "agent_owners" in change.model_fields_set and change.agent_owners is None:
         # Never null again once set (§6.1): a stored `anyone` is the outsiders' opt-in, and
         # `members` closes it; a null would quietly fall back to the unset reading.
