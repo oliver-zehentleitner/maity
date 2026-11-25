@@ -1830,6 +1830,30 @@ real boundary. Rejected because the owner chose to accept the residual risk
 and offer the harness now, with the separate-OS-user mitigation, rather than
 block every opencode placement until that work lands.
 
+## OpenCode placements disable automatic snapshots
+
+**Id:** 2c9195fa-ddc0-485e-b083-754bc0db14f0
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Verification:** uncorroborated
+**Source:** card tsk-27rm0ay2ntnx, operator journal diagnosis and the OpenCode 2.3.0 and 2.4.0 snapshot and Git source
+**Revisit when:** OpenCode isolates snapshot initialization from a placement's pinned Git common directory
+
+The runner sets `snapshot: false` for interactive and supervised OpenCode
+placements. Five stopped placements had `core.worktree` in their local
+configuration. OpenCode's snapshot capture initializes a separate Git store
+with the placement's working tree and inherits the runner's pinned
+`GIT_COMMON_DIR`. Git initialization can therefore write the working-tree
+setting into the placement's common configuration. The journal establishes
+the refused key; the writer is inferred from the source.
+
+Disabling automatic snapshot capture gives up OpenCode's snapshot-based
+undo for placement changes. Clearing `core.worktree` automatically would
+edit a clone an agent wrote and hide the evidence when its value points
+somewhere unexpected. Operators can correct the confirmed self-reference
+in a stopped clone. The runner continues to refuse the key.
+
 ## The opencode adapter fails closed on the model
 
 **Id:** 7c23704d-d02f-4cbf-80ca-494119f8fa5c
