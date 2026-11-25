@@ -5850,7 +5850,10 @@ def outsider_tab_round(run: Run, browser) -> None:
             box = star.bounding_box()
             assert box and box["width"] >= 24 and box["height"] >= 24, f"{where}: the star's target is {box}"
             # Inside the dashed outline, right of the name (the maintainer, tsk-q8s9dfjmjsxy).
-            outline = fresh.locator("header nav.switcher .outsider-tab").filter(has=star_tab).bounding_box()
+            # filter(has=) looks for its locator inside each box, so it takes the link's own selector,
+            # not OUTSIDER_TAB, which starts at the header and so is inside no box.
+            outline = (fresh.locator("header nav.switcher .outsider-tab")
+                       .filter(has=fresh.locator("a.outsider[data-outsider='owner/e2e-alpha']")).bounding_box())
             name = star_tab.bounding_box()
             assert (outline and name and outline["x"] <= box["x"] and box["x"] + box["width"] <= outline["x"] + outline["width"] + 0.5
                     and outline["y"] <= box["y"] + 0.5 and box["y"] + box["height"] <= outline["y"] + outline["height"] + 0.5
