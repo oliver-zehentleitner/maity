@@ -149,20 +149,24 @@ What a dropped key held is read or computed again on its next use. For
   Such a writer leaves the link serving, so a request that chose the
   link before the change and reaches `Cache.get` after its commit would
   find the generation unchanged. `still_serves` therefore reads the
-  project's row too, in the same plain read as the link's: still
-  confirmed, still the URL the choice read, and its grants
-  (`forge_access.grants_of`, the rule `_facts` uses) still the link
-  human's. A read that fails it keeps nothing (review A2595 P2-1).
+  project's row too: two plain statements on one connection, the link's
+  and the project's, with no lock. The project must still be
+  confirmed, still carry the URL the choice read, and its grants
+  (`forge_access.grants_of`, the rule `_facts` uses) must still be the
+  link human's. A read that fails it keeps nothing (review A2595 P2-1).
+  Under READ COMMITTED the two statements may see different moments.
+  That is enough: each change they look for only ends grants, so a
+  change either commits before the statement that reads its row and is
+  seen, or commits later and its after-commit forget catches the read. Each clause has a
+  case that only it catches (review A2605 P3-2).
   The second forget is registered only inside an `events.transaction`,
   and a forget on a plain `engine.begin()` raises instead of running
   only before the commit (review A2595 P3-1). Rejected: noting the
   generation only at `Cache.get` (a change between the choice and the
-  read leaves it unchanged); asking the database or the stored link
-  before each cached answer (one query per listed project, and an
-  unlinked link leaves no row to ask); a generation kept in the
-  database (one more query per §11.3 call); and SQLAlchemy's `commit`
-  event, which fires before the database has committed, so a step run
-  there could forget before the change is visible.
+  read leaves it unchanged); a generation kept in the database (one
+  more query per §11.3 call); and SQLAlchemy's `commit` event, which
+  fires before the database has committed, so a step run there could
+  forget before the change is visible.
 - **Lock order.** In `ktw`, a project's lock first, then `guard`, never
   the other way round: under `guard` no project lock is taken, only
   looked up. In `images`, the gate first, then `_guard`; the gate is
