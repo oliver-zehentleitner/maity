@@ -10,6 +10,7 @@ import shutil
 import subprocess
 import sys
 import time
+import types
 from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -821,7 +822,10 @@ def test_without_pidfds_nothing_is_signalled(
     home, calls = tmp_path / "h", tmp_path / "calls.log"
     loop = spawn(home, calls)
     record(home, loop.pid)
-    monkeypatch.delattr(os, "pidfd_open")
+    # codexd's own `os` without pidfd_open, never the os module itself: Python 3.15's
+    # subprocess uses os.pidfd_open, so removing it there breaks the test's own processes.
+    without = types.SimpleNamespace(**{k: getattr(os, k) for k in dir(os) if k != "pidfd_open"})
+    monkeypatch.setattr("maity.runner.codexd.os", without)
     assert codexd.end_updater(tmp_path, home) == "unsupported"
     assert loop.poll() is None and not calls.exists()
 
