@@ -4537,12 +4537,13 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   byId("new-card-status").value = "open";
   byId("new-card-label").value = "feature";
   byId("new-card-needs").value = "tester";
+  byId("new-card-outsiders").checked = true;
   byId("new-card-assigned").value = "agt-d";
   byId("new-card-depends").querySelectorAll("option").find((o) => o.attrs.value === "tsk-0007").selected = true;
   nf.dispatch("submit"); for (let k = 0; k < 5; k++) await tick();
   const createdW = bWrites.find((w) => w[1] === "/projects/maintainer/maity/tasks");
   expect(JSON.stringify(createdW) === JSON.stringify(["POST", "/projects/maintainer/maity/tasks", { title: "Web: a card from the board", kind: "task", status: "open",
-    label: "feature", needs: "tester", area: "web/board/", assigned_to: "agt-d", depends_on: ["tsk-0007"] }]) && colOf("tsk-f001") && colOf("tsk-f001").attrs["data-status"] === "open"
+    label: "feature", needs: "tester", area: "web/board/", open_to_outsiders: true, assigned_to: "agt-d", depends_on: ["tsk-0007"] }]) && colOf("tsk-f001") && colOf("tsk-f001").attrs["data-status"] === "open"
     && !main.querySelector("form.new-card"), "board: a new card, created in Open");
   expect(byId("board-area").querySelectorAll("option").some((o) => o.attrs.value === "web/board/"), "board: the area filter offers a new card's area");
   // needs (§6.4): shown on the card, offered and applied by the board's filter, routing nothing.
@@ -5803,6 +5804,48 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.get = oaGet; win.Maity.onWrite("/projects/maintainer/maity");
   expect(JSON.stringify(oaAnswers) === JSON.stringify(['invalid:{"fields":{"own_approvals":"out_of_range"}}', 'invalid:{"fields":{"own_agents":"not_a_member"}}', 'invalid:{"fields":{"own_agents":"unknown"}}']),
     "fixture hub: own_approvals 0, a pick who is no member and an unknown own_agents are refused as the hub refuses them " + JSON.stringify(oaAnswers));
+  // Claims by outside agents (§6.1 looking_for_coders, outside_claims, outside_claims_max; §6.5).
+  await projectSettings("work");
+  const ocForm = () => main.querySelector("form.outside-claims-form");
+  const ocWarn = () => byId("outside-claims-warning");
+  const ocOption = (v) => byId("outside-claims-select").querySelectorAll("option").find((o) => o.attrs.value === v);
+  expect(ocForm() && byId("looking-for-coders-select").value === "per_card" && byId("outside-claims-select").value === "human"
+    && byId("outside-claims-max").value === "" && ocWarn().hidden && ["agent", "direct"].every((v) => !("disabled" in ocOption(v).attrs)),
+    "outside claims: per card, a person confirms, no limit by default; the owner may choose agent or direct");
+  byId("outside-claims-select").value = "agent"; byId("outside-claims-select").dispatch("change");
+  expect(!ocWarn().hidden && text(ocWarn()).startsWith("An agent then decides who works in this project"), "outside claims: agent is said in plain words " + text(ocWarn()));
+  byId("outside-claims-select").value = "direct"; byId("outside-claims-select").dispatch("change");
+  expect(text(ocWarn()).startsWith("Nobody then decides who works in this project"), "outside claims: direct is said in plain words " + text(ocWarn()));
+  const ocPatches = [];
+  const ocPatch = win.Maity.api.patch;
+  win.Maity.api.patch = (p, b) => { ocPatches.push(b); return Promise.reject(new win.Maity.api.ApiError("x", 403, p, "forbidden", { reason: "owner_only" })); };
+  byId("outside-claims-max").value = "0"; byId("outside-claims-reason").value = "zero";
+  ocForm().dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  expect(!ocPatches.length && text(byId("outside-claims-error")) === "Enter a whole number of at least 1, or leave it empty for no limit.",
+    "outside claims: a limit of 0 is refused before it is sent");
+  byId("looking-for-coders-select").value = "all"; byId("outside-claims-max").value = "3"; byId("outside-claims-reason").value = "open the door";
+  ocForm().dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+  expect(ocPatches.length === 1 && JSON.stringify(ocPatches[0]) === JSON.stringify({ policy: { looking_for_coders: "all", outside_claims: "direct", outside_claims_max: 3 }, reason: "open the door" }),
+    "outside claims: what changed is sent with its reason " + JSON.stringify(ocPatches[0]));
+  expect(text(byId("outside-claims-error")) === "Only an owner of the project lets an agent confirm, or lets the claim take the card at once.",
+    "outside claims: the hub's owner_only is said at the form");
+  // An admin who is no owner keeps the stored choice and may pick human, never agent or direct.
+  const ocOwner = win.Maity.trust.owner;
+  win.Maity.trust.owner = () => false;
+  await projectSettings("work");
+  expect(["agent", "direct"].every((v) => "disabled" in ocOption(v).attrs) && !("disabled" in ocOption("human").attrs)
+    && text(ocForm()).includes("Only an owner of the project lets an agent confirm"),
+    "outside claims: for an admin who is no owner, agent and direct are shown, not offered");
+  byId("outside-claims-max").value = "2"; byId("outside-claims-reason").value = "two";
+  ocForm().dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+  expect(ocPatches.length === 2 && JSON.stringify(ocPatches[1]) === JSON.stringify({ policy: { outside_claims_max: 2 }, reason: "two" }),
+    "outside claims: an admin's change sends the limit alone " + JSON.stringify(ocPatches[1]));  win.Maity.trust.owner = ocOwner; win.Maity.api.patch = ocPatch;
+  const ocAnswers = [await oaHub({ looking_for_coders: "some" }), await oaHub({ outside_claims: "anyone" }), await oaHub({ outside_claims_max: 0 }),
+    await oaHub({ outside_claims_max: null })];
+  expect(JSON.stringify(ocAnswers) === JSON.stringify(['invalid:{"fields":{"policy.looking_for_coders":"unknown"}}', 'invalid:{"fields":{"policy.outside_claims":"unknown"}}',
+    'invalid:{"fields":{"outside_claims_max":"out_of_range"}}', "ok"]),
+    "fixture hub: an unknown looking_for_coders or outside_claims and a limit of 0 are refused, no limit is taken " + JSON.stringify(ocAnswers));
+  win.Maity.onWrite("/projects/maintainer/maity");
   await projectSettings();
   const ownersGet = win.Maity.api.get;
   win.Maity.api.get = (p) => ownersGet(p).then((x) => (p.startsWith("/projects/maintainer/maity/members") && x && x.items
@@ -15280,7 +15323,28 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   byId("card-needs-tsk-0006").value = "";
   stPanel().querySelector("form.card-family-form").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
   expect(JSON.stringify(needsSent[1]) === JSON.stringify({ needs: null }) && !/Needs: /.test(text(stPanel().querySelector("header"))), "board: and clears it " + JSON.stringify(needsSent));
+  // Open to outsiders (§6.4 open_to_outsiders): set and taken away by whoever may edit the card, alone in its PATCH.
+  expect(byId("card-outsiders-tsk-0006") && !byId("card-outsiders-tsk-0006").checked && !text(stPanel().querySelector("form.card-family-form")).includes("decides nothing"),
+    "board: the opened card offers Open to outsiders, unticked, with no note under per_card");
+  byId("card-outsiders-tsk-0006").checked = true;
+  stPanel().querySelector("form.card-family-form").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+  expect(JSON.stringify(needsSent[2]) === JSON.stringify({ open_to_outsiders: true }) && byId("card-outsiders-tsk-0006").checked,
+    "board: the opened card is opened to outsiders, and stays ticked " + JSON.stringify(needsSent));
+  byId("card-outsiders-tsk-0006").checked = false;
+  stPanel().querySelector("form.card-family-form").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+  expect(JSON.stringify(needsSent[3]) === JSON.stringify({ open_to_outsiders: false }), "board: and closed again " + JSON.stringify(needsSent));
   win.Maity.api.patch = needsPatch;
+  // Under all or off the mark decides nothing, and the box says so; a caller with trust outside gets no box (outside_trust).
+  const ooGet = win.Maity.api.get;
+  const ooPolicy = (looking) => { win.Maity.api.get = (p) => ooGet(p).then((x) => (p === "/projects/maintainer/maity" ? Object.assign({}, x, { policy: Object.assign({}, x.policy, { looking_for_coders: looking }) }) : x)); };
+  ooPolicy("all"); win.Maity.onWrite("/projects/maintainer/maity");
+  await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/tasks/tsk-0006"); for (let k = 0; k < 6; k++) await tick();
+  expect(text(stPanel().querySelector("form.card-family-form")).includes("The project opens every open card to outside agents, so this mark decides nothing now."),
+    "board: under all, Open to outsiders says it decides nothing");
+  win.Maity.api.get = ooGet; win.Maity.onWrite("/projects/maintainer/maity");
+  expect(win.Maity.boardEdit.said(new win.Maity.api.ApiError("x", 403, "/x", "forbidden", { reason: "outside_trust" })).message
+    === "Only the project's own members decide which cards are open to outsiders.", "board: outside_trust is said in words");
+  expect(win.Maity.boardEdit.outsidersBox({ me: { trust: "outside" }, project: { policy: {} } }, "x", false) === null, "board: a caller with trust outside gets no Open to outsiders box");
   byId("card-parent-tsk-0006").value = "tsk-0001";
   stPanel().querySelector("form.card-family-form").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
   expect(JSON.stringify(stPatches[0]) === JSON.stringify(["/projects/maintainer/maity/tasks/tsk-0006", { parent: "tsk-0001" }]) && stCard("tsk-0006")

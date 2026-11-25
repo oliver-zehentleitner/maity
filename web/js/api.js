@@ -959,6 +959,13 @@ window.Maity = window.Maity || {};
   // tasks:admin and tasks:review, by the human's trust and role in a project (§2.3).
   const mineIn = (slug) => me().projects.find((p) => p.slug === slug) || {};
   const trustIn = (slug) => mineIn(slug).trust;
+  // §6.4 open_to_outsiders on POST …/tasks and PATCH: a caller with trust outside never names it
+  // (outside_trust, nothing of the call takes effect); otherwise a boolean.
+  function openToOutsiders(slug, body, errors, path) {
+    if (!("open_to_outsiders" in body)) return;
+    if (trustIn(slug) === "outside") fail(403, "forbidden", "an outsider sets no card open to outsiders", path, { reason: "outside_trust" });
+    if (typeof body.open_to_outsiders !== "boolean") errors.open_to_outsiders = "invalid";
+  }
   // Trust owner or admin, never a proxy (§2.3, hub/scopes.py).
   const governing = (x) => !!x && ["owner", "admin"].includes(x.trust) && x.role !== "proxy";
   const tasksAdmin = (slug) => governing(mineIn(slug));
@@ -1088,6 +1095,12 @@ window.Maity = window.Maity || {};
     // A child's closing changes its parent's counts.
     if (card.parent) { const p = list.find((t) => t.id === card.parent); if (p) p.children = childrenOf(list, p.id); }
     ["title", "body", "label", "needs", "area"].forEach((f) => { if (f in body) card[f] = body[f]; });
+    if ("open_to_outsiders" in body) {
+      const errors = {};
+      openToOutsiders(slug, body, errors, path);
+      if (Object.keys(errors).length) fail(400, "invalid", "invalid fields", path, { fields: errors });
+      card.open_to_outsiders = body.open_to_outsiders;
+    }
     // §6.8: a contract card's file and section, checked as the hub checks them.
     if (body.contract) {
       if (card.kind !== "contract") fail(400, "invalid", "contracts only", path, { fields: { contract: "contracts_only" } });
@@ -4639,6 +4652,19 @@ window.Maity = window.Maity || {};
           const humans = file(m[1], "members.json", path).items.filter((x) => x.kind === "human").map((x) => x.handle);
           if (list && list.some((x) => !kept.includes(x) && !humans.includes(x))) fail(400, "invalid", "a picked handle is no member", path, { fields: { own_agents: "not_a_member" } });
         }
+        // §6.1 looking_for_coders, outside_claims (agent and direct a human owner's alone) and
+        // outside_claims_max (null or at least 1), as the hub answers them.
+        if ("looking_for_coders" in body.policy && !["per_card", "all", "off"].includes(body.policy.looking_for_coders)) {
+          fail(400, "invalid", "unknown looking_for_coders value", path, { fields: { "policy.looking_for_coders": "unknown" } });
+        }
+        if ("outside_claims" in body.policy) {
+          if (!["human", "agent", "direct"].includes(body.policy.outside_claims)) fail(400, "invalid", "unknown outside_claims value", path, { fields: { "policy.outside_claims": "unknown" } });
+          if (body.policy.outside_claims !== "human" && trustIn(m[1]) !== "owner") fail(403, "forbidden", "only an owner sets agent or direct", path, { reason: "owner_only" });
+        }
+        if ("outside_claims_max" in body.policy && body.policy.outside_claims_max !== null
+          && !(Number.isInteger(body.policy.outside_claims_max) && body.policy.outside_claims_max >= 1)) {
+          fail(400, "invalid", "outside_claims_max is null or at least 1", path, { fields: { outside_claims_max: "out_of_range" } });
+        }
         p.policy = Object.assign({}, p.policy, body.policy);
         if ("keep_the_why" in body.policy) ktwSet.set(p, body.policy.keep_the_why);
       }
@@ -5693,6 +5719,7 @@ window.Maity = window.Maity || {};
       if (!body.title || !String(body.title).trim()) errors.title = "missing";
       if (body.label && !["fix", "feature", "chore"].includes(body.label)) errors.label = "unknown";
       if (body.status && !["proposed", "open"].includes(body.status)) errors.status = "unknown";
+      openToOutsiders(m[1], body, errors, path);
       if (["plan", "review"].includes(proj.state) && !(body.reason && body.reason.trim())) errors.reason = "missing";
       if (body.assigned_to) {
         if (!tasksAdmin(m[1])) fail(403, "forbidden", "assigning needs tasks:admin", path, { scope: "tasks:admin" });
@@ -5715,6 +5742,7 @@ window.Maity = window.Maity || {};
         parent: body.parent || null, related: [], children: { open: 0, total: 0 } };
       // ships_with is symmetric: the hub mirrors it on the other card.
       card.ships_with.forEach((id) => { const o = list.find((t) => t.id === id); o.ships_with = [...new Set([...(o.ships_with || []), card.id])]; });
+      if ("open_to_outsiders" in body) card.open_to_outsiders = body.open_to_outsiders;
       list.unshift(card);
       if (card.parent) { const p = list.find((t) => t.id === card.parent); p.children = childrenOf(list, p.id); }
       return card;

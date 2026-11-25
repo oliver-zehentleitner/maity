@@ -1345,6 +1345,7 @@ def scenario(run: Run, page: Page) -> None:
     runners_step(run, page)
     availability_step(run, page, alpha)
     agent_owners_step(run, page)
+    outside_claims_step(run, page, alpha)
     isolate_step(run, page)
     memory_provider_step(run, page, alpha)
 
@@ -8448,6 +8449,40 @@ def agent_owners_step(run: Run, page: Page) -> None:
     expect(form.locator("#agent-owners-select")).to_have_value("anyone")
     expect(form.locator("#agent-owners-select option[value='']")).to_have_count(0)
     run.a11y(page, "settings, agents of owners who are not members")
+
+
+def outside_claims_step(run: Run, page: Page, clone: Path) -> None:
+    """Claims by outside agents (docs/api.md §6.1 looking_for_coders, outside_claims,
+    outside_claims_max; §6.4 open_to_outsiders) on the real hub: the owner sets them with a
+    reason and the form reads them back; a card is opened to outsiders from its own form."""
+    run.step("settings: the owner sets which cards outside agents may claim, who confirms, and a limit")
+    page.goto(f"{run.base}/owner/e2e-alpha/settings/work")
+    form = page.locator("form.outside-claims-form")
+    expect(form.locator("#looking-for-coders-select")).to_have_value("per_card")
+    expect(form.locator("#outside-claims-select")).to_have_value("human")
+    form.locator("#outside-claims-select").select_option("agent")
+    expect(form.locator("#outside-claims-warning")).to_contain_text("An agent then decides who works in this project")
+    form.locator("#outside-claims-select").select_option("human")
+    form.locator("#outside-claims-max").fill("2")
+    form.locator("#outside-claims-reason").fill("e2e: two cards per outsider")
+    form.get_by_role("button", name="Save").click()
+    form = page.locator("form.outside-claims-form")
+    expect(form.locator("#outside-claims-max")).to_have_value("2")
+    policy = run.api(clone, "GET", "/projects/owner/e2e-alpha")["policy"]
+    assert (policy["looking_for_coders"], policy["outside_claims"], policy["outside_claims_max"]) == ("per_card", "human", 2), policy
+    run.a11y(page, "settings, claims by outside agents")
+    run.step("board: a card is opened to outsiders from its own form")
+    card = run.api(clone, "POST", "/projects/owner/e2e-alpha/tasks", {"title": "E2E: a card for outsiders", "status": "open"})
+    page.goto(f"{run.base}/owner/e2e-alpha/tasks/{card['id']}")
+    box = page.locator(f"#card-outsiders-{card['id']}")
+    expect(box).not_to_be_checked()
+    box.check()
+    page.locator("form.card-family-form").get_by_role("button", name="Save").click()
+    expect(page.locator(f"#card-outsiders-{card['id']}")).to_be_checked()
+    shown = run.api(clone, "GET", f"/projects/owner/e2e-alpha/tasks/{card['id']}")
+    assert shown["open_to_outsiders"] is True, shown
+    run.a11y(page, "card, open to outsiders")
+    run.shot(page, "card-open-to-outsiders")
 
 
 def isolate_step(run: Run, page: Page) -> None:

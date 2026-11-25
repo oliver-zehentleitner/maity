@@ -219,6 +219,7 @@ window.Maity = window.Maity || {};
         others.map((t) => { const o = h("option", { value: t.id }, t.id + " · " + t.title); o.selected = (c.related || []).includes(t.id); return o; }),
         (c.related || []).filter((id) => !others.some((t) => t.id === id)).map((id) => { const o = notLoaded(id); o.selected = true; return o; }));
       const needsSel = M.boardEdit.needsSelect(ctx, "card-needs-" + c.id, c.needs);
+      const outsiders = M.boardEdit.outsidersBox(ctx, "card-outsiders-" + c.id, !!c.open_to_outsiders);
       const save = h("button", { type: "submit", "data-focus": "family:" + c.id }, M.t("board.save"));
       parts.push(h("form", {
         class: "card-family-form",
@@ -229,6 +230,7 @@ window.Maity = window.Maity || {};
           if (needsSel.value !== (c.needs || "")) body.needs = needsSel.value || null;
           const chosen = Array.from(relatedSel.querySelectorAll("option")).filter((o) => o.selected).map((o) => o.getAttribute("value"));
           if (chosen.slice().sort().join() !== (c.related || []).slice().sort().join()) body.related = chosen;
+          if (outsiders && outsiders.box.checked !== !!c.open_to_outsiders) body.open_to_outsiders = outsiders.box.checked;
           if (!Object.keys(body).length) return;
           save.disabled = true;
           said.busy(M.t("board.saving"));
@@ -247,6 +249,7 @@ window.Maity = window.Maity || {};
         : h("p", { class: "hint" }, hasKids ? M.t("board.family.has_kids") : M.t("board.family.release")),
       h("label", { for: relatedSel.id }, M.t("board.family.related")), relatedSel,
       h("label", { for: needsSel.id }, M.t("cards.new.field.needs")), needsSel,
+      outsiders ? outsiders.el : null,
       save, said.el));
     }
     // A subtask under it: not under a subtask, a release or a closed card (§6.4).
