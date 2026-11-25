@@ -33,6 +33,7 @@ from pathlib import Path
 from typing import Any
 
 from .. import __version__, clonecheck, hub, onboarding, state
+from ..stamp import stamp as utc_stamp
 from . import (
     adapters,
     capabilities,
@@ -294,7 +295,7 @@ def agent_dir_for(as_user: AsUser, agent_files: Path, placement: str) -> Path:
 def stamp(moment: float | None) -> str | None:
     if moment is None:
         return None
-    return datetime.fromtimestamp(moment, tz=UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return utc_stamp(moment)
 
 
 @dataclass(frozen=True)
