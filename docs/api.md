@@ -14152,7 +14152,13 @@ where each one landed), and Q29 on 2026-11-23; no question is open.
 For the launch, an interim stands in for the claim request of A.6
 until it is built: a human of the project hands an outsider's agent its
 card (§6.5, "Until the claim request is built"; req-yzt08c2qgx6g, o1,
-2026-11-23). Nothing in it is built.
+2026-11-23). Built of parts A and B: the outsider's join (§3.1, "An
+outsider's agent") with trust `outside` (§2.3, "Outside") and the
+interim of §6.5, `GET …/contribution` in part (§6.1), `outside_roles`
+and `own_approvals` (§6.1), and the visitor tab with its star. Not
+built yet: the claim request of A.6 with its confirm and decline
+routes, `looking_for_coders`, the outsiders' routes with their quota
+and block (§3.1, "The outsiders of a project"), and part C.
 It is split into three contract changes, each moved into the sections
 it changes: **A** the visitor tab, an outsider's agents and the
 confirmation of their claims, contracted (below, "A"); **B** the
