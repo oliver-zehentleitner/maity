@@ -32,7 +32,7 @@ from typing import Annotated, Any
 
 from pydantic import Field, TypeAdapter, ValidationError
 
-from maity_hub import bounded, clock, forge, outbound
+from maity_hub import bounded, clock, errors, forge, outbound
 
 log = logging.getLogger(__name__)
 
@@ -784,6 +784,16 @@ class _Entry:
     snapshot: Snapshot | None  # None: the project is not configured
     at: float  # now() of the read
     repository_url: str | None
+    # Read through a link on a forge organisation: answered only until that link's grant ends,
+    # 10 minutes after its last successful owner check (§11.4; review A2574 P2-3).
+    until: datetime | None = None
+    # False: answered to the request that read it, never stored for another nor counted as
+    # the project's last read (a read whose source stopped serving during it: A2592)
+    keep: bool = True
+
+    def live(self) -> bool:
+        """Whether the entry may still be answered: not past the grant it was read with."""
+        return self.until is None or clock.now() < self.until
 
 
 # The projects whose answers are kept, the newest read first; an older one is read anew
@@ -803,6 +813,10 @@ class Refresh:
     # dropped, so a read in progress keeps its last good reads and its lock.
     users: dict[str, int] = field(default_factory=dict)
     last_read: OrderedDict[str, tuple[str | None, float]] = field(default_factory=OrderedDict)
+    # project id -> how often `Cache.forget` ran for it while a request used it: a read that
+    # started before a `forget` stores nothing after it (review A2586). Kept only while the
+    # project has users, so it stays as small as `users`.
+    forgotten: dict[str, int] = field(default_factory=dict)
 
 
 @dataclass
@@ -827,6 +841,8 @@ class Cache:
     before_read: Callable[[forge.Forge, str, str], None] | None = field(
         default=None, repr=False, compare=False
     )
+    # how often `forget_all` (or `clear`) ran: with `Refresh.forgotten`, a read's generation
+    forgotten_all: int = 0
 
     @property
     def locks(self) -> dict[str, threading.Lock]:
@@ -842,29 +858,43 @@ class Cache:
 
     def clear(self) -> None:
         with self.guard:
+            self.forgotten_all += 1
             self.entries.clear()
             self.last_good.clear()
         with self.refresh.guard:
             self.refresh.locks.clear()
             self.refresh.users.clear()
             self.refresh.last_read.clear()
+            self.refresh.forgotten.clear()
 
     def forget_all(self) -> None:
         """`forget` for every project; the locks stay, as requests may hold them."""
         with self.guard:
+            self.forgotten_all += 1
             self.entries.clear()
             self.last_good.clear()
 
     def forget(self, project_id: str) -> None:
-        """The repository changed: no answer of the old one may stand for the new one, so
-        the answers and the last good reads go even while a request uses the project;
-        only its lock stays then."""
+        """The repository or the grants changed: no answer read before may stand after, so
+        the answers and the last good reads go even while a request uses the project; only
+        its lock stays then, and a read in progress stores nothing of what it read (its
+        generation changed: review A2586). Every replica runs this on the notice
+        (`wakeups.forgotten`), so the generation holds on each."""
         with self.guard:
             self.entries.pop(project_id, None)
             self._drop_reads(project_id)
             with self.refresh.guard:
                 if self.refresh.users.get(project_id, 0) == 0:
                     self.refresh.locks.pop(project_id, None)
+                else:
+                    forgotten = self.refresh.forgotten
+                    forgotten[project_id] = forgotten.get(project_id, 0) + 1
+
+    def _generation(self, project_id: str) -> tuple[int, int]:
+        """What `forget` and `forget_all` changed so far for the project. The caller holds
+        `guard`, as they do while they change it."""
+        with self.refresh.guard:
+            return self.forgotten_all, self.refresh.forgotten.get(project_id, 0)
 
     def _drop(self, project_id: str) -> None:
         """Dropped for room: the project's last good reads and its lock, unless a request
@@ -917,6 +947,7 @@ class Cache:
                 self.refresh.users[project_id] = left
             else:
                 self.refresh.users.pop(project_id, None)
+                self.refresh.forgotten.pop(project_id, None)  # no read left to compare it
                 if not kept:
                     self.refresh.locks.pop(project_id, None)
 
@@ -946,14 +977,17 @@ class Cache:
         current = self.cached(project_id)
         lock = self._enter(project_id)
         try:
-            usable = current is not None and current.repository_url == repository_url
+            usable = (
+                current is not None and current.repository_url == repository_url and current.live()
+            )
             if not (lock.acquire(blocking=False) if usable else lock.acquire(timeout=LOCK_WAIT)):
                 if current is not None and usable:
                     return current, False
                 raise Busy
             try:
                 entry = self.cached(project_id)
-                own = entry is not None and entry.repository_url == repository_url
+                # past the grant it was read with, an entry is read anew, never answered
+                own = entry is not None and entry.repository_url == repository_url and entry.live()
                 if own and entry is not None:
                     age = now() - entry.at
                     if age < max(max_age, FORCE_INTERVAL):
@@ -965,8 +999,17 @@ class Cache:
                         and self._read_lately(project_id, repository_url)
                     ):
                         return entry, False
-                entry = self._read(reader, project_id, repository_url, entry)
                 with self.guard:
+                    generation = self._generation(project_id)
+                entry = self._read(reader, project_id, repository_url, entry, generation)
+                with self.guard:
+                    if not entry.keep or self._generation(project_id) != generation:
+                        # forgotten while it read (an org link unlinked or replaced, the
+                        # repository changed), or its source stopped serving during it: its
+                        # own request gets it, as it was read for it, but nothing is kept
+                        # for another and it counts as no read (reviews A2586, A2592)
+                        self._drop_reads(project_id)
+                        return entry, True
                     in_use = self.refresh.users.get
                     for gone in bounded.put(
                         self.entries, project_id, entry, PROJECTS_KEPT, lambda p: in_use(p, 0) > 0
@@ -980,8 +1023,15 @@ class Cache:
             self._leave(project_id)
 
     def _read(
-        self, reader: forge.Forge, project_id: str, repository_url: str | None, last: _Entry | None
+        self,
+        reader: forge.Forge,
+        project_id: str,
+        repository_url: str | None,
+        last: _Entry | None,
+        generation: tuple[int, int],
     ) -> _Entry:
+        """The family as it reads now. A member's last good read is kept only while the
+        project's `generation` is the one the read started with (`get`)."""
         read_at = now()
         observed = clock.rfc3339(clock.now())
         if forge.kind_of(repository_url) != "github" or repository_url is None:
@@ -992,12 +1042,20 @@ class Cache:
             reader = reader.for_project(project_id)  # the source that covers it (§11.4)
         if self.before_read is not None:
             self.before_read(reader, project_id, repository)  # raises: nothing read or stored
+        until = reader.serves_until
         try:
             family = walk(reader, repository, deadline)
         except NotConfigured:
             return _Entry(None, read_at, repository_url)
         except RootUnavailable as failed:
             previous = last.snapshot if last and last.repository_url == repository_url else None
+            if failed.not_covered in errors.ORG_REASONS or (last is not None and not last.live()):
+                # The source rested on a link on a forge organisation that serves nothing now,
+                # or the last read was made through one whose grant has ended: none of what it
+                # read is kept, the members' last good reads included (review A2574 P2-3).
+                previous = None
+                with self.guard:
+                    self._drop_reads(project_id)
             error = _error("forge_unavailable")
             if previous is None:
                 return _Entry(
@@ -1013,18 +1071,34 @@ class Cache:
                 failed.not_covered,
                 failed.retry_at,
             )
-            return _Entry(kept, read_at, repository_url)
+            # what was kept is answered no longer than the grant it was read with
+            return _Entry(kept, read_at, repository_url, last.until if last else None)
+        if last is not None and not last.live():
+            with self.guard:  # read through a grant that has ended: no member falls back on it
+                self._drop_reads(project_id)
         _read_exports(family, deadline)
+        if reader.still_serves is not None and not reader.still_serves():
+            # Read through a link on a forge organisation that was unlinked, replaced or
+            # stopped serving during the read: none of it is kept or answered (A2585 P2-1).
+            # Nor is this answer kept: the next request chooses its source anew (A2592).
+            with self.guard:
+                self._drop_reads(project_id)
+            error = _error("forge_unavailable")
+            snapshot = Snapshot(observed, [], False, error, errors.ORG_UNANSWERED)
+            return _Entry(snapshot, read_at, repository_url, keep=False)
         for member in family.members:
             if (member.error or {}).get("reason") == "location_not_followed":
                 continue  # its path is location text, never read: no last good read
             key = (project_id, repository, member.path)
             with self.guard:  # another project's eviction may walk `last_good` meanwhile
+                if self._generation(project_id) != generation:
+                    continue  # forgotten while it read: `get` keeps none of it (A2586)
                 if member.read is not None:
                     self.last_good[key] = (member.read, member.observed_at)
                 elif member.error is not None and key in self.last_good:
                     member.read, _at = self.last_good[key]
-        return _Entry(Snapshot(observed, family.members, family.truncated), read_at, repository_url)
+        snapshot = Snapshot(observed, family.members, family.truncated)
+        return _Entry(snapshot, read_at, repository_url, until)
 
 
 CACHE = Cache()
@@ -1050,11 +1124,14 @@ def export_for_view(
         entry is None
         or entry.repository_url != repository_url
         or now() - entry.at >= DEFAULT_MAX_AGE
+        or not entry.live()
     )
     if stale and forge.kind_of(repository_url) == "github":
         _refresh_later(reader, project_id, repository_url, schedule)
     if entry is None or entry.snapshot is None or entry.repository_url != repository_url:
         return None
+    if not entry.live():
+        return None  # read through a link whose grant has ended (§11.4; review A2574 P2-3)
     return entry.snapshot.export()
 
 

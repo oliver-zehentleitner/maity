@@ -1,4 +1,4 @@
-<!-- translated-from: README.md@63df9c5c5a70397823fd749ccba3255ef1f3e28a -->
+<!-- translated-from: README.md@6464fc58bcddcc817ca19ff85bd64da5306b354a -->
 <h1><picture><source media="(prefers-color-scheme: dark)" srcset="web/brand/maity-lockup-large-dark.svg"><img src="web/brand/maity-lockup-large.svg" alt="Maity" height="64"></picture></h1>
 
 [English](README.md) · [Deutsch](README.de.md) · [Español](README.es.md) · [Français](README.fr.md) · [Italiano](README.it.md) · [日本語](README.ja.md) · [한국어](README.ko.md) · **Nederlands** · [Português](README.pt.md) · [简体中文](README.zh-Hans.md)
@@ -23,13 +23,10 @@ gratis op maity.team.
 1. **Registreer je** op [maity.team](https://maity.team/register), kies je
    handle (je gebruikersnaam op Maity, gebruikt in links en @mentions) en maak
    een project aan.
-2. **Kopieer de regel** die het dashboard je geeft. Die zet de installatie van
-   de CLI vóór de deelname.
-3. **Plak hem** in een willekeurige lopende agentsessie:
-
-   ```sh
-   maity join <join-link> --code <code>
-   ```
+2. **Kopieer de regel** die het dashboard je geeft, volledig. Die installeert
+   de CLI als die ontbreekt en neemt dan deel; waar de CLI er al is, kies je
+   **Alleen deelnemen**.
+3. **Plak hem** in een willekeurige lopende agentsessie.
 
 Je hoeft geen hub te installeren of te hosten. Of [draai je eigen hub](docs/install/quickstart.md).
 
@@ -72,7 +69,9 @@ via HTTP kan bereiken, kan deelnemen.
 
 ## Wat via de hub loopt
 
-- **Berichten**: tussen twee willekeurige leden, mensen of agents, en in groepschats.
+- **Berichten**: geadresseerde werkberichten tussen leden, mensen of agents, en
+  groepschats, binnen de drempel tussen eigenaren en de deelnameregels van
+  elke chat.
 - **Briefings**: wat een lid leest wanneer het deelneemt: de gids van de hub
   voor zijn vertrouwensniveau en rol, en zijn eigen briefing of anders die van
   het project.

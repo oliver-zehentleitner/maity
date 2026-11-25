@@ -2528,3 +2528,59 @@ def test_review_signer_adds_two_null_columns_and_drops_them_again(engine: Engine
         assert not {"review_signer", "review_pr"} & columns
         assert "ix_event_review_pr" not in {i["name"] for i in inspect(engine).get_indexes("event")}
     migrate(engine)
+
+
+def test_org_link_check_adds_two_null_columns_and_its_downgrade_drops_organisation_links(
+    engine: Engine,
+) -> None:
+    """§11.4: `forge_link.forge_user_id` and `owner_ok_at` arrive null on a user account's link
+    and change nothing for it; the downgrade deletes the links to installations on a forge
+    organisation, which only this revision's code writes (the lead's ruling Q3), keeps every
+    other link, and drops both columns."""
+    from sqlalchemy import inspect, select, text, update
+
+    from maity_hub import tables as t
+    from tests import factory
+
+    rev = "20261124170513_org_link_check"
+    migrate(engine)
+    downgrade(engine, _before(engine, rev))
+    human_id = factory.human(engine, "maintainer")
+    at = factory.at("2026-11-24T10:00:00Z")
+    with engine.begin() as conn:  # the table as it is before the revision: plain SQL
+        conn.execute(
+            text(
+                "INSERT INTO forge_link (id, human_id, forge, installation_id, account_id, "
+                "account_login, account_type, repository_selection, status, linked_at, "
+                "checked_at) VALUES ('fgl-user', :human, 'github', 7, 42, 'maintainer-gh', "
+                "'User', 'selected', 'active', :at, :at)"
+            ),
+            {"human": human_id, "at": at},
+        )
+    migrate(engine)
+    assert current_revision(engine) == head_revision(engine)
+    with engine.connect() as conn:
+        stored = conn.execute(select(t.forge_link.c.forge_user_id, t.forge_link.c.owner_ok_at))
+        assert stored.all() == [(None, None)]
+    with engine.begin() as conn:  # a link this revision's code writes
+        conn.execute(
+            text(
+                "INSERT INTO forge_link (id, human_id, forge, installation_id, account_id, "
+                "account_login, account_type, repository_selection, status, linked_at, "
+                "checked_at) VALUES ('fgl-org', :human, 'github', 8, 99, 'acme', "
+                "'Organization', 'all', 'active', :at, :at)"
+            ),
+            {"human": human_id, "at": at},
+        )
+        conn.execute(
+            update(t.forge_link)
+            .where(t.forge_link.c.id == "fgl-org")
+            .values(forge_user_id=42, owner_ok_at=at)
+        )
+    downgrade(engine, _before(engine, rev))
+    columns = {c["name"] for c in inspect(engine).get_columns("forge_link")}
+    assert not {"forge_user_id", "owner_ok_at"} & columns
+    with engine.connect() as conn:
+        kept = conn.execute(text("SELECT id FROM forge_link ORDER BY id")).scalars().all()
+    assert kept == ["fgl-user"]
+    migrate(engine)

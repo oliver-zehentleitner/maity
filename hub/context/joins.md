@@ -126,8 +126,11 @@ compared. `join.example.`, `join.example:80` and `join.example:0443` are the
 join host too, and a malformed port does not move a request to the public
 app. The log masks the first path segment of anything on the join host that
 was not rewritten to the join, since `HEAD /{token}` or `/{token}/` still
-carry the token. The page for a link that no longer works is answered only
-on the join host; the public host keeps the envelope's `not_found`.
+carry the token. The dead-link page (404, with the `Maity-Error` header
+naming `not_found`) answers a link that no longer works on the page path
+on both hosts, in the frame on the public host when HTML is asked for,
+and on the API path when HTML is asked for; otherwise the API path keeps
+the envelope's `not_found`.
 
 **Reason:** an exact `host[:port]` match let every variant fall through to
 the full public app, login cookie included, which the join host must
@@ -185,9 +188,13 @@ Three choices in the invitation code (`routes/invitations.py`,
 
 **Voided lazily.** Nothing watches an issuer's role. Whether the issuer
 still holds the authority an invitation needs is computed by one
-predicate (`invitations.admits`), which the page, accept and
-registration all read. Only an accept writes `voided_at`, under the
-project's lock, and commits it before it refuses. The contract says the
+predicate (`invitations.issuer_holds`), which accept, the settlement of
+an invitation by handle, the page (through `invitations.admits`) and
+registration (through `invitations.admits_address`) all read. An accept
+writes `voided_at` under the project's lock and commits it before it
+refuses; the only other writers are the settlement of an invitation by
+handle that is not accepted while its issuer has lost the authority, and
+an account's deletion (its issuer's or its invitee's). The contract says the
 invitation is voided "at that moment" of accepting. Rejected: voiding
 every open invitation of a member whose role changes, in the member
 PATCH and the removal. That means more write paths to keep complete,
@@ -195,8 +202,8 @@ and a promotion back would not restore what was voided. The reads give
 the same answer either way.
 
 **Listed by their own end.** The list shows open invitations, and ended
-ones (used, revoked, voided, expired) for 30 days after the timestamp of
-the way they ended. The contract row was widened to name voided and
+ones (used, revoked, voided, declined, expired) for 30 days after the
+timestamp of the way they ended. The contract row was widened to name voided and
 expired as well. Rejected: one window on `expires_at` for all of them.
 It kept a long-revoked invitation listed until its expiry ran out, and
 the timestamp of an ended one is the time an admin looks for.
@@ -517,8 +524,8 @@ said nothing.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the lead's order on card tsk-enfbkj0xqq5m, 2026-11-23 (seq 201204: the join lands switched off, failing closed, until the own-approvals gate of tsk-3ggnhdmgmkf3 is on main; the "may an outsider join here" predicate in one place; seq 201227 and 201300: the refusal of an outsider's agent's own claim in one place; seq 202962: the membership's own trust decides whose agent is outside); the review A2245 of #2142 and the lead's findings with it (round 2); the maintainer's answers to req-gp8jzgr6zdvj and req-yzt08c2qgx6g (`context/members.md`, fee10dc5 and d20a0c4b); `docs/api.md` §3.1 "An outsider's agent", §6.1 "The outsiders' opt-in", §6.5 "Until the claim request is built"
-**Revisit when:** the own-approvals gate of tsk-3ggnhdmgmkf3 is on main (`outsiders.JOINS_ON` goes on, by a one-line change of its own); the claim request of §6.5 is built (`refuse_taking` gives way to it); the outsiders' block or own quota (§3.1, "The outsiders of a project") is built, which `still_holds` and the join then check as well
+**Source:** the lead's order on card tsk-enfbkj0xqq5m, 2026-11-23 (the join lands switched off, failing closed, until the own-approvals gate of tsk-3ggnhdmgmkf3 is on main; the "may an outsider join here" predicate in one place; the refusal of an outsider's agent's own claim in one place; the membership's own trust decides whose agent is outside); the review A2245 of #2142 and the lead's findings with it (round 2); the maintainer's answers to req-gp8jzgr6zdvj and req-yzt08c2qgx6g (`context/members.md`, fee10dc5 and d20a0c4b); `docs/api.md` §3.1 "An outsider's agent", §6.1 "The outsiders' opt-in", §6.5 "Until the claim request is built"; the lead's ruling of 2026-11-24 (joins from outside stay off at launch by the owner's decision, the own-approvals gate being built, #2145)
+**Revisit when:** the owner decides to open joins from outside (they are off at launch by the owner's decision; the code no longer waits on anything before they can be turned on, the own-approvals gate is built, #2145; `outsiders.JOINS_ON` then goes on by a one-line change of its own); the claim request of §6.5 is built (`refuse_taking` gives way to it); the outsiders' block or own quota (§3.1, "The outsiders of a project") is built, which `still_holds` and the join then check as well
 **See:** https://github.com/oliver-zehentleitner/maity — fee10dc5-5922-4fb8-84f3-d1549b670a05 — as of 2026-11-23
 **See:** https://github.com/oliver-zehentleitner/maity — d20a0c4b-c785-481b-b0d8-6b972bc75441 — as of 2026-11-23
 
@@ -557,17 +564,17 @@ the claim request is built.
 `joins_open` does not hold, the switch off included, since the outsider's tab needs to say why
 the button is missing before the join is on (the lead, relaying the web side, 2026-11-23).
 
-**Whose agent is outside (the lead's ruling, seq 202962, 2026-11-23):** every check reads the
+**Whose agent is outside (the lead's ruling of 2026-11-23):** every check reads the
 trust of the membership it is about: the active row, and for own approvals the active row, else
 the most recent one, for a reporter who has left. An agent with trust `outside` stays outside
 when its owner becomes a member, so `check_policy` and `refuse_lift` (through
 `agent_owners.bound_by_outside_roles`), `check_assignment` (its own trust-`outside` branch, first)
 and `own_approvals.outside_agent` (which merged.py's `outsiders_work` calls) count it whoever its
 owner is now; a rejoin as an outsider's agent makes a new row with trust `outside` again. That
-predicate has three terms on that current row, as the lead ruled (seq 202949): trust `outside`,
+predicate has three terms on that current row, as the lead ruled on 2026-11-23: trust `outside`,
 the row's `joined_outside` mark (#2135: it joined while its owner held no membership), or its
 owner holding no membership now; plus a fourth, an owner whose account is suspended or deleted
-(seq 203828; hub/context/trust.md, 3ebd6d4a); one test per term, each failing without it. A removal and
+(the lead's ruling; hub/context/trust.md, 3ebd6d4a); one test per term, each failing without it. A removal and
 a new join as a member's agent is §2.3's one way out, and leaves a row with trust `member`.
 Rejected: any row of the agent in the project that ever held `outside` counting, because it
 would close the one exit §2.3 names (the lead took that reading back the same day).

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import re
-import unicodedata
 from dataclasses import replace
 from datetime import datetime, timedelta
 from types import SimpleNamespace
@@ -39,6 +38,7 @@ from maity_hub import (
     org_projects,
     orgs,
     placements,
+    plain_text,
     policy,
     project_links,
     project_names,
@@ -160,15 +160,6 @@ class RoleRuleIn(Strict):
 
 CHECKLIST_MAX = 30
 CHECKLIST_ITEM_MAX = 300
-# A line break, another control character or an invisible format character that turns or
-# hides text (Unicode Cc, Cf, Zl, Zp: zero-width, bidi controls and marks, BOM, soft hyphen):
-# an item is one plain line as it reads (§6.1, §16.7.4). By category, not a list of code
-# points, so a format character nobody named (U+061C, U+180E) is refused as well.
-NOT_PLAIN = frozenset({"Cc", "Cf", "Zl", "Zp"})
-
-
-def _not_plain(item: str) -> bool:
-    return any(unicodedata.category(ch) in NOT_PLAIN for ch in item)
 
 
 def _checked_role_rules(given: dict[str, RoleRuleIn]) -> dict[str, Any]:
@@ -202,7 +193,9 @@ def _checklist_error(role: str, items: list[str]) -> str | None:
     for item in items:
         if not item:
             return "empty_item"
-        if _not_plain(item):
+        # One plain line as it reads (§6.1, §1.7.1): no character of the plain-text rule's
+        # set, a line break, a lone surrogate, a private-use or an unassigned one included.
+        if not plain_text.plain(item):
             return "multiline"
         if len(item) > CHECKLIST_ITEM_MAX:
             return "too_long"
@@ -808,9 +801,15 @@ def _is_member(conn: Connection, project_id: str, principal: str) -> bool:
     return True
 
 
-def _export(project: Any, request: Request) -> dict[str, Any] | None:
-    """From the cache only: building a view never waits on a read (§11.3)."""
-    return ktw.export_for_view(reader_of(request), project.id, project.repository_url)
+def _export(conn: Connection, project: Any, request: Request) -> dict[str, Any] | None:
+    """From the cache only: building a view never waits on a read (§11.3). None while the
+    grants hold a link on a forge organisation that serves nothing as stored: an export it read
+    is answered nowhere once it stops serving (§11.4), and the view asks no forge to find out
+    whether the export rests on it (review A2573 F1, A2574 P2-3)."""
+    export = ktw.export_for_view(reader_of(request), project.id, project.repository_url)
+    if export is not None and forge_access.org_link_serves_nothing(conn, project):
+        return None
+    return export
 
 
 class _Unread:
@@ -863,7 +862,7 @@ def _view(
         settings_of(request),
         owner,
         shown,
-        _export(project, request),
+        _export(conn, project, request),
         aliases,
         _stored(conn, project, request, mine),
         confirmed_by_of(conn, [project])[project.id],
@@ -960,7 +959,7 @@ def list_projects(request: Request, caller: AnyCaller) -> JSONResponse:
                     settings,
                     names[r.id].split("/")[0],
                     shown[r.id],
-                    _export(r, request),
+                    _export(conn, r, request),
                     aliases[r.id],
                     _stored(conn, r, request),
                     confirmed[r.id],
@@ -1707,6 +1706,13 @@ def confirm_repository(
             .where(t.project.c.id == project.id)
             .values(repository_owner_confirmed=True, repository_confirmed_by=mine.row.human_id)
         )
+        if not project.repository_owner_confirmed or (
+            project.repository_confirmed_by != mine.row.human_id
+        ):
+            # Another owner's confirmation ends the grants of the one it replaces (§11.4):
+            # nothing read with them is answered after it, the reply to this call included;
+            # now and again after the commit.
+            wakeups.forget_repository_everywhere(conn, project.id)
         return idempotency.Outcome(
             200, "project", project.id, _view(conn, _load(conn, project.id), request)
         )

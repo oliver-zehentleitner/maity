@@ -13,7 +13,6 @@ from __future__ import annotations
 import json
 import math
 import re
-import unicodedata
 from dataclasses import replace
 from datetime import datetime, timedelta
 from typing import Any
@@ -22,7 +21,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy import Connection, func, insert, select, update
 
-from maity_hub import clock, events, idempotency, restricted
+from maity_hub import clock, events, idempotency, plain_text, restricted
 from maity_hub import tables as t
 from maity_hub.access import Membership, membership
 from maity_hub.auth import sessions
@@ -42,9 +41,6 @@ QUOTA = 200  # cards with a text per project
 MEMBERSHIP_CAP = 20  # changing PUT or DELETE per membership per hour
 CARD_CAP = 10  # changing PUT per card per hour; a DELETE never counts here
 WINDOW = timedelta(hours=1)
-# Line feed and tab stay; every other control, format, private-use or surrogate code point,
-# and the line and paragraph separators, are refused (§6.4 "The text").
-REFUSED_CATEGORIES = frozenset({"Cc", "Cf", "Co", "Cs", "Zl", "Zp"})
 RESOURCE = "restricted_text"
 PATH = "/projects/{owner}/{slug}/tasks/{card_id}/restricted"
 
@@ -95,7 +91,10 @@ def _text(value: Any) -> str:
     text = value.replace("\r\n", "\n").replace("\r", "\n")
     if not text.strip():
         raise invalid({"text": "empty"}, "a restricted text is 1 to 1000 characters")
-    if any(unicodedata.category(c) in REFUSED_CATEGORIES and c not in "\n\t" for c in text):
+    # The plain-text rule of a field of several lines (§1.7.1, §6.4 "The text"): line feed and
+    # tab stay (a carriage return is a line feed by now); every other character of the set,
+    # an unassigned code point included, is refused.
+    if not plain_text.plain(text, keep="\n\t"):
         raise invalid({"text": "control_character"}, "the text holds a refused character")
     if len(text) > TEXT_MAX:
         raise invalid({"text": "too_long"}, "a restricted text is 1 to 1000 characters")

@@ -100,6 +100,7 @@
   "notify.asks_you": "{who}님이 나에게 질문했어요: {title}",
   "notify.chat": "{chat}의 {who}",
   "notify.forge_added": "포지 접근이 추가되었어요: {login} ({source})",
+  "notify.forge_not_admin": "포지 접근이 중지되었어요: 더 이상 {login}의 소유자가 아니에요",
   "notify.jf_no_moderator": "진행할 사람이 없어 정기 회의를 건너뛰었어요: {topic}",
   "notify.jf_reported": "정기 회의 보고서: {topic}",
   "notify.mail_disabled": "{address}(으)로의 메일이 3회 실패하여 중지되었어요",

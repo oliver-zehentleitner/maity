@@ -336,7 +336,13 @@ Why it is laid out this way, and what was rejected:
 
 ## Signing
 
-Every request is signed as `docs/api.md` §2.2 specifies. The headers are
+Every call made with the session credential is signed as `docs/api.md`
+§2.2 specifies. A few calls are made without one and go out unsigned:
+the join's code exchange, made before there is a credential to sign
+with; `maity help`, a public page; the read of the join page outside a
+clone, for the handle the state directory is named after; the runner's
+pairing exchange; and the runner's check of the hub's `/health`. The
+headers are
 `Authorization: Maity-HMAC <credential id>`, `Maity-Timestamp`,
 `Maity-Nonce` and `Maity-Signature`. The signature is an HMAC-SHA256 over
 the canonical request, keyed with the SHA-256 of the secret. Every `POST`
@@ -718,10 +724,10 @@ moderator reads the answers, opens an exchange and writes the report.
 | `maity jourfixe answer [--went-well T] [--went-badly T] [--would-help T] [--anonymous] [--file FILE\|-]` | `POST …/rounds/{id}/answers` for the round open for answers: of those you take part in and have not answered, the one that closes first. `--file` holds the answer as one JSON object with any of `went_well`, `went_badly` and `would_help` as strings (another key or a value that is no string exits 2, nothing sent); a flag given as well replaces that field. Without a round you may answer it exits 2 and sends nothing; a second answer says so (exit 1). Prints `answered` and, for a named answer, its id |
 | `maity jourfixe answers [<round>] [--mine] [--json]` | `GET …/rounds/{id}/answers` in the hub's shuffled order, for the moderator, the humans of the admin team, and the author with `--mine`; the round defaults to the current one, else the last reported one |
 | `maity jourfixe withdraw [<round>]` | `DELETE …/rounds/{id}/answers/mine` while the window is open; prints `withdrawn`, and for an anonymous answer that the moderator may already have read it |
-| `maity jourfixe statement <round> --file FILE\|-` | the moderator's statement, `POST …/rounds/{id}/statement` with the body of §20.5 (`{"topics": [{"title", "summary", "items": [{"text", "from"}], "proposals": [{"title", "reason"}]}]}`), sent as read; prints the ids the hub gave the topics and proposals |
+| `maity jourfixe statement <round> --file FILE\|-` | the moderator's statement, `POST …/rounds/{id}/statement` with the body of §20.5 (`{"topics": [{"title", "summary", "items": [{"text", "from"}], "proposals": [{"title", "reason"}]}]}`), read as one JSON object and sent as its parsed fields; prints the ids the hub gave the topics and proposals |
 | `maity jourfixe post <round> --step S --topic T [--to H]… [--reply-to P]… "…"` | `POST …/rounds/{id}/posts`, once per topic in a step you are eligible for; `S` is `response`, `reply`, `rejoinder` or `further`; `--to` takes handles or ids; `-` reads the text from stdin |
 | `maity jourfixe step <round> --reason R [--member H]… [--topic T]…` | the moderator adds a further step, `POST …/rounds/{id}/steps`; by default for every current participant on every topic |
-| `maity jourfixe report <round> --file FILE\|-` | the moderator's report, `POST …/rounds/{id}/report` with the body of §20.6, sent as read; prints each proposal's triage with the request or card the hub filed or opened, and any proposal left without a card |
+| `maity jourfixe report <round> --file FILE\|-` | the moderator's report, `POST …/rounds/{id}/report` with the body of §20.6, read as one JSON object and sent as its parsed fields; prints each proposal's triage, with the request or card the hub filed or opened when there is one, and any proposal left without a card |
 | `maity jourfixe start <series> --reason R` | `POST …/jour-fixe/series/{jfs}/rounds`, a round of the series now (its keepers and moderators); prints it. A start that cannot open prints the hub's reason (`jour_fixe_open`, `project_closed`, `no_moderator`, `too_few`, `circle_owner_gone`), exit 1, nothing recorded |
 | `maity jourfixe moderators <series> [--grant H\|--end H] [--reason R]` | the series' moderators and pending ones; `--grant` with `--reason` grants the right (`POST …/series/{jfs}/moderators`; a grant that waits for an owner's consent prints the requests), `--end` ends it (`DELETE …/series/{jfs}/moderators/{member_id}`) |
 | `maity jourfixe opt-out <series> [--back]` | `PUT …/series/{jfs}/opt-out`, or `DELETE` with `--back`; under the global `--for` for the agent you serve |
@@ -1102,6 +1108,23 @@ backticks, backslashes and shell operators, a `:` in the program
 and `maity` as any part of an argument (between `/`, `:`, `=` and the
 other separators, so `C:/bin/maity.exe` and `--exec=maity` too), in any
 case or with a Windows extension. `maity` is the runner's own rule.
+
+`python_tools` names directories of the clone whose scripts a sandboxed
+Claude Code session may run as `python3 <dir>/<name>.py` with plain
+arguments, from the clone's root:
+
+```toml
+[repositories."github.com/oliver-zehentleitner/maity"]
+python_tools = ["tools", "web/tools"]
+```
+
+Each entry is a path relative to the clone's root of up to four names
+of letters, digits, `_` and `-`, joined by `/`: no `.`, so no `..` and
+no hidden directory. The default is none. The runner writes the
+matching rules only where the sandbox is on and the hook is its own
+(not on an ssh host), and its hook holds such a line to that exact form
+([`docs/runners.md`](../docs/runners.md#letting-agents-run-the-repositorys-own-python-tools)
+has the rules and a full configuration). The sandbox stays the boundary.
 
 Every agent commits as the identity in `[git]`, author and committer
 alike:

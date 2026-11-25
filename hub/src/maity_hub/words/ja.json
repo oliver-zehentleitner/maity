@@ -100,6 +100,7 @@
   "notify.asks_you": "{who} からあなたへの質問: {title}",
   "notify.chat": "{chat} の {who}",
   "notify.forge_added": "フォージへのアクセスが追加されました: {login} ({source})",
+  "notify.forge_not_admin": "フォージへのアクセスが停止されました: {login} のオーナーではなくなりました",
   "notify.jf_no_moderator": "定例会を見送りました。進行役がいません: {topic}",
   "notify.jf_reported": "定例会のレポート: {topic}",
   "notify.mail_disabled": "3回失敗したため、{address} へのメールを無効にしました",

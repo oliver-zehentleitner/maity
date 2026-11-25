@@ -822,14 +822,9 @@ def _join_fields(conn: Connection, placement: Any) -> tuple[dict[str, Any], str]
     }
     if placement.agent_id is not None:
         return _admission_fields(conn, placement, profile, told)
-    taken = conn.execute(
-        select(t.agent_profile.c.id).where(
-            t.agent_profile.c.owner_id == placement.created_by,
-            t.agent_profile.c.handle == placement.new_handle,
-        )
-    ).first()
-    aliased = handles.holder(conn, placement.created_by, placement.new_handle)
-    if taken is not None or aliased not in (None, "placement"):
+    # A live profile or a live alias of the owner holds the handle; a deleted profile's
+    # tombstone holds nothing (§6.3, §6.24).
+    if handles.holder(conn, placement.created_by, placement.new_handle) not in (None, "placement"):
         # the exchange would refuse it: no code that can never work
         raise _pickup_refused("handle_taken")
     creator = SimpleNamespace(

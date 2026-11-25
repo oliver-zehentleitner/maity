@@ -2282,7 +2282,7 @@ def test_a_nul_in_the_git_email_fails_when_the_file_is_loaded(tmp_path: Path) ->
     "argv",
     [["scratchop", "remove", "--under", "/", "/maity/.scratch/plc-0003"],
      ["limitread", "--under", "/", "/etc/hostname"], ["trust", "/h", "/c"], ["status"],
-     ["gc"], ["check"]],
+     ["gc"], ["check"], ["codexd", "end-updater", "/r", "/r/h"]],
 )  # fmt: skip
 def test_the_runner_commands_are_refused_in_a_placed_session(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],

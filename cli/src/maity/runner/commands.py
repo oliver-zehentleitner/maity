@@ -20,6 +20,7 @@ from .. import clonecheck, hub, onboarding, proc, state
 from . import (
     adapters,
     capabilities,
+    codexd,
     config,
     install,
     keeper,
@@ -1754,6 +1755,14 @@ def add_parser(sub: Any, fmt: type[argparse.HelpFormatter]) -> None:
     # (plaincall), reading its input on stdin.
     r = rsub.add_parser("plaincall")
     r.set_defaults(handler=lambda a: plaincall.main([]))
+    # Internal: ends a Codex placement's updater loop as the agents' user (codexd.end_updater),
+    # where the runner is not that user (the agent_user layout, an ssh host).
+    r = rsub.add_parser("codexd")
+    r.add_argument("action", choices=["end-updater"])
+    r.add_argument("root")
+    r.add_argument("home")
+    r.add_argument("wait", nargs="?", default=str(codexd.UPDATER_WAIT))
+    r.set_defaults(handler=lambda a: codexd.main([a.action, a.root, a.home, a.wait]))
     r = rsub.add_parser("stub")
     r.add_argument("--exit-code", type=int, default=0)
     r.add_argument("--run-seconds", type=int, default=30)

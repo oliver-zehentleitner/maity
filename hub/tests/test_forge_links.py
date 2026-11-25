@@ -189,6 +189,10 @@ class Forge:
         self.installations: dict[int, dict[str, Any]] = {}
         self.repositories: dict[int, Any] = {}
         self.codes: list[str] = []
+        # an organisation's login -> the user's own membership in it, as `membership_of` gives
+        # it (None: a 404), or an exception the read raises
+        self.memberships: dict[str, Any] = {}
+        self.membership_reads: list[str] = []
 
     def install(self, installation_id: int, account_id: int = 42, kind: str = "User") -> None:
         self.installations[installation_id] = {
@@ -203,9 +207,15 @@ class Forge:
 def fake(monkeypatch: pytest.MonkeyPatch) -> Forge:
     fg = Forge()
 
-    def user_of_code(_app: Any, code: str) -> dict[str, Any]:
+    def user_of_code(_app: Any, code: str, organisation: str | None = None) -> dict[str, Any]:
         fg.codes.append(code)
-        return fg.user
+        if organisation is None:
+            return fg.user
+        fg.membership_reads.append(organisation)
+        answer = fg.memberships.get(organisation)
+        if isinstance(answer, BaseException):
+            raise answer
+        return {**fg.user, "membership": answer}
 
     def repositories(_app: Any, installation_id: int, limit: int = 100) -> list[str]:
         answer = fg.repositories.get(installation_id, [])
@@ -381,7 +391,8 @@ def test_a_malformed_setup_without_a_session_is_unauthenticated(
     ("account_id", "kind", "reason"),
     [
         (43, "User", "installation_not_yours"),
-        (42, "Organization", "organisation_installation"),
+        # any other kind of account; one on a forge organisation: test_forge_org_links.py
+        (42, "Enterprise", "organisation_installation"),
         (None, None, "installation_not_yours"),
     ],
 )
@@ -460,10 +471,14 @@ def test_a_refused_mint_on_the_list_forgets_the_token_as_every_refusal_does(
 def test_a_successful_mint_on_the_list_turns_a_suspended_link_active_again(
     human: flow.Human, fake: Forge, migrated: Engine
 ) -> None:
+    """Retried once 10 minutes passed since the last check (§11.4); not before them."""
     fake.install(7)
     setup(human, 7, start(human))
     with migrated.begin() as conn:
         conn.execute(update(t.forge_link).values(status="suspended"))
+    assert links(human)[0]["status"] == "suspended"  # checked at linking, a moment ago
+    with migrated.begin() as conn:
+        conn.execute(update(t.forge_link).values(checked_at=clock.now() - timedelta(minutes=10)))
     assert links(human)[0]["status"] == "active"
     with migrated.connect() as conn:
         assert conn.execute(select(t.forge_link.c.status)).scalar_one() == "active"
@@ -531,6 +546,7 @@ def test_a_forge_that_does_not_answer_goes_back_with_the_reason(
     def down(_app: Any, code: str) -> dict[str, Any]:
         raise forge.ForgeUnavailableError("down")
 
+    fake.install(7)  # the installation is read first (§11.4's order: it exists, then the user)
     monkeypatch.setattr(github_app.GitHubApp, "user_of_code", down)
     location = setup(human, 7, start(human))
     assert location == DONE + "?error=forge_unavailable"

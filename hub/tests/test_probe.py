@@ -24,6 +24,7 @@ OTHER = "e" * 40
 TOKEN = "test-token"
 READER = forge.Forge(TOKEN)  # what the app builds from the settings
 REAL_GET = forge.Forge._get
+REAL_REQUIRE_PUBLIC = forge.Forge._require_public
 
 
 class FakeGitHub:
@@ -111,6 +112,9 @@ def settings(settings: Settings, request: pytest.FixtureRequest) -> Settings:
 def github(monkeypatch: pytest.MonkeyPatch) -> FakeGitHub:
     fake = FakeGitHub()
     monkeypatch.setattr(forge.Forge, "_get", lambda _self, path, **_: fake(path))
+    # The token sees the repository as public: the probe route asks so on every call before a
+    # cached observation (review A2574 P2-1), which `_get` above does not cover.
+    monkeypatch.setattr(forge.Forge, "_require_public", lambda _self, _repository: None)
     # The tests drive the probe themselves; the worker thread has its own test.
     monkeypatch.setattr(probe.Worker, "start", lambda self: None)
     return fake
@@ -413,6 +417,7 @@ def test_a_private_repository_is_not_configured_and_only_an_admin_sees_why(
         return None if answer is None else {"private": answer}
 
     monkeypatch.setattr(forge.Forge, "_get", REAL_GET)
+    monkeypatch.setattr(forge.Forge, "_require_public", REAL_REQUIRE_PUBLIC)
     monkeypatch.setattr(forge.Forge, "_send", send)
     monkeypatch.setattr(forge, "_public", {})
     refused = owner.get("/projects/maintainer/maity/probe?pr=3")

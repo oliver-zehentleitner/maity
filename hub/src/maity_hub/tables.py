@@ -3012,9 +3012,17 @@ forge_link = Table(
     Column("account_login", String(HANDLE), nullable=False),
     Column("account_type", String(16), nullable=False),
     Column("repository_selection", String(16), nullable=False),  # all, selected
-    Column("status", String(16), nullable=False),  # active, suspended, removed
+    Column("status", String(16), nullable=False),  # active, suspended, removed, not_admin
     Column("linked_at", UtcDateTime, nullable=False),
+    # The last check, whatever came of it; for an installation on a forge organisation the
+    # last owner check, which runs at most every 10 minutes from it.
     Column("checked_at", UtcDateTime, nullable=False),
+    # An installation on a forge organisation only, NULL on a user account's: the forge user
+    # who linked it, re-checked by id (never by a stored login), and the last owner check that
+    # succeeded, apart from `checked_at`, so a refused mint or an unanswered check never makes
+    # the link fresh. It serves while `active` and that check is under 10 minutes old.
+    Column("forge_user_id", BIG_ID),
+    Column("owner_ok_at", UtcDateTime),
     UniqueConstraint("forge", "installation_id"),
     **MYSQL_TABLE,
 )

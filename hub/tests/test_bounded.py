@@ -46,7 +46,7 @@ def test_the_ktw_cache_keeps_the_newest_projects_and_drops_their_reads(
 ) -> None:
     monkeypatch.setattr(ktw, "PROJECTS_KEPT", 2)
     monkeypatch.setattr(
-        ktw.Cache, "_read", lambda _self, _r, _p, url, _last: ktw._Entry(None, ktw.now(), url)
+        ktw.Cache, "_read", lambda _self, _r, _p, url, _last, _g: ktw._Entry(None, ktw.now(), url)
     )
     cache = ktw.Cache()
     cache.last_good[("p0", "a/b", "context/x.md")] = (SimpleNamespace(), None)  # type: ignore[assignment]
@@ -63,7 +63,7 @@ def test_a_ktw_project_in_use_is_never_dropped(monkeypatch: pytest.MonkeyPatch) 
     neither drop p0's answer nor its last good reads nor its lock."""
     monkeypatch.setattr(ktw, "PROJECTS_KEPT", 2)
     monkeypatch.setattr(
-        ktw.Cache, "_read", lambda _self, _r, _p, url, _last: ktw._Entry(None, ktw.now(), url)
+        ktw.Cache, "_read", lambda _self, _r, _p, url, _last, _g: ktw._Entry(None, ktw.now(), url)
     )
     cache = ktw.Cache()
     cache.get(forge.Forge(None), "p0", None, max_age=0)
@@ -114,9 +114,10 @@ def test_forge_access_keeps_the_newest_choices_and_sources(
     monkeypatch.setattr(forge_access, "VIA_KEPT", 3)
     monkeypatch.setattr(forge_access, "_last_via", OrderedDict())
     access = forge_access.ForgeAccess(None, None, None)  # type: ignore[arg-type]
-    facts = SimpleNamespace(key=lambda _base: ("same",))
+    facts = SimpleNamespace(key=lambda _base: ("same",), links=())
     monkeypatch.setattr(access, "_facts", lambda _p: facts)
-    monkeypatch.setattr(access, "_choose", lambda p, _f, _b: forge.Forge("t", project_id=p))
+    # `_choose` answers the reader and until when it may be kept (None: KEEP_SECONDS only)
+    monkeypatch.setattr(access, "_choose", lambda p, _f, _b: (forge.Forge("t", project_id=p), None))
     for n in range(6):
         access.reader(f"p{n}", forge.Forge(None))
     assert list(access._chosen) == ["p4", "p5"]

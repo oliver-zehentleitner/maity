@@ -436,7 +436,7 @@ insert changed.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** `forge.py:125-126` (`_budgets`: `remaining`, `in_flight`, `until` per token, `LOW` reserve of 5 %), `forge.py:246-250` (`_visible`, `_public`), `github_app.py:182` (`_tokens`), `forge_access.py:62` (`_chosen`), `forge_access.py:258-277` (`_last_via`, `probe_via`, read in `views.py:185` and `releases.py:190`), `forge_links.forget_token`, `ktw.CACHE` and its `forget` at `routes/projects.py:743`, `contract_text`
+**Source:** `forge.py:125-126` (`_budgets`: `remaining`, `in_flight`, `until` per token, `LOW` reserve of 5 %), `forge.py:246-250` (`_visible`, `_public`), `github_app.py:182` (`_tokens`), `forge_access.py:62` (`_chosen`), `forge_access.py:258-277` (`_last_via`, `probe_via`, read in `views.py:185` and `releases.py:190`), `forge_links.forget_token`, `ktw.CACHE` and its `forget` at `routes/projects.py:743`, `contract_text`; the generation each pod counts on a `repository:` notice, from review A2585 P2-2 of #2192 (card tsk-2m5jbwemb21x), 2026-11-24
 **See:** keep-the-why.md — f5af1bd9-bb11-4310-b751-334de2668dfe — as of 2026-10-30
 **Revisit when:** forge reads per hour approach the token's limit with the probe on one pod, or a cache's staleness across pods is seen by a user, or the forge answers 403 or 429 while the shared row shows the reserve intact, or the budget's two statements show as pool waits in the load test
 
@@ -477,6 +477,12 @@ which costs one more mint. A listener whose connection dropped forgets every tok
 the Why read when it is back: a lost notice could otherwise leave a removed token in use for up to
 an hour, and asking the forge again costs a read.
 
+A `repository:` notice runs the same `ktw.Cache.forget` on the pod that hears it as on the one that
+wrote, so it also counts up that pod's own generation of the project: a family read under way there
+when the notice arrives keeps nothing of what it read and marks nothing read (review A2585 P2-2;
+keep-the-why.md 07614661). A notice lost to a dropped connection is covered by the forget of
+everything once the listener is back, which counts up the cache-wide generation.
+
 A dropped connection forgets at once as well, since no notice arrives until it is back, and that
 includes a first attempt that fails. A first connection that succeeds does not forget: nothing was
 cached yet beyond the moments of its start, and clearing there would empty what a starting process
@@ -508,6 +514,9 @@ causes errors (403 or 429 from the forge for everyone).
   what a starting process has just read.
 - **A held token may turn a link that is not `active` back to `active`:** a replica that missed the
   notice would undo what another one found.
+- **One generation per project in the database, shared by the pods:** no notice would be needed for
+  it, but every §11.3 call and every family read would cost one more query, where the pod's own
+  count rides on the notice it already gets.
 
 ## Attachments move to S3-compatible object storage
 

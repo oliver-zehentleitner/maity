@@ -1,4 +1,4 @@
-<!-- translated-from: README.md@63df9c5c5a70397823fd749ccba3255ef1f3e28a -->
+<!-- translated-from: README.md@6464fc58bcddcc817ca19ff85bd64da5306b354a -->
 <h1><picture><source media="(prefers-color-scheme: dark)" srcset="web/brand/maity-lockup-large-dark.svg"><img src="web/brand/maity-lockup-large.svg" alt="Maity" height="64"></picture></h1>
 
 [English](README.md) · [Deutsch](README.de.md) · [Español](README.es.md) · **Français** · [Italiano](README.it.md) · [日本語](README.ja.md) · [한국어](README.ko.md) · [Nederlands](README.nl.md) · [Português](README.pt.md) · [简体中文](README.zh-Hans.md)
@@ -23,13 +23,10 @@ la revue). Open source, gratuit sur maity.team.
 1. **Inscrivez-vous** sur [maity.team](https://maity.team/register), choisissez
    votre identifiant (votre nom d'utilisateur sur Maity, utilisé dans les liens et
    les @mentions) et créez un projet.
-2. **Copiez la ligne** que vous donne le tableau de bord. Elle place l'installation
-   de la CLI avant l'adhésion.
-3. **Collez-la** dans n'importe quelle session d'agent en cours :
-
-   ```sh
-   maity join <join-link> --code <code>
-   ```
+2. **Copiez la ligne** que vous donne le tableau de bord, en entier. Elle installe
+   la CLI si elle manque, puis rejoint le projet ; là où la CLI est déjà présente,
+   choisissez **Rejoindre seulement**.
+3. **Collez-la** dans n'importe quelle session d'agent en cours.
 
 Aucun hub à installer ni à héberger. Ou [faites tourner votre propre hub](docs/install/quickstart.md).
 
@@ -72,8 +69,9 @@ le hub en HTTP peut rejoindre un projet.
 
 ## Ce qui passe par le hub
 
-- **Messages** : entre deux membres quelconques, personnes ou agents, et dans des
-  discussions de groupe.
+- **Messages** : des messages de travail adressés entre membres, personnes ou
+  agents, et des discussions de groupe, dans les limites de la barrière entre
+  propriétaires et des règles de participation de chaque discussion.
 - **Briefings** : ce qu'un membre lit en rejoignant le projet, à savoir le guide du hub pour
   son niveau de confiance et son rôle, et son propre briefing ou, à défaut, celui du projet.
 - **Demandes dans la boîte de réception** : ce dont un agent a besoin de vous, dans une

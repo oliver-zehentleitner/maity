@@ -169,6 +169,18 @@ const win = {
   clearInterval: (id) => { intervals.delete(id); },
 };
 const fireIntervals = async () => { for (const fn of [...intervals.values()]) await fn(); };
+// A round whose counts differ from the last (the inbox count raised), so the tab row has something to
+// draw anew: a round that changes nothing leaves the row as it is (js/app.js renderSwitcher).
+let countsMoved = 0;
+const fireMovedCounts = async () => {
+  const read = win.Maity.notify.read;
+  win.Maity.notify.read = () => read().then((answer) => {
+    const st = win.Maity.notify.state;
+    st.counts = Object.assign({}, st.counts, { inbox: ((st.counts || {}).inbox || 0) + 100 + (++countsMoved) });
+    return answer;
+  });
+  try { await fireIntervals(); } finally { win.Maity.notify.read = read; }
+};
 const ctx = { window: win, document, Node: Node_, URL, URLSearchParams, Uint8Array, console, Promise, JSON, Date, Set, Object, Array, Number, String, Error, btoa, atob };
 win.window = win;
 // A ResizeObserver that never fires by itself: the rows it watches are kept, and a test calls its
@@ -591,6 +603,53 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     expect(lineDuring && !anyDropLine() && tabIds() === MA + "," + SA, "tabs: a drag ended outside a tab leaves no line and no move");
     tabChip(MA).dispatch("dragover", { dataTransfer: null, preventDefault() { overPrevented = false; } });
     expect(overPrevented, "tabs: no drop target without a tab being dragged");
+    // The counts redraw the row now and then, right after a page is drawn too (tsk-hyfqc0sp2bvc): the focused tab stays
+    // focused on the redrawn row, and while a tab is dragged the row waits until the drag ends (PR 2201's web-e2e).
+    const swProto = Object.getPrototypeOf(tabChip(MA));
+    const swFocus = swProto.focus;
+    swProto.focus = function () { document.activeElement = this; };
+    tabChip(SA).focus();
+    // A round that changes nothing in the row leaves it, its tabs the very same elements: a read or a click
+    // aimed at a tab is not taken along by a redraw for nothing (PR 2201's web-e2e, the outsider tab's edge).
+    const swSame = header.querySelector("nav.switcher");
+    const swSameChip = tabChip(SA);
+    await fireIntervals(); for (let k = 0; k < 4; k++) await tick();
+    const swKept = header.querySelector("nav.switcher") === swSame && tabChip(SA) === swSameChip;
+    expect(swKept, "tabs: a counts round that changes nothing in the row leaves the row and its tabs as they are");
+    const swBefore = header.querySelector("nav.switcher");
+    await fireMovedCounts(); for (let k = 0; k < 4; k++) await tick();
+    const swRedrawn = header.querySelector("nav.switcher") !== swBefore;
+    const swFocusKept = document.activeElement === tabChip(SA);
+    tabChip(MA).dispatch("dragstart", { dataTransfer: null });
+    const swDragRow = header.querySelector("nav.switcher");
+    await fireMovedCounts(); for (let k = 0; k < 4; k++) await tick();
+    const swHeld = header.querySelector("nav.switcher") === swDragRow;
+    tabChip(MA).dispatch("dragend");
+    const swAfter = header.querySelector("nav.switcher") !== swDragRow;
+    swProto.focus = swFocus; document.activeElement = undefined;
+    expect(swRedrawn && swFocusKept && swHeld && swAfter,
+      "tabs: a counts redraw keeps the focused tab focused, and waits for a drag to end " + JSON.stringify([swRedrawn, swFocusKept, swHeld, swAfter]));
+    // A drop that moves a tab while a counts redraw waits: the move's own redraw is the latest, and the drag's end
+    // redraws no second time (A2598).
+    const swDragged = tabChip(SA);
+    swDragged.dispatch("dragstart", { dataTransfer: null });
+    await fireMovedCounts(); for (let k = 0; k < 4; k++) await tick();
+    const swTarget = tabChip(MA);
+    swTarget.dispatch("drop", { dataTransfer: null, currentTarget: swTarget });
+    const swDropRow = header.querySelector("nav.switcher");
+    const swMoved = tabIds() === SA + "," + MA;
+    swDragged.dispatch("dragend");
+    const swOnce = header.querySelector("nav.switcher") === swDropRow;
+    // The header drawn anew mid-drag (another page): the drag is over, so later redraws are not held for it.
+    tabChip(MA).dispatch("dragstart", { dataTransfer: null });
+    await go("#/maintainer/maity/inbox"); await go("#/all"); for (let k = 0; k < 4; k++) await tick();
+    const swNewRow = header.querySelector("nav.switcher");
+    await fireMovedCounts(); for (let k = 0; k < 4; k++) await tick();
+    const swNotHeld = !!swNewRow && header.querySelector("nav.switcher") !== swNewRow;
+    expect(swMoved && swOnce && swNotHeld,
+      "tabs: a drop's move supersedes a held redraw, and a header drawn anew ends the drag " + JSON.stringify([swMoved, swOnce, swNotHeld]));
+    tabChip(MA).dispatch("keydown", { key: "ArrowLeft", altKey: true, shiftKey: true });
+    expect(tabIds() === MA + "," + SA, "tabs: back in the order the next cases start from");
     // The tabs menu: one switch per project, the start set, nothing sent for a switch.
     const tabsButton = () => header.querySelector(".tabs-menu-box").querySelector("button");
     // The tabs menu is drawn as the row's last tab but is no tab (tsk-qa2r972wjsws): a menu button outside the tabs,
@@ -916,7 +975,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && byId("message-body").value === "Ship it, @shop-dev.", "global names: a short handle two agents share is refused with the long forms, the text kept");
   byId("message-body").value = "Ship it, @anna/shop-dev.";
   main.querySelector("form.message-form").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
-  expect(gnPosts.length === 2 && text(main).includes("mentioned and notified: Anna's Shop Dev"), "global names: the long form is sent and resolves to that agent");
+  expect(gnPosts.length === 2 && text(main).includes("mentioned: Anna's Shop Dev"), "global names: the long form is sent and resolves to that agent");
   win.Maity.api.post = gnPost;
   await go("#/maintainer/sample/messages"); for (let k = 0; k < 4; k++) await tick();
   expect(main.querySelectorAll(".pmsg a.mention").some((a) => text(a) === "@anna/shop-dev"), "global names: the message's stored mention by the long name where the short one is shared");
@@ -2062,8 +2121,15 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   uq.value = "OPS@EXAMPLE"; uq.dispatch("input");
   await new Promise((r) => setTimeout(r, 350)); await tick();
   expect(JSON.stringify(userNames()) === JSON.stringify(["Ops on call"]), "users: search by the email address, case-insensitive");
-  uq.value = ""; const ud = byId("users-disabled"); ud.value = "false"; ud.dispatch("change"); await tick(); await tick();
-  expect(JSON.stringify(userNames()) === JSON.stringify(["Guest Reviewer", "Maintainer"]), "users: only active accounts");
+  // No filter by disabled accounts while the hub lists none (A2570): nothing to choose, no `disabled` in the read.
+  const udPaths = [];
+  const udGet = win.Maity.api.get;
+  win.Maity.api.get = (p, ...r) => { if (p.startsWith("/admin/users")) udPaths.push(p); return udGet(p, ...r); };
+  uq.value = ""; uq.dispatch("input");
+  await new Promise((r) => setTimeout(r, 350)); await tick();
+  win.Maity.api.get = udGet;
+  expect(!byId("users-disabled") && udPaths.length && udPaths.every((p) => !p.includes("disabled")),
+    "users: no Disabled filter while the hub lists no disabled accounts, and no disabled in the read " + JSON.stringify(udPaths));
   // Paged by the hub's cursor: Load more appends.
   const uGet = win.Maity.api.get;
   const uPaths = [];
@@ -2072,7 +2138,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     uPaths.push(p);
     return uGet(p.replace("limit=50", "limit=1"));
   };
-  ud.value = ""; ud.dispatch("change"); await tick(); await tick();
+  uq.value = " "; uq.dispatch("input");
+  await new Promise((r) => setTimeout(r, 350)); await tick(); await tick();
   expect(userRows().length === 1 && btn(main, "Load more") && text(main).includes("1+ account"), "users: one page, and more to load");
   const uProto = Object.getPrototypeOf(main);
   const uFocus = uProto.focus;
@@ -5689,12 +5756,17 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   main.querySelector("form.message-form").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
   expect(JSON.stringify(msgPosts[0]) === JSON.stringify(["/projects/maintainer/maity/events", { kind: "message", type: "handover", to: "role:reviewer",
     body: "Please look at the join path, @agent-b; mail x@agent-c is no mention.", task_id: "tsk-0006" }]), "message: the POST as §8.4 has it, no mentions sent");
-  expect(text(main).includes("Sent to every reviewer; mentioned and notified: Agent B.") && byId("message-body").value === "",
+  expect(text(main).includes("Sent to every reviewer; mentioned: Agent B.") && byId("message-body").value === "",
     "message: sent, with whom the hub's mentions told");
   win.Maity.api.post = (p) => Promise.reject(new win.Maity.api.ApiError("too many", 400, p, "invalid", { fields: { body: "too_many_mentions" } }));
   byId("message-body").value = "@agent-a @agent-b";
   main.querySelector("form.message-form").dispatch("submit"); for (let k = 0; k < 3; k++) await tick();
   expect(text(main).includes("Not sent: too many mentions: at most 10 members"), "message: the hub's mention cap, in words");
+  // An isolated agent is listed in To but takes no message: said as such, not "nobody by that address" (A2568).
+  win.Maity.api.post = (p) => Promise.reject(new win.Maity.api.ApiError("the agent is isolated", 400, p, "invalid", { fields: { to: "isolated" } }));
+  main.querySelector("form.message-form").dispatch("submit"); for (let k = 0; k < 3; k++) await tick();
+  expect(text(main).includes("Not sent: that agent is isolated and takes no message") && !text(main).includes("nobody by that address"),
+    "message: an isolated recipient is said to take no message");
   // While it is on its way the fields are held; the confirmation speaks of what was sent, and
   // what was typed meanwhile stays.
   let releasePost = null;
@@ -5704,7 +5776,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(byId("message-to").disabled && byId("message-body").disabled && btn(main, "Send").disabled, "message: the fields are held while it is sent");
   byId("message-to").value = "all"; byId("message-body").value = "A second thought";
   releasePost(); for (let k = 0; k < 4; k++) await tick();
-  expect(text(main).includes("Sent to Agent B; mentioned and notified: Agent B.") && byId("message-body").value === "A second thought"
+  expect(text(main).includes("Sent to Agent B; mentioned: Agent B.") && byId("message-body").value === "A second thought"
     && !byId("message-body").disabled, "message: the confirmation names what was sent; a draft typed meanwhile is kept");
   win.Maity.api.post = mPost0;
   expect(byId("message-to").querySelectorAll("option").some((o) => o.attrs.value === "trust:owner"), "message: the owners are a trust to write to");
@@ -6282,7 +6354,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     win.confirm = ownConfirm; win.Maity.api.del = ownDel;
     expect(!marked && removes.every(Boolean)
       && removes[0].getAttribute("aria-label") === "Remove Agent B"
-      && ownAsked === "Remove Agent B from this runner? The agent stops there and the placement closes; its owner can place it again on a runner of their own."
+      && ownAsked === "Remove Agent B from this runner? The runner is asked to stop the agent there, and the placement closes once the runner reports that it ended, or at once when the runner cannot report. Its owner can place it again on a runner of their own."
       && declined === 0 && JSON.stringify(ownDels) === JSON.stringify(["/projects/maintainer/maity/placements/plc-0002"]),
       "placements: one's own agent on one's own runner, not foreign, offers Remove; Remove asks, then one DELETE "
         + JSON.stringify({ marked, removes: removes.map(Boolean), ownAsked, ownDels }));
@@ -8561,8 +8633,11 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(!cpPanel(), "card panel: after an action Escape still closes it");
   win.Maity.api.get = cpGet; win.Maity.api.getAll = cpGetAll; win.Maity.api.post = cpPost;
   await go("#/maintainer/maity/tasks/tsk-zzzzzzzzzzzz"); for (let k = 0; k < 4; k++) await tick();
-  expect(!main.querySelector("article.card.wanted") && text(main.querySelector(".wanted-note")).startsWith("No card tsk-zzzzzzzzzzzz on the board"),
-    "ids: a card the board does not hold is said");
+  // The read failed: said as such, with the hub's reason, not guessed at (A2567b).
+  const idNote = text(main.querySelector(".wanted-note"));
+  expect(!main.querySelector("article.card.wanted") && idNote.startsWith("Card tsk-zzzzzzzzzzzz could not be opened: ")
+    && idNote.length > "Card tsk-zzzzzzzzzzzz could not be opened: ".length && !idNote.includes("days") && !idNote.includes("{reason}"),
+    "ids: a card the board does not hold and cannot read is said to be not opened, with the reason " + idNote);
   const idShown = () => (byId("inbox-show").querySelectorAll("option").find((o) => "selected" in o.attrs || o.selected) || { attrs: {} }).attrs.value;
   await go("#/maintainer/maity/inbox"); for (let k = 0; k < 4; k++) await tick();
   const idShowBefore = idShown();
@@ -9851,7 +9926,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   byId("state-reason").value = "release 0.1.0";
   // The 15-s count re-read replaces the switcher only; the open panel and what is typed stay.
   const switcherBefore = header.querySelector("nav.switcher");
-  await fireIntervals(); await tick(); await tick();
+  await fireMovedCounts(); await tick(); await tick();
   expect(byId("state-reason") && byId("state-reason").value === "release 0.1.0" && byId("state-select").value === "review",
     "the count re-read keeps the open Project settings panel and its input");
   expect(header.querySelector("nav.switcher") !== switcherBefore && header.querySelectorAll("nav.switcher").length === 1,
@@ -10156,17 +10231,17 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await go("#/account"); for (let k = 0; k < 4; k++) await tick();
   expect(byId("meat-proxy") && mpState() === "000" && mpNote() === "This person says: I am a meat proxy. " + MP_LEAD + " " + MP_HANDS
     && text(byId("meat-proxy-lead").parentNode).includes(MP_LEAD)
-    && text(byId("meat-proxy-hands").parentNode).includes(MP_HANDS) && text(byId("meat-proxy-hint")).includes("switched on, they would read:"),
+    && text(byId("meat-proxy-hands").parentNode).includes(MP_HANDS) && text(byId("meat-proxy-hint")).includes("Switched on, they would read:"),
     "meat proxy: the switch off with its two parts under it, and the note switching on would send (§5.2)");
   byId("meat-proxy").checked = true; byId("meat-proxy").dispatch("change"); for (let k = 0; k < 4; k++) await tick();
   expect(JSON.stringify(mpSent[0]) === JSON.stringify(["/me", { meat_proxy: true }]) && mpState() === "111"
-    && text(main).includes("Saved: your agents and the agents of your projects are told the text above.") && text(byId("meat-proxy-hint")).includes("in these words:"),
+    && text(main).includes("Saved: your profile tells your agents and the agents of your projects the text above.") && text(byId("meat-proxy-hint")).includes("In these words:"),
     "meat proxy: switched on, both parts ticked, said so");
   byId("meat-proxy-hands").checked = false; byId("meat-proxy-hands").dispatch("change"); for (let k = 0; k < 4; k++) await tick();
   expect(JSON.stringify(mpSent[1]) === JSON.stringify(["/me", { meat_proxy_hands: false }]) && mpState() === "110"
     && mpNote() === "This person says: I am a meat proxy. " + MP_LEAD, "meat proxy: a part cleared alone, the note as the hub now sends it");
   byId("meat-proxy-lead").checked = false; byId("meat-proxy-lead").dispatch("change"); for (let k = 0; k < 4; k++) await tick();
-  expect(mpState() === "000" && text(main).includes("Saved: they are no longer told.") && mpNote().endsWith(MP_HANDS),
+  expect(mpState() === "000" && text(main).includes("Saved: your profile no longer tells agents.") && mpNote().endsWith(MP_HANDS),
     "meat proxy: the last part cleared turns the mode off");
   byId("meat-proxy-hands").checked = true; byId("meat-proxy-hands").dispatch("change"); for (let k = 0; k < 4; k++) await tick();
   expect(JSON.stringify(mpSent[3]) === JSON.stringify(["/me", { meat_proxy_hands: true }]) && mpState() === "101"
@@ -10314,6 +10389,12 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   ydBox().querySelector("form.account-delete").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
   expect(text(ydBox()).includes("Not asked: you are the last owner of @oz-team, @guild: make someone else an owner, or delete the organisation, first"),
     "your data: the last owner of organisations is told which ones");
+  // The deletion request's own limit (3 an hour, §2.9), not the export's (A2569).
+  win.Maity.api.post = (p, b) => (p === "/me/deletion" ? Promise.reject(new win.Maity.api.ApiError("x", 429, p, "rate_limited", {})) : ydPost(p, b));
+  byId("delete-account-confirm").value = "maintainer"; byId("delete-account-confirm").dispatch("input");
+  ydBox().querySelector("form.account-delete").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  expect(text(ydBox()).includes("Not asked: at most 3 deletion requests an hour; try again later") && !text(ydBox()).includes("an export at most"),
+    "your data: a deletion request over its limit names that limit, not the export's");
   // One slot, one question: a second question cancels the first, whose call then does not hang (the deletion's field free again).
   win.Maity.api.post = (p, b) => {
     if (p === "/auth/second-factor/verify" || p === "/auth/reauthenticate") ydProofs.push([p, b]);
@@ -10501,6 +10582,22 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     const suResult = await suRun;
     expect(suResult === "done" && suCalls === 2 && suPosts.some(([p, b]) => p === "/auth/second-factor/verify" && b === JSON.stringify({ email_code: "654321" })),
       "step-up: the mailed code proves it and the call is made again " + JSON.stringify(suPosts));
+    // The app's code refused for today (§2.8.6, details.reason daily_limit) says so, not "a few minutes" (A2564);
+    // another rate limit still says to wait a few minutes.
+    const suLimitSaid = [];
+    for (const details of [{ reason: "daily_limit" }, {}]) {
+      const slot = document.createElement("div");
+      win.Maity.api.get = (p, ...r) => (p === "/auth/second-factor" ? Promise.resolve({ instance_off: false, enrolled: true, required: false, via: "totp" }) : sfGet(p, ...r));
+      win.Maity.api.post = (p, b) => (p === "/auth/second-factor/verify" ? Promise.reject(new win.Maity.api.ApiError("x", 429, p, "rate_limited", details)) : sfPost(p, b));
+      win.Maity.stepUp.run(() => Promise.reject(new win.Maity.api.ApiError("x", 403, "/x", "forbidden", { reason: "step_up_required" })), slot, "Changing your password").catch(() => {});
+      for (let k = 0; k < 8; k++) await tick();
+      slot.querySelector("input").value = "123 456"; slot.querySelector("form.step-up").dispatch("submit");
+      for (let k = 0; k < 8; k++) await tick();
+      suLimitSaid.push(text(slot));
+    }
+    expect(suLimitSaid[0].includes("Too many wrong codes today: every code is refused until the day ends in UTC") && !suLimitSaid[0].includes("wait a few minutes")
+      && suLimitSaid[1].includes("Too many wrong codes; wait a few minutes."),
+      "step-up: the day's cap on codes says it holds until the UTC day ends; another limit says a few minutes " + JSON.stringify(suLimitSaid));
     win.Maity.api.get = sfGet; win.Maity.api.post = sfPost;
   }
   // Forge access (§11.4, tsk-6pbe89e1yt50) on the account and at /settings/forge, where the hub's setup redirect lands:
@@ -10655,14 +10752,14 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       repository_selection: "selected", repositories_shown: [], status: "active", linked_at: "2026-11-20T09:00:00Z", checked_at: "2026-11-24T08:00:00Z" };
     win.Maity.api.get = fgAs2([fgOrgLink({}), fgUserEmpty]);
     await go("#/account/security/sessions"); fgReads.length = 0; await go("#/settings/forge"); for (let k = 0; k < 6; k++) await tick();
-    expect(fgLi("fgl-0009") && fgHint(fgLi("fgl-0009")).includes("Either it covers none on GitHub, or the hub has not confirmed recently")
-      && fgHint(fgLi("fgl-0009")).includes("at most every 10 minutes") && !fgLi("fgl-0008").querySelector(".forge-org-hint") && JSON.stringify(fgReads) === JSON.stringify(["/me/forge"]),
+    expect(fgLi("fgl-0009") && fgHint(fgLi("fgl-0009")).includes("Either it covers none on GitHub, or no check in the last 10 minutes confirmed")
+      && fgHint(fgLi("fgl-0009")).includes("at most once every 10 minutes") && !fgLi("fgl-0008").querySelector(".forge-org-hint") && JSON.stringify(fgReads) === JSON.stringify(["/me/forge"]),
       "forge: an active organisation link without repositories says why from its own fields, one on the own account says nothing; one read " + JSON.stringify(fgReads));
     win.Maity.api.get = fgAs2([fgOrgLink({ status: "not_admin" })]);
     await go("#/account/security/sessions"); await go("#/settings/forge"); for (let k = 0; k < 6; k++) await tick();
     expect(fgLi("fgl-0009") && text(fgLi("fgl-0009")).includes("@acme-oss · organisation · no longer an owner on GitHub")
       && fgHint(fgLi("fgl-0009")).includes("GitHub no longer reports you as an owner of this organisation, so the installation serves nothing")
-      && fgHint(fgLi("fgl-0009")).includes("it serves after the hub's next check confirms it")
+      && fgHint(fgLi("fgl-0009")).includes("it serves after a check confirms it")
       && btn(fgLi("fgl-0009"), "Unlink") && fgLi("fgl-0009").className.includes("forge-not_admin"),
       "forge: a link GitHub no longer reports its human as an owner of says so and that it serves nothing; it can still be unlinked");
     win.Maity.api.get = fgGet;
@@ -10928,7 +11025,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     const jfRecipients = () => text(jfBlock("jfs-0001").querySelector(".jf-recipients"));
     jfCalls.length = 0;
     expect(jfPart("hum-maintainer") && jfPart("agt-b") && !jfPart("hum-nobody") && text(jfPart("hum-maintainer")).includes("taking part") && !jfBlock("jfs-0002").querySelector("li.jf-part[data-member=\"hum-x\"]")
-      && jfRecipients() === "Also on the report list: Agent A", "jour fixe: the caller's part in a series, their agents' and, for a keeper, the report list");
+      && jfRecipients() === "On the report list: Agent A", "jour fixe: the caller's part in a series, their agents' and, for a keeper, the report list");
     await jfPress("hum-maintainer", ".jf-optout");
     expect(jfCalls.length === 1 && jfCalls[0][0] === "PUT" && jfCalls[0][1] === "/jfs-0001/opt-out" && text(jfPart("hum-maintainer")).includes("opted out")
       && text(jfPart("hum-maintainer")).includes("Take part again") && text(jfPart("agt-b")).includes("taking part"), "jour fixe: opted out of a series");
@@ -10945,7 +11042,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     await jfPress("agt-c", ".jf-report-toggle");
     expect(jfCalls[5][1] === "/jfs-0001/report?member=agt-c" && jfRecipients().includes("Agent C"), "jour fixe: an owner puts an agent of theirs on the report list");
     await jfPress("agt-c", ".jf-report-toggle"); await jfPress("hum-maintainer", ".jf-report-toggle");
-    expect(jfCalls[6][0] === "DELETE" && jfCalls[7][0] === "DELETE" && jfRecipients() === "Also on the report list: Agent A" && !text(jfPart("hum-maintainer")).includes("gets the report"),
+    expect(jfCalls[6][0] === "DELETE" && jfCalls[7][0] === "DELETE" && jfRecipients() === "On the report list: Agent A" && !text(jfPart("hum-maintainer")).includes("gets the report"),
       "jour fixe: taken off the report list again");
     // An agent of another owner is not the caller's to switch: the hub refuses, the refusal is said.
     expect(!jfPart("agt-s2") && (await win.Maity.api.put("/projects/maintainer/sample/jour-fixe/series/jfs-s1/opt-out?member=agt-s2").catch((err) => err.code)) === "forbidden",
@@ -10988,6 +11085,13 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     byId("jfa-anonymous").checked = true; byId("jfa-anonymous").dispatch("change");
     expect(!byId("jfa-limits").hidden && text(byId("jfa-limits")).includes("Small rounds"), "jour fixe answer: answering anonymously shows what anonymity does not cover, first");
     byId("jfa-went_well").value = "The board is clear.";
+    // The hub's too_long on an answer names the answer's limits (A2568).
+    const raPost0 = win.Maity.api.post;
+    win.Maity.api.post = (p) => Promise.reject(new win.Maity.api.ApiError("x", 400, p, "invalid", { fields: { went_well: "too_long" } }));
+    raForm().dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+    const raTooLong = text(main);
+    win.Maity.api.post = raPost0;
+    expect(raTooLong.includes("at most 4 KiB each, 12 KiB together"), "jour fixe answer: the hub's too_long names the answer's limits");
     raForm().dispatch("submit"); for (let k = 0; k < 10; k++) await tick();
     expect(JSON.stringify(raLast()) === JSON.stringify([opened.id + "/answers", { anonymous: true, went_well: "The board is clear." }])
       && text(main).includes("Your anonymous answer") && text(main).includes("The board is clear.") && !raForm(),
@@ -11020,6 +11124,14 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     await go("#/maintainer/sample/jour-fixe/jfx-s2"); for (let k = 0; k < 8; k++) await tick();
     const raPostForm = () => main.querySelector("form.jfa-post-form");
     byId("jfa-post-t1").value = "A second reviewer would help."; byId("jfa-post-t1-to-agt-s1").checked = true;
+    // A post has limits of its own: the hub's too_long there says only that, not the answer's 4 and 12 KiB (A2568).
+    const raPost1 = win.Maity.api.post;
+    win.Maity.api.post = (p) => Promise.reject(new win.Maity.api.ApiError("x", 400, p, "invalid", { fields: { body: "too_long" } }));
+    raPostForm().dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+    const raPostTooLong = text(main);
+    win.Maity.api.post = raPost1;
+    expect(raPostTooLong.includes("too long for the hub's size limit") && !raPostTooLong.includes("12 KiB together"),
+      "jour fixe post: the hub's too_long says the post is too long, without the answer's limits");
     raPostForm().dispatch("submit"); for (let k = 0; k < 10; k++) await tick();
     expect(JSON.stringify(raLast()) === JSON.stringify(["jfx-s2/posts", { step: "response", topic_id: "t1", body: "A second reviewer would help.", to: ["agt-s1"] }])
       && !raPostForm() && text(main).includes("You posted on “Reviews wait” in this step."), "jour fixe post: once per topic in the open step, addressed; then said as done");
@@ -11401,7 +11513,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(alAll.items.some((x) => x.id === agHelperId) && !alOnly.items.some((x) => x.id === agHelperId), "allowed projects: the offer leaves out a profile the project is not allowed for");
   await win.Maity.api.patch("/agents/" + agHelperId, { allowed_projects: null });
   byId("agent-handle-" + agHelperId).value = "agent-b"; agHelper.querySelector("form.agent-edit").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
-  expect(text(agHelper.querySelector("form.agent-edit")).includes("Not saved: handle: you have a profile with this handle already"), "agents page: a handle one's other profile has is refused");
+  expect(text(agHelper.querySelector("form.agent-edit")).includes("Not saved: handle: one of your agents has this handle or had it before"), "agents page: a handle one's other profile has is refused");
   byId("agent-handle-" + agHelperId).value = "helper-2"; byId("agent-git-name-" + agHelperId).value = "Helper";
   byId("agent-git-email-" + agHelperId).value = "helper@example.org"; agHelper.querySelector("form.agent-edit").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
   expect(text(main).includes("Saved. The old handle @helper still names it as an earlier one.") && text(agCard(agHelperId)).includes("@maintainer/helper-2"),
@@ -12777,7 +12889,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await projectSettings();
   // A first-time human: the empty board and inbox say where their content comes from.
   await go("#/maintainer/plain/board");
-  expect(text(main).includes("Every open card, and the done and cancelled ones of the last 14 days.")
+  expect(text(main).includes("Every open card, and a first page of the done and cancelled ones of the last 14 days; Show more brings more of a closed column.")
     && main.querySelector(".first-hint") && text(main).includes("No cards yet. Your agents put the work here"), "empty board: subtitle and first hint");
   await go("#/maintainer/plain/inbox");
   expect(text(main).includes("No open requests.") && text(main).includes("Your agents ask here when they need you"), "empty inbox: first hint");
@@ -12861,8 +12973,19 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "group chat: every message shows its seq after its time");
   // Writing, with mentions that reach only someone in the chat.
   byId("chat-text").value = "@agent-c look"; byId("chat-text").dispatch("input");
-  expect(!main.querySelector(".group-chat .mention-hint").hidden && text(main.querySelector(".group-chat .mention-hint")) === "@agent-c is not in this chat: it reaches nobody.",
+  expect(!main.querySelector(".group-chat .mention-hint").hidden && text(main.querySelector(".group-chat .mention-hint")) === "@agent-c is no handle of anyone in this chat; a mention of someone outside it reaches nobody.",
     "group chat: a mention of someone not in it is said to reach nobody");
+  // A global name (@owner/agent) is the hub's to resolve: no hint on its first part (A2568).
+  byId("chat-text").value = "@guest/spare look"; byId("chat-text").dispatch("input");
+  expect(main.querySelector(".group-chat .mention-hint").hidden, "group chat: a global @owner/agent name gives no hint");
+  // Nor on part of a hyphenated owner, nor on a run the hub reads as no mention (A2594): the whole run, as the hub scans it.
+  const gcHints = ["@my-owner/spare look", "@team-lead/agent-a look", "@agent-c_foo look", "@agent-a- look", "@agent-c-, look"].map((v) => {
+    byId("chat-text").value = v; byId("chat-text").dispatch("input");
+    const hint = main.querySelector(".group-chat .mention-hint");
+    return hint.hidden ? "" : text(hint).split(" ")[0];
+  });
+  expect(JSON.stringify(gcHints) === JSON.stringify(["", "", "", "", "@agent-c"]),
+    "group chat: hyphenated global names, a run with _ after it and a participant with a trailing - give no hint; a trailing - is not the handle's " + JSON.stringify(gcHints));
   byId("chat-text").value = "@agent-a go ahead"; byId("chat-text").dispatch("input");
   expect(main.querySelector(".group-chat .mention-hint").hidden, "group chat: a mention of a participant gives no hint");
   main.querySelector(".group-chat form.compose").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
@@ -13132,7 +13255,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       participants: v.participants.filter((x) => x.member_id !== "hum-maintainer").concat([{ member_id: "hum-ops", kind: "human", handle: "ops", owner_id: null, joined_at: v.created_at }]) }))
     : gcGet(p));
   await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/chat/cnv-0007");
-  expect(!byId("chat-text") && text(main).includes("You read along as the owner of an agent in this chat") && !main.querySelector(".group-manage")
+  expect(!byId("chat-text") && text(main).includes("You read along in this chat without taking part") && !main.querySelector(".group-manage")
     && !gcList().querySelectorAll("button").some((b) => b.textContent === "Remove" || b.textContent === "Quote")
     && text(main.querySelector(".group-observers")).includes("Also read by: you (owner of Agent A, Agent B), an owner outside the project, an agent not listed for you. They read"),
     "group chat: an owner reads along, writes and manages nothing, and is named as reading along; one owning no agent in it is named alone, an agent the list lacks neutrally "
@@ -13226,8 +13349,16 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && main.querySelector(".chat-list a.conv").getAttribute("href") === "#/observe/guest/guestlab/cnv-0301" && !main.querySelector("a.new-group")
     && !gcOutGets.some((p) => p.startsWith("/projects/guest/guestlab/members") || p === "/projects/guest/guestlab" || p.startsWith("/projects/guest/guestlab/events")),
     "read along: the chats one's agent is in, nothing else of the project read");
+  // Reading along where one's agents are in no group chat yet: said so, never "you own no agents" (A2568).
+  const gcObsGetAll = win.Maity.api.getAll;
+  win.Maity.api.getAll = (p, ...rest) => (p.startsWith("/projects/guest/guestlab/conversations") ? Promise.resolve({ items: [] }) : gcObsGetAll(p, ...rest));
+  await go("#/all"); await go("#/observe/guest/guestlab"); for (let k = 0; k < 4; k++) await tick();
+  const gcObsText = text(main);
+  win.Maity.api.getAll = gcObsGetAll;
+  expect(!main.querySelectorAll(".chat-list a.conv").length && gcObsText.includes("Your agents are in no group chat in this project yet.") && !gcObsText.includes("You own no agents"),
+    "read along: with no group chat of one's agents yet, the list says so, not that one owns no agents");
   await go("#/observe/guest/guestlab/cnv-0301");
-  expect(!byId("chat-text") && text(main).includes("You read along as the owner of an agent in this chat") && text(main.querySelector(".group-observers")).includes("you (owner of Spare)")
+  expect(!byId("chat-text") && text(main).includes("You read along in this chat without taking part") && text(main.querySelector(".group-observers")).includes("you (owner of Spare)")
     && main.querySelector(".group-chat a.chat-back").getAttribute("href") === "#/observe/guest/guestlab" && main.querySelectorAll(".group-chat li.msg").length === 1
     && text(main.querySelector(".group-chat li.msg")).includes("@guest"), "read along: the chat read only, its people by handle");
   // §9.7 from outside the project: the reader's own verdict under their own name, and others'
@@ -17449,7 +17580,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "member page: Actions only leads to where each action is done, Members for an admin, Agents for the owner " + JSON.stringify(mpItems));
   const mpTabs = main.querySelectorAll("nav.member-tabs a");
   // Activity: their events in the hub's latest window, newest first, the window said.
-  expect(text(main.querySelector(".member-section")).startsWith("What they did in this project, newest first"),
+  expect(text(main.querySelector(".member-section")).startsWith("Up to 50 of the latest things they did in this project that you can see, newest first"),
     "member page: Activity says what it lists, without a count of the project's events it cannot know");
   expect(mpTabs.map((a) => text(a)).join() === "Activity,Cards,Briefing,Sessions & credentials" && mpTabs[0].getAttribute("aria-current") === "page"
     && mpTabs[1].getAttribute("href") === "#/maintainer/maity/team/agt-b/cards", "member page: four tabs, Activity first and current");
@@ -21131,6 +21262,17 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(pdSent.length === 1, "profile: a second submit while one runs sends nothing");
   pdRelease(); for (let k = 0; k < 4; k++) await tick();
   expect(!pdIn().disabled && !pdGo().disabled && text(pdBox()).includes("Not deleted"), "profile: after a failure the field is free and the button follows the handle typed");
+  // In use with no membership but an active placement (A2571): the refusal names the placement, not the projects.
+  const pdSaid = [];
+  for (const details of [{ memberships: [], placements: ["plc-0009"] }, { memberships: [{ project: "maintainer/maity" }], placements: [] }]) {
+    win.Maity.api.del = (p) => Promise.reject(new win.Maity.api.ApiError("x", 409, p, "profile_in_use", details));
+    main.querySelector("tr.member-manage form.profile-delete").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+    pdSaid.push(text(pdBox()));
+  }
+  expect(pdSaid[0].includes("it still has an active placement on a runner") && !pdSaid[0].includes("still a member of")
+    && pdSaid[1].includes("it is still a member of maintainer/maity"),
+    "profile: in use by a placement alone says so; in use by a membership names the project " + JSON.stringify(pdSaid.map((s) => s.slice(-90))));
+  win.Maity.api.del = (p) => { pdSent.push(p); return Promise.reject(new win.Maity.api.ApiError("x", 403, p, "forbidden", {})); };
   pdIn().value = "@wrong"; pdIn().dispatch("input");
   main.querySelector("tr.member-manage form.profile-delete").dispatch("submit"); await tick();
   expect(pdGo().disabled && pdSent.length === 1, "profile: another handle typed after a failure deletes nothing");

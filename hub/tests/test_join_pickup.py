@@ -519,14 +519,67 @@ def test_a_pending_placement_is_not_picked_up(setup: Setup) -> None:
     assert pick_up(setup, placement).status_code == 404
 
 
-def test_a_taken_handle_is_refused_at_the_pickup(setup: Setup, make_client: ClientFactory) -> None:
+def _land_profile(s: Setup, handle: str = "agent-f") -> str:
+    """A profile of the owner with `handle`, landed past the placement that reserves it
+    (§6.24): it can only do so by a race, as here."""
+    with s.engine.begin() as conn:
+        return agents.create_profile(conn, s.owner.id, handle, "F", None, placement=True)
+
+
+@pytest.mark.parametrize("held", ["profile", "alias"])
+@pytest.mark.parametrize("at", ["pickup", "exchange"])
+def test_a_taken_handle_is_refused_at_the_pickup_and_the_exchange(
+    setup: Setup, make_client: ClientFactory, held: str, at: str
+) -> None:
+    # A live profile of the owner with the handle, or a live alias of one (§6.24).
     placement = placed(setup, agent={"handle": "agent-f", "display_name": "Agent F"})
-    # The placement reserves the handle (§6.24): a profile can only land by a race, as here.
-    with setup.engine.begin() as conn:
-        agents.create_profile(conn, setup.owner.id, "agent-f", "F", None, placement=True)
-    refused = pick_up(setup, placement)
-    assert (refused.status_code, error(refused)) == (409, "pickup_not_allowed")
-    assert refused.json()["error"]["details"] == {"why": "handle_taken"}
+    picked = pick_up(setup, placement) if at == "exchange" else None
+    agent_id = _land_profile(setup)
+    if held == "alias":
+        renamed = setup.owner.patch(f"/agents/{agent_id}", {"handle": "agent-g"})
+        assert renamed.status_code == 200, renamed.text
+    if picked is None:
+        refused = pick_up(setup, placement)
+        assert (refused.status_code, error(refused)) == (409, "pickup_not_allowed")
+        assert refused.json()["error"]["details"] == {"why": "handle_taken"}
+    else:
+        assert picked.status_code == 201, picked.text
+        assert exchange(make_client(), picked.json()).status_code == 404
+        assert placement_row(setup, placement["id"]).membership_id is None
+
+
+def test_a_deleted_profiles_handle_is_free_at_the_pickup_and_the_exchange(
+    setup: Setup, make_client: ClientFactory
+) -> None:
+    # §6.3: the tombstone keeps its handle for the record, and the handle is free for a new
+    # profile of the same owner at once, a placement's included.
+    made = setup.owner.post("/agents", {"handle": "agent-f", "display_name": "Agent F"})
+    assert made.status_code == 201, made.text
+    old = made.json()["id"]
+    assert setup.owner.delete(f"/agents/{old}").status_code == 200
+    placement = placed(setup, agent={"handle": "agent-f", "display_name": "Agent F"})
+    picked = pick_up(setup, placement)
+    assert picked.status_code == 201, picked.text
+    joined = exchange(make_client(), picked.json())
+    assert joined.status_code == 201, joined.text
+    agent_id = joined.headers["Maity-Member-Id"]
+    assert agent_id != old
+    assert setup.owner.get(f"/agents/{agent_id}").json()["handle"] == "agent-f"
+
+
+def test_a_profile_deleted_after_the_pickup_leaves_the_exchange_free(
+    setup: Setup, make_client: ClientFactory
+) -> None:
+    # The exchange asks again: a profile that landed after the pickup and was deleted before
+    # the exchange is a tombstone, which holds nothing.
+    placement = placed(setup, agent={"handle": "agent-f", "display_name": "Agent F"})
+    picked = pick_up(setup, placement)
+    assert picked.status_code == 201, picked.text
+    old = _land_profile(setup)
+    assert setup.owner.delete(f"/agents/{old}").status_code == 200
+    joined = exchange(make_client(), picked.json())
+    assert joined.status_code == 201, joined.text
+    assert joined.headers["Maity-Member-Id"] != old
 
 
 def test_a_new_profile_under_another_owners_boss_waits_for_the_boss_side(

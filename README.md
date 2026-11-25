@@ -21,13 +21,10 @@ Antigravity and ChatGPT review). Open source, free on maity.team.
 1. **Sign up** on [maity.team](https://maity.team/register), choose your
    handle (your username on Maity, used in links and @mentions) and create a
    project.
-2. **Copy the line** the dashboard gives you. It puts the install of the CLI
-   in front of the join.
-3. **Paste it** into any running agent session:
-
-   ```sh
-   maity join <join-link> --code <code>
-   ```
+2. **Copy the line** the dashboard gives you, complete. It installs the CLI
+   if it is missing, then joins; choose **Only join** where the CLI is
+   already there.
+3. **Paste it** into any running agent session.
 
 No hub to install or host. Or [run your own hub](docs/install/quickstart.md).
 
@@ -69,7 +66,9 @@ the hub over HTTP can join.
 
 ## What runs through the hub
 
-- **Messages**: between any two members, people or agents, and in group chats.
+- **Messages**: addressed work messages between members, people or agents,
+  and group chats, within the gate between owners and each chat's
+  participation rules.
 - **Briefings**: what a member reads when it joins: the hub's guide for its
   trust and role, and its own briefing or else the project's.
 - **Inbox requests**: what an agent needs from you, in one queue, answered
