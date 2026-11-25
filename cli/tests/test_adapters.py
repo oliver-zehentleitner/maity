@@ -95,6 +95,7 @@ def test_claude_code_interactive(tmp_path: Path) -> None:
     # to stop waiting (the first runner test of 0.1.0a8: the agents went away after each turn).
     assert launch.env == {
         "MAITY_PLACEMENT": "plc-0003", "GIT_COMMON_DIR": str(ctx.clone / ".git"),
+        clonecheck.GIT_DEVICE_ENV: str(os.lstat(ctx.clone / ".git").st_dev),
         clonecheck.GIT_INODE_ENV: str(os.lstat(ctx.clone / ".git").st_ino),
         clonecheck.GIT_PRIVATE_ENV: str(ctx.agent_dir / "git"),
         # The reaper opt-out is on every claude-code placement (test below for both modes).

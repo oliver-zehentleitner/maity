@@ -65,7 +65,7 @@ function nodeList(items) {
 }
 class Text_ extends Node_ { constructor(t) { super(); this.t = t; } get textContent() { return this.t; } get nodeType() { return 3; } }
 class El extends Node_ {
-  constructor(tag) { super(); this.tagName = tag.toUpperCase(); this.attrs = {}; this.listeners = {}; this.className = ""; this.value = ""; this.disabled = false; this.style = { setProperty(k, v) { this[k] = v; } }; }
+  constructor(tag) { super(); this.tagName = tag.toUpperCase(); this.attrs = {}; this.listeners = {}; this.className = ""; this.value = ""; this.disabled = false; this.style = { setProperty(k, v) { this[k] = v; }, removeProperty(k) { delete this[k]; } }; }
   get nodeType() { return 1; }
   setAttribute(k, v) { this.attrs[k] = v; if (k === "id") this.id = v; }
   getAttribute(k) { return k === "class" ? this.className : this.attrs[k]; }
@@ -5984,6 +5984,29 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     fsBtn().click(); await tick();
     fsBtn().click(); await tick();
     expect(!fsHtml.classList.contains("chat-full") && fsLog.join() === "push,back,push,push,back", "chat full screen: the button again ends it " + JSON.stringify(fsLog));
+    // While full, the pane is what the visual viewport shows (tsk-ftrkm6wda8yq): a phone's keyboard shrinks
+    // it and moves it; on leaving, the sizes and the listeners go.
+    {
+      const vvOn = {};
+      win.visualViewport = { height: 844.4, offsetTop: 0,
+        addEventListener(t, f) { vvOn[t] = f; }, removeEventListener(t, f) { if (vvOn[t] === f) delete vvOn[t]; } };
+      try {
+        fsBtn().click(); await tick();
+        const opened = [fsPane.style["--chat-full-h"], fsPane.style["--chat-full-top"], Object.keys(vvOn).sort().join()];
+        win.visualViewport.height = 400; vvOn.resize();
+        const resized = [fsPane.style["--chat-full-h"], fsPane.style["--chat-full-top"]];
+        win.visualViewport.offsetTop = 120.6; vvOn.scroll();
+        const scrolled = [fsPane.style["--chat-full-h"], fsPane.style["--chat-full-top"]];
+        fsBtn().click(); await tick();
+        const left = [fsPane.style["--chat-full-h"], fsPane.style["--chat-full-top"], Object.keys(vvOn).sort().join()];
+        expect(JSON.stringify(opened) === JSON.stringify(["844px", "0px", "resize,scroll"])
+          && JSON.stringify(resized) === JSON.stringify(["400px", "0px"]) && JSON.stringify(scrolled) === JSON.stringify(["400px", "121px"])
+          && left[0] === undefined && left[1] === undefined && left[2] === "",
+          "chat full screen: the pane takes the visual viewport's height and top, follows its resize and its scroll, and lets go of both on leaving " + JSON.stringify([opened, resized, scrolled, left]));
+      } finally {
+        delete win.visualViewport;
+      }
+    }
     // While full, the page outside the chat is inert, and only what the full screen marked is set back (fmzu at #1525).
     const fsPre = new El("div");
     fsPre.setAttribute("inert", "");
@@ -6045,8 +6068,14 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       && fsPhone.includes('.group-chat .compose-head > label[for="chat-text"] { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }')
       && !/label\[for="chat-text"\] \{[^}]*display: none/.test(fsCss),
       "phone width: the product line is its first part, no In it: line, the composer's label hidden from sight, not from a reader");
-    expect(fsCss.includes("html.chat-full .chat-pane.chat-full-pane { position: fixed; inset: 0;") && fsCss.includes("height: 100dvh;")
-      && fsCss.includes("html.chat-full body { overflow: hidden; }"), "chat full screen: the chat fixed over the whole window, the page under it still");
+    // Its height and top are the visual viewport's, written by js/chat.js while full (tsk-ftrkm6wda8yq);
+    // without them, the whole window.
+    expect(fsCss.includes("html.chat-full .chat-pane.chat-full-pane { --chat-full-top: 0px; --chat-full-h: 100dvh; position: fixed; inset: auto 0; top: var(--chat-full-top); height: var(--chat-full-h); min-height: 0;")
+      && fsCss.includes("html.chat-full body { overflow: hidden; }"), "chat full screen: the chat fixed over what is seen, the whole window without a visual viewport, the page under it still");
+    expect(fsCss.includes("html.chat-full .chat-pane.chat-full-pane .messages { flex: 1 1 0; }")
+      && fsCss.includes("html.chat-full .chat-pane.chat-full-pane .compose { display: flex; flex-direction: column; flex: 0 1 auto; min-height: 0; }")
+      && fsCss.includes("html.chat-full .chat-pane.chat-full-pane .compose > textarea { flex: 0 1 auto; min-height: 44px; }"),
+      "chat full screen: short of room, the history gives up all of it first, then the field down to one line; Send's row keeps its own");
   }
   {
     // A direct chat offers the members too; a pick keeps the draft and the hint that a mention tells nobody here.

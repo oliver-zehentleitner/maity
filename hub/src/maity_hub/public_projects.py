@@ -1,8 +1,9 @@
 """A project's public page (docs/api.md §16.9): `GET /{owner}/{slug}` while the project's
 `public_page` is `on`.
 
-It shows the project's `name` and `full_name`, its state and the `public_about` text; the
-members, the agents, the repository and the statistics follow in the next steps. A page is not
+It shows the project's `name` and `full_name`, its state and the `public_about` text, its
+people and agents, the repository and its links, the statistics, and a snapshot of what is
+happening (Recently, who is online); its views are `public_project_views`. A page is not
 served for an archived project, for one a moderation hold stands on, or while its namespace
 owner is suspended, waiting for approval or deleted, or an organisation that is suspended or
 deleted. Whatever changes one of these calls `public_pages.touch` in its transaction.
@@ -10,7 +11,6 @@ deleted. Whatever changes one of these calls `public_pages.touch` in its transac
 
 from __future__ import annotations
 
-import hashlib
 from collections.abc import Collection
 from html import escape
 from typing import Any
@@ -35,7 +35,7 @@ from maity_hub.config import Settings
 from maity_hub.errors import invalid
 
 KIND = "project"
-VIEWS = "project_views"  # the kind of its Board, Members and Organisation pages
+VIEWS = "project_views"  # the kind of its Board, Team, Organisation and Why pages
 ABOUT_MAX_BYTES = 4096  # 4 KiB (§16.9)
 
 
@@ -375,7 +375,7 @@ def render_project(conn: Connection, hub: Settings, project_id: str) -> list[pub
     )
     humans, agents = team(conn, project.id)
     statistics = agent_statistics(conn, project.id, agents)
-    from maity_hub import public_snapshot
+    from maity_hub import public_agents, public_snapshot
 
     entries = public_snapshot.ticker(conn, project)
     up = public_snapshot.online(conn, project.id)
@@ -412,7 +412,7 @@ def render_project(conn: Connection, hub: Settings, project_id: str) -> list[pub
             {
                 "name": a.display_name,
                 "handle": a.handle,
-                "page": f"/{owners[a.owner_id]}/agents/{a.handle}",
+                "page": public_agents.path_of(owners[a.owner_id], a.handle),
                 "picture": pictures.get(a.id),
                 "role": roles.get(a.id),
                 "harness": harnesses.get(a.id),
@@ -428,21 +428,9 @@ def render_project(conn: Connection, hub: Settings, project_id: str) -> list[pub
     }
     path = f"/{full}"
     content = public_design.page(KIND, data, path)
-    digest = hashlib.sha256("\x00".join((path, project.name, content)).encode())
     return [
-        public_pages.Page(
-            path=path,
-            body=render.page_document(
-                lang="en",
-                title=f"{project.name} ({full})",
-                canonical=f"{hub.public_url.rstrip('/')}{path}",
-                content=content,
-                styled=False,
-            ),
-            inputs=digest.hexdigest(),
-            lastmod=clock.now(),
-            view="project",
-            data=data,
+        public_pages.page(
+            hub, path, f"{project.name} ({full})", content, (project.name,), KIND, data
         )
     ]
 
@@ -483,7 +471,9 @@ def touch_owned(conn: Connection, human_id: str, *, removal: bool = True) -> Non
 def touch_of_org(conn: Connection, org_id: str, *, removal: bool = True) -> None:
     """The organisation's page and those of every project it owns: it was suspended, deleted
     or renamed."""
-    public_pages.touch(conn, "organisation", org_id, removal=removal)
+    from maity_hub import public_orgs
+
+    public_pages.touch(conn, public_orgs.KIND, org_id, removal=removal)
     for project_id in conn.execute(
         select(t.project.c.id).where(
             t.project.c.owner_org_id == org_id, t.project.c.public_page == "on"
@@ -493,7 +483,7 @@ def touch_of_org(conn: Connection, org_id: str, *, removal: bool = True) -> None
 
 
 def dependents(conn: Connection, project_id: str) -> list[tuple[str, str]]:
-    """The pages that show a project: its views (Board, Members, Organisation, which follow its
+    """The pages that show a project: its views (Board, Team, Organisation, Why, which follow its
     page: served, named and shown alike), its agents' pages, and the person pages that list it
     or its agents: its human members' and the owners' of its agent members, who need not be
     members themselves (§16.9)."""
@@ -515,7 +505,7 @@ def member_dependents(
 
 
 def _dependents(conn: Connection, project_id: str, cards: list[str]) -> list[tuple[str, str]]:
-    from maity_hub import public_agents, public_cards
+    from maity_hub import public_agents, public_cards, public_orgs
 
     m = t.membership.c
     members = conn.execute(
@@ -530,9 +520,9 @@ def _dependents(conn: Connection, project_id: str, cards: list[str]) -> list[tup
     return [
         (VIEWS, project_id),
         *[(public_cards.KIND, card) for card in cards],
-        *([("organisation", org)] if org else []),
+        *([(public_orgs.KIND, org)] if org else []),
         *public_agents.pages_of_project(conn, project_id),
-        *[("person", person) for person in people],
+        *[(public_people.KIND, person) for person in people],
         *_shared_agent_pages(conn, project_id),
     ]
 
