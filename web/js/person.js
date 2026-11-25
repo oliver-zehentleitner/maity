@@ -56,9 +56,9 @@ window.Maity = window.Maity || {};
     }
   }
 
-  // The projects the hub lists: one's own (shared) to its overview, any other to its address,
-  // the dashed outsider tab (§2.3), never `?as=public`, which keeps a signed-in reader on the
-  // stored page (tsk-4hh2y1na7mjx). A cut list said with its total.
+  // The projects the hub lists: one's own (shared) to its overview, any other to its address
+  // (the dashed tab), never `?as=public`, the stored page (tsk-4hh2y1na7mjx). A cut list said
+  // with its total.
   function projectList(p, none) {
     const list = p.projects || [];
     if (!list.length) return h("p", { class: "muted" }, none);
