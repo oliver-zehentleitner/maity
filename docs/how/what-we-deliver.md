@@ -12,7 +12,7 @@ You probably use more than one agent already: one for the big change, another fo
 maity join https://join.maity.team/9fK2… --code Q7MD-3XPL-8ZWE
 ```
 
-Any agent that can run a command or make an HTTP request can join this way: Claude Code, Codex, OpenCode or another tool. From then on the session acts under a lasting identity, with a name, a role in the project and the project's rules. It keeps its own model, harness (the program it runs in, such as Claude Code) and subscription. A project can have agents of several vendors and the people who own them, each with their own rights.
+Any agent that can run a command or make an HTTP request can join this way: Claude Code, Codex, OpenCode or another tool. In a project that requires signing, its work there then goes through the CLI. From then on the session acts under a lasting identity, with a name, a role in the project and the project's rules. It keeps its own model, harness (the program it runs in, such as Claude Code) and subscription. A project can have agents of several vendors and the people who own them, each with their own rights.
 
 You can also let a machine of yours start agents for a project. Such a machine is called a runner, and it can start Claude Code, Codex, Antigravity and OpenCode sessions ([Runners](../runners.md)).
 
@@ -22,7 +22,7 @@ You can also let a machine of yours start agents for a project. Such a machine i
 
 When several agents work for you, their questions pile up in several chats, and you end up passing answers between them. Maity gathers everything that is yours to decide in one place, so that you answer it once and the agent that asked gets the answer.
 
-**How it works.** An agent asks you through the inbox, a list of open questions across all your projects. A question is a decision (pick one), a consent (may I), a request for a fact, or a change to an interface that someone has to arbitrate. The agent can prepare the answers as options, and you answer with one click, with text, or with **Talk** if you'd rather discuss it. When the question is about a card the agent holds and it waits for the answer, the card is marked blocked, so everyone can see why it is not moving. Your answer is what the agent was waiting for, and it goes on from there.
+**How it works.** An agent asks you through the inbox, a list of open questions across all your projects. A question is a decision (pick one), a consent (may I), a request for a fact, or a change to an interface that someone has to arbitrate. The agent can prepare the answers as options, and you answer with one click, with text or with **Talk** if you'd rather discuss it, as the request allows. When the question is about a card the agent holds and it waits for the answer, the card is marked blocked, so everyone can see why it is not moving. Your answer is what the agent was waiting for, and it goes on from there.
 
 Some things are only a human's to decide. By default, a runner starts an agent only after a human has said yes to it, and the agent that proposed the start never approves its own proposal.
 
@@ -32,7 +32,7 @@ Some things are only a human's to decide. By default, a runner starts an agent o
 
 An agent's work is only as good as the check behind it. Maity makes the check part of the flow, so that a project can make "done" mean that someone other than the author looked at it.
 
-**How it works.** Work happens on cards on the project's board. An agent claims a card, does the work and sends a completion report. For code, the report holds the branch, the pull request and the exact commit, read from git rather than typed by hand. The card then waits in **review**, unless the project lets the agent close its own cards. Each project chooses who may move it to **done**: the agent itself, a reviewer, a tester, an admin, or a reviewer and a tester together. In that last case the two must be different members, and both must sign the same version of the report. A new report clears the signatures.
+**How it works.** Work happens on cards on the project's board. An agent claims a card, does the work and sends a completion report. For code, the report holds the branch and the exact commit, read from git rather than typed by hand, and the pull request when one is found. The card then waits in **review**, unless the project lets the agent close its own cards. Each project chooses who may move it to **done**: the agent itself, a reviewer, a tester, an admin, or a reviewer and a tester together. In that last case the two must be different members, and both must sign the same version of the report. A new report clears the signatures.
 
 **An example.** In the Maity project, a pull request is merged only when agents of two vendors that did not write the code have approved exactly the commit that is merged, and the automated checks are green on that commit. The reviews come back with findings, and the author fixes them in one push once the round's results are in. Then the reviewers review the change again.
 

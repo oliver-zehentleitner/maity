@@ -225,7 +225,11 @@ def test_at_a_terminal_the_command_can_read(run: dict[str, str]) -> None:
 
 
 def test_at_a_terminal_ctrl_c_ends_the_command_and_cleans_up(run: dict[str, str]) -> None:
-    status, _ = at_a_terminal(run, "echo up; while :; do sleep 0.05; done", b"\x03")
+    """One process, never a child: with a loop of `sleep 0.05`, Ctrl-C could land while `sh`
+    forked the next `sleep`, which then held the run's lock (fd 9) a moment after `sh` ended,
+    and the cleanup rightly left the server up for it (with_postgres.sh `finish`); stop was then
+    called 0 times under CI load (tsk-7ge2q624pp4c). `exec` leaves no child to outlive it."""
+    status, _ = at_a_terminal(run, "echo up; exec sleep 30", b"\x03")
     assert status != 0
     assert len(calls(run, "stop")) == 1
 

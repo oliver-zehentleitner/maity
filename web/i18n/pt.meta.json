@@ -8143,10 +8143,6 @@
     "en": "aa7e6ee1e235416d",
     "text": "8002d3a81a87c86e"
   },
-  "join.field.areas": {
-    "en": "1c4e2d9fbcbe3d15",
-    "text": "8c8d2062b241ec11"
-  },
   "join.field.handover": {
     "en": "8d28a5f16e6a31c7",
     "text": "43f909a8adfa93f4"
@@ -8159,21 +8155,9 @@
     "en": "a79fceb9b8208c11",
     "text": "a94d29cba2f85cbf"
   },
-  "join.field.reports_to": {
-    "en": "ddb4b4f3be5eb79c",
-    "text": "18521a2f7da32607"
-  },
-  "join.field.role": {
-    "en": "53e8ea77422c2216",
-    "text": "d15b383c6b2fb058"
-  },
   "join.field.takes_over": {
     "en": "9464f06edbeffcec",
     "text": "0416e9464bb7ec14"
-  },
-  "join.field.trust": {
-    "en": "a820cd68d01373b5",
-    "text": "a16f3f4f0c788b04"
   },
   "join.field.ttl": {
     "en": "dc4ff46e5270cd76",
@@ -8307,6 +8291,14 @@
     "en": "467135c1c96f9e6d",
     "text": "0c40a9bcbda9d124"
   },
+  "join.membership.manage": {
+    "en": "81fa96549bea4298",
+    "text": "5ae7cffaa7b6b761"
+  },
+  "join.membership.readonly": {
+    "en": "cdd60bffc2c48ee6",
+    "text": "8ee1120641bc1d27"
+  },
   "join.platform.join": {
     "en": "ddd732782b13bd41",
     "text": "1ba13b5fac740b6c"
@@ -8359,6 +8351,14 @@
     "en": "e4e7ea7ba1d2f146",
     "text": "4f1695ef895d53ba"
   },
+  "join.reports.failed_start": {
+    "en": "076042369641eadb",
+    "text": "4cd956b214d3388a"
+  },
+  "join.reports.kept": {
+    "en": "f349dea0a8d2d059",
+    "text": "613a01f6b2c19049"
+  },
   "join.reports.member_hint": {
     "en": "96701e251e6b2cd0",
     "text": "3e4b1a84a80ab1f0"
@@ -8406,6 +8406,22 @@
   "join.rulebook_link": {
     "en": "609ddf184a7699e1",
     "text": "36f9a9bef9a0cc80"
+  },
+  "join.runner.join_only": {
+    "en": "c4dbd7b8298f4e20",
+    "text": "06a88231ea4532d7"
+  },
+  "join.runner.no_line": {
+    "en": "578bc5dfccf6362e",
+    "text": "69baf1261353da8e"
+  },
+  "join.runner.no_replace": {
+    "en": "275033cf2d3c8810",
+    "text": "d9c0e9a19caad05b"
+  },
+  "join.runner.own_agents": {
+    "en": "96fd5ab8e0a85d75",
+    "text": "5b801df392490db9"
   },
   "join.seat.join": {
     "en": "295ca9336dc1935b",

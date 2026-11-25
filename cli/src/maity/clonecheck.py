@@ -200,17 +200,45 @@ LOCAL = Local()
 
 def not_inspectable(path: Path, files: Files = LOCAL) -> str | None:
     """Why git must not run in this clone, or None."""
-    finding = _inspect(path, files)[0]
+    finding = inspection_finding(path, files)
     return None if finding is None else finding.reason
+
+
+# Names the runner can repeat in a hub finding. A repository supplies arbitrary
+# subsection and file names, so matching a key or path pattern would disclose them.
+REPORT_KEYS = frozenset(
+    {"core.worktree", "core.hookspath", "core.fsmonitor", "extensions.worktreeconfig"}
+)
+REPORT_ENTRIES = frozenset(
+    {"commondir", "config", "info/sparse-checkout", *SANDBOX_EMPTY_FILES, *SANDBOX_EMPTY_DIRS}
+)
 
 
 class Finding(NamedTuple):
     """Why git must not run in a clone: the reason, and what it names (an entry in `.git`,
     a configuration key) when it names one."""
 
-    reason: str
+    wording: str  # runner-authored, with {} for a repository-supplied item
     item: str = ""
     setting: bool = False  # a configuration key, which `git config --unset` takes back
+
+    @property
+    def reason(self) -> str:
+        shown = without_userinfo(self.item) if self.setting else self.item
+        return self.wording.format(onboarding.inline(shown))
+
+    def report_reason(self) -> str:
+        """Only fixed runner words reach finding.log. Even a config subsection may be private."""
+        if self.setting:
+            shown = self.item if self.item in REPORT_KEYS else "<key>"
+        else:
+            shown = self.item if self.item in REPORT_ENTRIES else "<entry>"
+        return self.wording.format(shown)
+
+
+def inspection_finding(path: Path, files: Files = LOCAL) -> Finding | None:
+    """The finding about this clone, retaining the item for its local or reported wording."""
+    return _inspect(path, files)[0]
 
 
 def _inspect(
@@ -245,8 +273,7 @@ def _inspect(
         subsection, _, key = rest.rpartition(".")
         if key not in GIT_ALLOWED.get(("named" if subsection else None, section), ()):
             # A section may be named by a URL (`[url "https://tok@…"]`): shown without a token.
-            shown = onboarding.inline(without_userinfo(name))
-            return Finding(f"its .git/config sets {shown}", name, setting=True), []
+            return Finding("its .git/config sets {}", name, setting=True), []
     return None, entries
 
 
@@ -328,23 +355,22 @@ def _not_a_plain_git_dir(entries: list[tuple[str, str, int]]) -> Finding | None:
     # the clone is set up for.
     for where, kind, size in sorted(entries, key=lambda e: (e[0] != "info/sparse-checkout", e)):
         top, _, rest = where.partition("/")
-        shown = onboarding.inline(where)
         if kind == "l":
-            return Finding(f".git/{shown} is a symlink", where)
+            return Finding(".git/{} is a symlink", where)
         if kind not in ("f", "d"):  # a FIFO, a socket or a device: never in a plain clone
-            return Finding(f".git/{shown} is not a regular file or directory", where)
+            return Finding(".git/{} is not a regular file or directory", where)
         if SANDBOX_DIR in where.split("/")[:-1]:
-            return Finding(f".git/{shown} is not a plain clone's", where)
+            return Finding(".git/{} is not a plain clone's", where)
         if _sandbox_placeholder(where, kind, size, parents):
             continue
         if not rest and kind != ("f" if top in GIT_FILES else "d" if top in GIT_DIRS else "?"):
-            return Finding(f".git/{shown} is not a plain clone's", where)
+            return Finding(".git/{} is not a plain clone's", where)
         if top == "info" and rest and ("/" in rest or rest not in INFO_FILES):
-            return Finding(f".git/{shown} is not a plain clone's", where)
+            return Finding(".git/{} is not a plain clone's", where)
         # Any case: on a case-insensitive file system (macOS's APFS, Windows) git opens
         # `objects/info/Alternates` as `alternates`.
         if where.lower() in ALTERNATES:
-            return Finding(f".git/{shown} exists", where)
+            return Finding(".git/{} exists", where)
         if where == "config" and size > CONFIG_MAX:
             return Finding(f"its .git/config is larger than {CONFIG_MAX // 1024} KiB")
     return None

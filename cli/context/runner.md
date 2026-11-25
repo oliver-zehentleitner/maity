@@ -1830,6 +1830,30 @@ real boundary. Rejected because the owner chose to accept the residual risk
 and offer the harness now, with the separate-OS-user mitigation, rather than
 block every opencode placement until that work lands.
 
+## OpenCode placements disable automatic snapshots
+
+**Id:** 2c9195fa-ddc0-485e-b083-754bc0db14f0
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Verification:** uncorroborated
+**Source:** card tsk-27rm0ay2ntnx, operator journal diagnosis and the OpenCode 2.3.0 and 2.4.0 snapshot and Git source
+**Revisit when:** OpenCode isolates snapshot initialization from a placement's pinned Git common directory
+
+The runner sets `snapshot: false` for interactive and supervised OpenCode
+placements. Five stopped placements had `core.worktree` in their local
+configuration. OpenCode's snapshot capture initializes a separate Git store
+with the placement's working tree and inherits the runner's pinned
+`GIT_COMMON_DIR`. Git initialization can therefore write the working-tree
+setting into the placement's common configuration. The journal establishes
+the refused key; the writer is inferred from the source.
+
+Disabling automatic snapshot capture gives up OpenCode's snapshot-based
+undo for placement changes. Clearing `core.worktree` automatically would
+edit a clone an agent wrote and hide the evidence when its value points
+somewhere unexpected. Operators can correct the confirmed self-reference
+in a stopped clone. The runner continues to refuse the key.
+
 ## The opencode adapter fails closed on the model
 
 **Id:** 7c23704d-d02f-4cbf-80ca-494119f8fa5c
@@ -4331,6 +4355,15 @@ the hub is unchanged: `clone_failed`, the exit code, no detail.
   tool's message, which is outside the contract.
 - Rejected: logging nothing, as before. `clone_failed` without an exit code
   covers several unrelated causes, so nobody could tell which one it was.
+
+An existing clone refused before start is a different case. Five OpenCode
+placements filed identical owner requests with no finding while each
+service journal identified `core.worktree` (tsk-27rm0ay2ntnx). The runner
+can safely report its own clone-check wording and a fixed list of known
+Git metadata names. Arbitrary keys can contain private subsection names
+and arbitrary entry names may contain private paths, so those are
+represented by placeholders. The owner request directs the reader to
+the access-controlled finding.
 
 ## A refused join says its code, reason and why in the runner's log, in code form only
 

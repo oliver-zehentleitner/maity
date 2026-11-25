@@ -1216,6 +1216,8 @@ def opencode_config(ctx: Context) -> dict[str, Any]:
     edit = {"*": "allow", f"{ctx.clone}/.git/*": "deny"}
     return {
         "$schema": "https://opencode.ai/config.json",
+        # Snapshot capture initializes a second Git store while GIT_COMMON_DIR names the clone.
+        "snapshot": False,
         "permission": {
             "*": "deny",
             # grep and glob cannot be scoped to a path here, so they are off.

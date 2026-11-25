@@ -1331,6 +1331,7 @@ def scenario(run: Run, page: Page) -> None:
     my_settings_step(run, page)
     settings_tabs_step(run, page)
     project_tabs_step(run, page)
+    tabs_menu_scroll_step(run, page)
     invitations_step(run, page)
     agents_page_step(run, page)
     handle_hints_step(run, page)
@@ -6804,8 +6805,12 @@ def start_on_runner_open(run: Run, page: Page, name: str, section, open_form) ->
     # Why there is none, under the empty choice (tsk-2k0jcaxfd0ja): the answer above names
     # repositories and no harness.
     expect(form.locator(".placement-new-no-tool-why")).to_have_text("The runner's configuration names no tool for this target.")
-    # What a placement does not take is hidden; the button says what it does.
-    expect(form.locator("#join-ttl")).to_be_hidden()
+    # The form keeps one shape (tsk-6w4qckma672q): what a placement does not take stays, switched
+    # off with its reason beside it; the button says what it does.
+    expect(form.locator("#join-ttl")).to_be_visible()
+    expect(form.locator("#join-ttl")).to_be_disabled()
+    expect(form.locator("#join-ttl")).to_have_attribute("aria-describedby", re.compile(r"\bjoin-ttl-runner\b"))
+    expect(form.locator("#join-ttl-runner")).to_be_visible()
     start = form.get_by_role("button", name="Start on the runner", exact=True)
     expect(start).to_be_visible()
     run.shot(page, "placements-start-form")
@@ -8876,6 +8881,48 @@ def project_tabs_step(run: Run, page: Page) -> None:
     page.reload()
     expect(page.locator("#my-start-tab")).to_be_checked()
     no_problems(run, "tabs")
+
+
+def tabs_menu_scroll_step(run: Run, page: Page) -> None:
+    """A long tabs menu on a phone (tsk-hhyccgssr2pr): the header is sticky, so the menu never
+    scrolls away with the page. It ends at the screen's bottom edge, its list scrolls inside it, the
+    page behind stays where it is, and the last item can still be reached and opened. Twenty copies
+    of a project's switch, put before the real items, stand in for twenty more projects, so the
+    last item is still the real New project."""
+    run.step("tabs menu: a long list on a phone scrolls inside the menu, the page stays put")
+    size = page.viewport_size
+    try:
+        page.set_viewport_size({"width": 360, "height": 640})
+        page.goto(f"{run.base}/owner/e2e-alpha/inbox")
+        box = page.locator(".tabs-menu-box")
+        box.get_by_role("button", name="Project tabs", exact=True).click()
+        menu = box.locator("ul.menu")
+        expect(menu).to_be_visible()
+        menu.evaluate("(ul) => { const li = ul.querySelector('li'); for (let i = 0; i < 20; i++) {"
+                      " const c = li.cloneNode(true); c.classList.add('e2e-extra-item'); ul.insertBefore(c, ul.firstChild); } }")
+        before = page.evaluate("scrollY")
+        got = menu.evaluate("(ul) => { const r = ul.getBoundingClientRect();"
+                            " return { top: r.top, bottom: r.bottom, vh: innerHeight, scrolls: ul.scrollHeight > ul.clientHeight }; }")
+        assert got["bottom"] <= got["vh"] and got["scrolls"], f"the tabs menu runs past the screen or does not scroll: {got}"
+        run.shot(page, "tabs-menu-long-360x640")
+        # The wheel over the menu scrolls its list to the end, and no further: the page does not move.
+        area = menu.bounding_box()
+        assert area is not None
+        page.mouse.move(area["x"] + area["width"] / 2, area["y"] + area["height"] / 2)
+        for _ in range(15):
+            page.mouse.wheel(0, 400)
+        page.wait_for_function("(ul) => ul.scrollTop + ul.clientHeight >= ul.scrollHeight - 1", arg=menu.element_handle())
+        last = box.get_by_role("menuitem", name="New project", exact=True)
+        seen = last.evaluate("(el) => { const r = el.getBoundingClientRect(); const m = el.closest('ul').getBoundingClientRect();"
+                             " return { inMenu: r.top >= m.top && r.bottom <= m.bottom + 1, inView: r.bottom <= innerHeight, scrollY }; }")
+        assert seen["inMenu"] and seen["inView"], f"the last item is not in view after scrolling the menu: {seen}"
+        assert seen["scrollY"] == before, f"the page scrolled with the menu: {before} -> {seen['scrollY']}"
+        last.click()
+        expect(page).to_have_url(re.compile(r"/new$"))
+    finally:
+        if size:
+            page.set_viewport_size(size)
+    no_problems(run, "tabs menu scroll")
 
 
 # Every section heading of each tab (tsk-chtvqs62cd10), as the e2e fixture's owner sees them: a

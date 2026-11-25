@@ -22465,8 +22465,9 @@ pickup's `404` carries no detail.
 
 **A finding.** The hub takes and keeps it (tsk-n50ez67he2pz); the
 runner sends it (tsk-bzmd0avm4yhb). When the runner's
-watch (§15.14) diagnoses a placement, or the hub refuses its pickup or
-join, the report it sends next carries
+watch (§15.14) diagnoses a placement, the hub refuses its pickup or
+join, or the runner refuses a clone before starting the
+harness (`workspace_in_use / not_a_plain_clone`), the next report carries
 what it found as `finding`, so the owner and the lead can see why the
 runner acted, and the history shows which causes recur:
 
@@ -22573,7 +22574,12 @@ skill.
   branch or file name, or the text of an exception raised by an
   operation on the agents' side, goes in only as a fixed code or a
   placeholder (`<path>`, `<branch>`, `<error>`), or the line is left
-  out. A line the runner cannot build that way is left out.
+  out. A line the runner cannot build that way is left out. For a clone
+  refused during start (`workspace_in_use`, `not_a_plain_clone`), a
+  finding with cause `unknown` carries the clone check's reason. The
+  runner names recognized Git metadata such as `core.worktree` from a
+  fixed list. Other items appear as `<key>` or `<entry>`. Configuration
+  values stay out of the finding.
 - **One placement per line.** The runner writes each line about a
   placement with that placement's id at its start (`plc-0003: …`) and
   selects for `finding.log` only the lines that start with the id of
@@ -22751,9 +22757,12 @@ has one, else the placement's id, so the requests of two placements of
 one agent are told apart;
 `summary` `Placement <placement id> on runner <runner name> reported
 <state> (<reason>[, <detail>]) at <reported_at> (UTC); restarts
-<restarts>.` Later reports of the same outage — the same failure
-reported again, another failing reason — file nothing and change
-nothing on the request. The outage ends, and the hub withdraws the
+<restarts>.` When `reason` is `workspace_in_use`, `detail` is
+`not_a_plain_clone` and `reported.finding.log` contains at least one
+line, the hub appends a space and the sentence `See the Runner log in
+Managed agents for the clone check's reason.` Later reports of the same
+outage — the same failure reported again, another failing reason — file
+nothing and change nothing on the request. The outage ends, and the hub withdraws the
 request when it is still open, with the placement's next report of
 `state: running`, when the placement is stopped (`desired:
 stopped` carried out) or deleted, or when the project is archived or
@@ -24099,7 +24108,11 @@ cause.
   | `usage_limit` | the harness has exited; the runner starts it again at the reset (§15.7, "A rate limit is not a crash") | `rate_limited`, `reason: quota`, `retry_at`, with the finding |
   | `login_invalid` | never restarts: the login needs a person. A session still running is ended as a stop does before the report | `failed`, `reason: auth`, with the finding |
   | `pickup_refused` | never restarts: as today, at the refusal (above) | `failed`, `reason: join_failed`, `detail` the hub's code, with the finding |
-  | `unknown` | ends the session and starts it again once, resuming; the finding stays for analysis | `exited`, `reason: hung`, the trigger as `detail`, with the finding |
+  | `unknown` | for a watch diagnosis, ends the session and starts it again once, resuming; the finding stays for analysis | `exited`, `reason: hung`, the trigger as `detail`, with the finding |
+
+  A clone refused before the harness starts also carries cause
+  `unknown`. It stays `failed / workspace_in_use / not_a_plain_clone`
+  until a person intervenes (§15.7).
 
   The trigger's detail is `not_listening` or `never_joined` (§15.7).
   `failed` opens the owner's outage request (§15.7, "The owner is asked

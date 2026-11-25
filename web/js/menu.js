@@ -197,6 +197,10 @@ window.Maity = window.Maity || {};
         append(list, h("li", { role: "none" }, el));
       });
       list.hidden = false;
+      // Where the list starts on screen, for the stylesheet: a menu in the sticky header does not
+      // scroll away with the page, so a list longer than the room below it scrolls inside itself
+      // (css: #header .menu, tsk-hhyccgssr2pr).
+      if (list.getBoundingClientRect) list.style.setProperty("--menu-top", Math.max(0, Math.round(list.getBoundingClientRect().top)) + "px");
       button.setAttribute("aria-expanded", "true");
       document.addEventListener("click", outside, true);
       if (items.length) items[typeof at === "number" ? Math.min(at, items.length - 1) : at === "last" ? items.length - 1 : 0].focus();

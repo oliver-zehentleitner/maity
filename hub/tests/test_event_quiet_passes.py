@@ -49,6 +49,25 @@ def fast(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(events_route, "FALLBACK_SECONDS", FAST)
 
 
+class _Steps:
+    """`time` for the events route (routes/events.py reads only `time.monotonic`, at the wait's
+    start and after each pass): every reading moves one fallback on, so a wait of `n` seconds
+    makes about `n / FAST` passes whatever the machine's load. On the wall clock a loaded CI
+    runner fitted as few as 1 or 3 passes into the short wait (tsk-7ge2q624pp4c)."""
+
+    def __init__(self) -> None:
+        self.now = 0.0
+
+    def monotonic(self) -> float:
+        self.now += FAST
+        return self.now
+
+
+@pytest.fixture
+def steps(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(events_route, "time", _Steps())
+
+
 @pytest.fixture
 def reads(monkeypatch: pytest.MonkeyPatch) -> list[int]:
     """One entry per full read of a held wait (`events.read_waking`)."""
@@ -127,10 +146,12 @@ def test_an_idle_held_wait_costs_one_look_a_pass_not_a_read(
     make_client: ClientFactory,
     migrated: Engine,
     fast: None,
+    steps: None,
     reads: list[int],
 ) -> None:
     """Counting rule: every statement the engine sends during the call (`_recorded`). Two
-    waits of 1 s and 2 s differ only in their number of passes, so the difference in
+    waits of 1 s and 2 s, on the stepped clock (`_Steps`), differ only in their number of
+    passes, so the difference in
     statements over the difference in looks is the cost of a skipped pass: the look, and for
     a bridge the check that its connection still carries the agent (`_still_carried`). Only
     the first pass reads. On main every pass reads: there are no looks, and a pass costs four
