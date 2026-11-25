@@ -945,9 +945,9 @@ Since 2026-10-31 (the maintainer's wish, `context/chat.md` entry
 6e357e0c "An inbox answer carries a note with any button", §7) each open
 request has one free-text field **above** its buttons, always writable:
 every reply button sends `{reply_id, text}` when the field has text, and
-**Talk** sends `{talk: true, text}`, **Send** the text alone. "Talk" is
-one word in every language (a language file leaves `inbox.talk` out
-rather than translating it). Talk works only where the asker is an agent
+**Talk** sends `{talk: true, text}`, **Send** the text alone. "Talk" was
+first one word in every language; since the German catalog (#1156) every
+language file translates `inbox.talk` like any other label. Talk works only where the asker is an agent
 the reader owns (§7: accepted only from the human who owns the asking
 agent): inside a project from the member list (`owner_id`), across
 projects and for a personal request from the reader's own profiles
