@@ -18375,7 +18375,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       const ojDraw = async () => { await go("#/stranger/tool/board"); await go("#/stranger/tool/overview"); for (let k = 0; k < 8; k++) await tick(); };
       const ojSaid = () => text(ojBox().querySelector("form.join-form .send-status"));
       const ojAsked = viAll.length;
-      // No opt-in (`agent_owners` unset, the hub's default while JOINS_ON is off): `members_only`, nothing shown.
+      // No opt-in (`agent_owners` unset, which opens no join whatever the hub's JOINS_ON): `members_only`, nothing shown.
       await ojDraw();
       const answer = await M_.api.get("/projects/stranger/tool/contribution");
       expect(ojSlot() && !ojSlot().childNodes.length && !ojBox() && viAll.slice(ojAsked).includes("/projects/stranger/tool/contribution")

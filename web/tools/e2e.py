@@ -5552,41 +5552,41 @@ CONTRIBUTION = "{base}/api/v1/projects/owner/e2e-alpha/contribution"
 
 def outsider_add_agent_case(run: Run, page: Page, answer) -> None:
     """Add your agent, as this hub has it (docs/api.md §6.1 "What the project allows", §3.1 "An
-    outsider's agent"; tsk-pgcm6wvyxxj4): the hub ships its outsiders' joins switched off
-    (`outsiders.JOINS_ON = False`, #2142), a module constant no setting or environment turns on,
-    so `GET …/contribution` answers REPORTER `200` with `can_join: false, reason: members_only`
-    and the head's slot stays empty and silent: no button, no reason in words, no join panel, no
-    console error (watch_page). The button itself, the reasons
-    `limit` and `blocked` and Claim for are the smoke test's, against the fixture hub. The empty
-    head at 1280 and 390 px in both schemes; then a reason put in the slot by hand, wrapping inside
-    its block at 620, 390 and 1590 px."""
-    run.step("outsider: Add your agent stays out while the hub's outsiders' joins are off (members_only)")
+    outsider's agent"; tsk-pgcm6wvyxxj4): the hub's outsiders' joins are on
+    (`outsiders.JOINS_ON = True`, the owner's decision of 2026-11-25), and e2e-alpha's admins
+    stored `agent_owners: anyone` (agent_owners_step), so `GET …/contribution` answers REPORTER,
+    who holds no agent there, `200` with `can_join: true, reason: null`, and the head's slot holds
+    the button alone: no reason in words, no join form until it is clicked, no console error
+    (watch_page). The join form itself, the reasons `members_only`, `limit` and `blocked` and
+    Claim for are the smoke test's, against the fixture hub. The head with the button at 1280 and
+    390 px in both schemes; then a reason put in the slot by hand in the button's place, wrapping
+    inside its block at 620, 390 and 1590 px."""
+    run.step("outsider: Add your agent is the head's one action where the admins opted in (can_join)")
     assert answer.status == 200, f"GET …/contribution answered {answer.status}: {answer.text()}"
     body = answer.json()
-    assert body.get("can_join") is False and body.get("reason") == "members_only", body
-    # The slot's own drawing runs after the answer is read: let it, then look.
-    answer.finished()
-    page.evaluate("() => new Promise((done) => setTimeout(done, 0))")
+    assert body.get("can_join") is True and body.get("reason") is None, body
     slot = page.locator("header .project-state #outsider-actions")
-    expect(slot).to_be_hidden()
-    expect(slot).to_have_text("")
-    expect(slot.locator("*")).to_have_count(0)
-    expect(page.get_by_role("button", name="Add your agent", exact=True)).to_have_count(0)
-    expect(page.locator(".outsider-add-agent, .outsider-reason, #outsider-join")).to_have_count(0)
+    button = slot.get_by_role("button", name="Add your agent", exact=True)
+    expect(button).to_be_visible()
+    expect(button).to_have_attribute("aria-expanded", "false")
+    expect(slot).to_have_text("Add your agent")
+    expect(slot.locator("*")).to_have_count(1)
+    expect(page.locator(".outsider-reason, #outsider-join form.join-form")).to_have_count(0)
     for width, height in ((1280, 900), (390, 844)):
         page.set_viewport_size({"width": width, "height": height})
         for scheme in ("light", "dark"):
             page.emulate_media(color_scheme=scheme)
             settle(page, NOT_WIDER, None)
             wide = page.evaluate("document.documentElement.scrollWidth - document.documentElement.clientWidth")
-            assert wide <= 0, f"the outsider's empty head slot at {width}x{height} {scheme}: {wide} px wider than the window"
-            run.shot(page, f"outsider-add-agent-off-{width}-{scheme}")
+            assert wide <= 0, f"the outsider's head with Add your agent at {width}x{height} {scheme}: {wide} px wider than the window"
+            run.shot(page, f"outsider-add-agent-on-{width}-{scheme}")
     # A reason in words wraps inside the block beside the tabs (tsk-dradpje67ak1): the hub sends
-    # none here, so the slot is given the longest one the module draws, and at a narrow desktop
-    # width, a phone and the screenshot's width the page is no wider than the window and the slot
-    # stays inside its block. Taken out again after.
+    # none here, so the button is hidden and the slot is given the longest reason the module
+    # draws, and at a narrow desktop width, a phone and the screenshot's width the page is no
+    # wider than the window and the slot stays inside its block. Put back as it was after.
     page.evaluate("""() => {
       const slot = document.getElementById("outsider-actions");
+      slot.querySelector(".outsider-add-agent").style.display = "none";
       const note = document.createElement("span");
       note.className = "outsider-reason";
       note.setAttribute("role", "note");
@@ -5609,7 +5609,11 @@ def outsider_add_agent_case(run: Run, page: Page, answer) -> None:
         tabs = page.locator("header .views-row nav.views").bounding_box()
         assert tabs and tabs["width"] >= 150, f"{where}: the tabs are left {tabs}"
         run.shot(page, f"outsider-reason-{width}")
-    page.evaluate("() => document.querySelector('#outsider-actions .outsider-reason')?.remove()")
+    page.evaluate("""() => {
+      document.querySelector("#outsider-actions .outsider-reason")?.remove();
+      document.querySelector("#outsider-actions .outsider-add-agent").style.display = "";
+    }""")
+    expect(button).to_be_visible()
     page.set_viewport_size({"width": 1280, "height": 900})
     page.emulate_media(color_scheme="light")
     # Silent so far: no console or page error, and nothing said of the read; the round's own
@@ -5626,8 +5630,8 @@ def outsider_tab_round(run: Run, browser) -> None:
     The hub reads a public project to an outsider (#2001, #2078): a signed-in non-member at the
     project's address is taken to its Overview, drawn with the dashed tab current, and never gets
     the public page (no `section.view-visitor`, no `GET /public/pages/…`); the Board has no New
-    card, the head's `#outsider-actions` slot is there and takes no room, and stays empty on the
-    hub's `200 members_only` (outsider_add_agent_case), and Why draws either the
+    card, the head's `#outsider-actions` slot is there and holds Add your agent alone on the
+    hub's `200 can_join` (outsider_add_agent_case), and Why draws either the
     project's Why or the outsider's one sentence, whichever the hub's answer is. Every control
     the views leave out is the smoke test's, against the fixture hub.
     Starred through `PATCH /me`, the project is a dashed tab with a filled star linking to its
@@ -5653,11 +5657,10 @@ def outsider_tab_round(run: Run, browser) -> None:
     expect(tab).to_have_attribute("href", "/owner/e2e-alpha/overview")
     settle(page, DASHED, OUTSIDER_TAB)
     assert tab.evaluate("e => getComputedStyle(e).borderTopStyle") == "dashed", "the outsider's tab is not dashed"
-    # The slot for the outsider's own actions: in the head, empty, taking no room.
+    # The slot for the outsider's own actions, in the head; what it holds is the case's.
     slot = page.locator("header .project-state #outsider-actions")
     expect(slot).to_have_count(1)
     expect(slot).to_have_attribute("data-slot", "outsider-add-agent")
-    expect(slot).to_be_hidden()
     outsider_add_agent_case(run, page, contribution.value)
     run.shot(page, "outsider-tab-overview")
     run.a11y(page, "an outsider's Overview in the dashed tab")
