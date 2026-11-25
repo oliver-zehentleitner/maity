@@ -752,7 +752,7 @@ def test_a_closed_codex_placement_ends_its_loop_and_daemon_before_its_scratch_go
     calls = tmp_path / "calls.log"
     started(world)
     home = codex_home(sup)
-    loop = spawn(home, calls)
+    loop = spawn(home, calls, delay=0.5)  # slow over its TERM: waited for before the removal
     record(home, loop.pid)
     backend.kill(SESSION)
     sup.update([])
@@ -856,6 +856,18 @@ def test_the_agents_side_command_prints_one_token_and_refuses_other_arguments(
         assert codexd.main(bad) == 2, bad
 
 
+@pytest.mark.parametrize(("timeout", "wait"), [(5.0, "3"), (2.5, "1.5"), (1.0, "0"), (0.4, "0")])
+def test_the_wait_is_clamped_to_what_the_deadline_leaves(
+    tmp_path: Path, timeout: float, wait: str
+) -> None:
+    """The wait for the loop's exit is at most UPDATER_WAIT, and leaves a second of the step's
+    timeout for the command around it; never below zero."""
+    agents = AgentsSide()
+    assert codexd._end_updater(cast(Any, agents), tmp_path, tmp_path / "h", timeout) == "absent"
+    ((argv, given),) = agents.runs
+    assert argv[-1] == wait and given == timeout
+
+
 def test_a_home_not_below_the_root_is_unreadable(tmp_path: Path) -> None:
     assert codexd.end_updater(tmp_path / "root", tmp_path / "elsewhere" / "h") == "unreadable"
 
@@ -912,9 +924,22 @@ def test_a_close_where_the_hosts_layout_is_unknown_stops_nothing(
     sup, backend, *_ = world
     started(world)
     monkeypatch.setattr(sup, "_host_layout", lambda target: "unknown")
+    touched: list[str] = []
+
+    def recorded_as(what: str) -> Callable[[Any, Any], bool]:
+        def removal(p: Any, target: Any) -> bool:
+            touched.append(what)
+            return True
+
+        return removal
+
+    monkeypatch.setattr(sup, "_remove_tmpdir", recorded_as("tmpdir"))
+    monkeypatch.setattr(sup, "_remove_stale", recorded_as("stale"))
     backend.kill(SESSION)
     sup.update([])
     sup.closed([CLOSED_CODEX])
     sup.tick()
     assert (tmp_path / "calls.log").read_text().splitlines() == [f"launch|{codex_home(sup)}"]
+    assert touched == []  # nothing of the target this pass: a live loop keeps its TMPDIR
     assert "plc-0003" not in sup.scratch_cleared
+    assert codex_home(sup).is_dir()

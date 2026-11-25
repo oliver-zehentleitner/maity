@@ -1263,7 +1263,7 @@ class Supervisor:
                     continue
                 paths: list[Path] = []
                 in_tmp = False
-                skip = refused = False  # this target's scratch is not removed this pass
+                skip = refused = unknown = False  # this target's scratch stays this pass
                 try:
                     located = self._scratch_location(p, target)
                     if located is None:
@@ -1288,7 +1288,7 @@ class Supervisor:
                                 layouts[target.name] = self._host_layout(target)
                             layout = layouts[target.name]
                             if layout == "unknown":
-                                done, skip, paths = False, True, []
+                                done, skip, unknown, paths = False, True, True, []
                             else:
                                 paths = [*([path] if layout == "holder" else []), old]
                 except workspace.Refused:
@@ -1305,6 +1305,11 @@ class Supervisor:
                         except Exception as exc:  # noqa: BLE001 - the removal goes on
                             self.log(f"{p['id']}: the Codex stop at close failed: "
                                      f"{type(exc).__name__}")  # fmt: skip
+                if unknown:
+                    # Its layout is unknown, so the stop above did not run: nothing of this
+                    # target is touched this pass, its TMPDIR leaf and stale leaves included, or
+                    # a live loop or daemon would lose its TMPDIR. The next pass tries again.
+                    continue
                 if not self._remove_tmpdir(p, target):
                     done = False
                 if target.as_user.here and not self._remove_stale(p, target):

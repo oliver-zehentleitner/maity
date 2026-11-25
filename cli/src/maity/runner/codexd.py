@@ -151,9 +151,11 @@ def _is_updater(pid: int, home: Path, boot: str, ticks: int, proc: Path) -> bool
 
 def _exited(pidfd: int, wait: float) -> bool:
     """Whether the process behind `pidfd` exits within `wait` seconds: a pidfd turns readable
-    when its process exits, for a process that is not our child too."""
-    ready, _, _ = select.select([pidfd], [], [], max(wait, 0.0))
-    return bool(ready)
+    when its process exits, for a process that is not our child too. `poll`, not `select`,
+    which refuses a descriptor of 1024 or more."""
+    poller = select.poll()
+    poller.register(pidfd, select.POLLIN)
+    return bool(poller.poll(max(wait, 0.0) * 1000))
 
 
 def end_updater(
