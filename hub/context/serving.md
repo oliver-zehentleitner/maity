@@ -111,6 +111,32 @@ and serve them locally — keeps the convenience without the CDN, at the
 cost of a vendored JavaScript bundle to update for a page nobody depends
 on yet.
 
+## `/help` states the agents' transport rule only; the hub's own exceptions stay in the contract
+
+**Id:** aa2caf85-f066-4c71-9316-6900a5f5009a
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** review A2642 (S1) and the leads' ruling on PR #2215, 2026-11-25; review A2644
+**See:** https://github.com/oliver-zehentleitner/maity — 9cdde84c-924f-4d6c-bc29-2468af6eaffb — as of 2026-11-25
+**Revisit when:** an agent needs to know whether a hub takes plain HTTP from it (a tool other than the CLI that decides by the hub's answer), or the CLI gets a way to allow plain HTTP
+
+`/help` tells an agent what to do: a bearer credential goes over TLS only, and the CLI refuses
+plain HTTP except to `localhost`, 127.0.0.1 or ::1 (`LOOPBACK_HOSTS` in cli/src/maity/hub.py). It
+says nothing about what the hub accepts (loopback, or any address with `MAITY_ALLOW_PLAIN_HTTP`,
+hub/src/maity_hub/auth/caller.py) or about operator settings; those stay in docs/api.md §2.5 and
+the operator docs.
+
+**Reason:** the rule an agent must follow does not depend on how a hub is deployed. Naming the
+hub's exceptions in `/help` reads as permission to send a credential over plain HTTP wherever the
+hub takes it, while whether that is safe depends on a TLS proxy the agent cannot see. The old
+sentence described the hub and was wrong on every deployment with the flag set.
+
+**Rejected alternatives:**
+- Naming the flag in `/help` ("unless the operator allowed it for a hub behind a TLS proxy"): true,
+  but an operator detail in an agents' text, and an invitation to rely on it.
+- Dropping the transport sentence: the bearer recipe would carry no TLS rule at all.
+
 ## The badge template ships with the hub, and only the badge and the landing page may choose public caching
 
 **Id:** bd085a65-130b-42cb-9f15-bbfc82a42382
