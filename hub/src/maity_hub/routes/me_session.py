@@ -14,6 +14,7 @@ from maity_hub import (
     API_VERSION,
     CLI_VERSION,
     __version__,
+    access,
     agent_owners,
     attached,
     availability,
@@ -78,6 +79,7 @@ from maity_hub.routes.members import (
     PausedIn,
     change_of,
     members_outcome,
+    outside_shown,
     set_paused,
 )
 from maity_hub.routes.projects import arbiter_text
@@ -593,8 +595,12 @@ def _packet(
     rules_block: dict[str, Any] = {"version": project.rules_version, "changed": changed}
     connections = bridges.views(conn, [mine.id])[mine.id]  # §2.3
     bridging_for = connections["bridging_for"]
+    # An agent with trust `outside` reads the project as its owner reads it from outside
+    # (§2.3 "Outside"): not the rules' text, which `GET …/rules` serves, and the rest of the
+    # packet as `_from_outside` narrows it.
+    outside = access.reads_from_outside(mine)
     # The supervised duty and a bridge's guide are in every packet: neither moves the version.
-    if changed or body.supervisor is not None or bridging_for:
+    if not outside and (changed or body.supervisor is not None or bridging_for):
         rules_block["markdown"] = rules.generate(
             project,
             mine.trust,
@@ -689,12 +695,16 @@ def _packet(
     scopes = listed_scopes(mine.trust, mine.role_base, "agent")
     # Below the rules, never a permission (§19.4); the owner's text once, here or there.
     preferences_block, owner_preferences = preferences.packet(conn, mine, cursor)
-    return {
+    packet: dict[str, Any] = {
         "server_time": clock.rfc3339(clock.now()),
         "api_version": API_VERSION,
         "hub_version": __version__,
         # First of the contents: the soul is what an agent loads before anything (§19.3).
-        "memory": memory.packet_block(conn, mine, agent.id, cursor),
+        "memory": (
+            memory.outside_packet_block(conn, mine, agent.id, cursor)
+            if outside
+            else memory.packet_block(conn, mine, agent.id, cursor)
+        ),
         **(
             {"onboarding": check_in}
             if (check_in := onboarding.hint(conn, project, mine.row))
@@ -818,6 +828,77 @@ def _packet(
         "operations": operations(
             project, mine.trust, mine.role_base, namespace.full_name(conn, project)
         ),
+    }
+    return _from_outside(conn, packet, mine) if outside else packet
+
+
+# The keys of the packet's `project` an agent with trust `outside` reads (§2.3 "Outside"): those
+# of the project's view an outsider reads (`projects.OUTSIDE_PROJECT_KEYS`), an allow-list, so
+# that a key the block gains later stays out until it is named here. Never `repository`,
+# `policy`, `memory`, `absence` or `state_note`.
+OUTSIDE_PROJECT_KEYS = (
+    "language",
+    "id",
+    "full_name",
+    "slug",
+    "name",
+    "state",
+    "released_at",
+    "state_changed_at",
+    "rules_version",
+)
+# The keys of a peer an agent with trust `outside` reads: those of the member view an outsider
+# reads (`members.OUTSIDE_MEMBER_KEYS`), never a sign of presence or availability.
+OUTSIDE_PEER_KEYS = ("member_id", "kind", "handle", "name", "trust", "role", "areas")
+
+
+def _from_outside(conn: Connection, packet: dict[str, Any], mine: Membership) -> dict[str, Any]:
+    """The resume packet of an agent with trust `outside` (§2.3 "Outside", §5.2): what its
+    owner reads from outside, plus its own membership, instances and cards and the events it
+    reads (`events.readable_by`). Its claims and assignments are the cards it reads
+    (`task_views`); the project's block `OUTSIDE_PROJECT_KEYS`; the members the public page
+    names, by `OUTSIDE_PEER_KEYS`, and their areas; no setup card, request, ticker item,
+    group chat or other member's preferences text, which it does not read."""
+    shown = _principals(conn, outside_shown(conn, mine.project.id))
+    project = packet["project"]
+    preferences_block = packet["preferences"]
+    packet = {k: v for k, v in packet.items() if k != "setup"}
+    packet["project"] = {k: project[k] for k in OUTSIDE_PROJECT_KEYS}
+    packet["peers"] = [
+        {k: peer[k] for k in OUTSIDE_PEER_KEYS if k in peer}
+        for peer in packet["peers"]
+        if peer["member_id"] in shown
+    ]
+    own = packet["me"]["member_id"]
+    packet["areas"] = [a for a in packet["areas"] if a["owner"] in shown or a["owner"] == own]
+    packet["preferences"] = {
+        **preferences_block,
+        "items": [],
+        "truncated": False,
+        "changed_since_cursor": False,
+    }
+    packet["requests"] = {
+        "mine_open": [],
+        "answered_since_cursor": [],
+        "to_answer": [],
+        "truncated": False,
+    }
+    packet["ticker"] = {"items": [], "for_me": 0, "others": 0, "truncated": False}
+    packet["conversations"] = []
+    return packet
+
+
+def _principals(conn: Connection, people: dict[int, Any]) -> set[str]:
+    """The principal ids (`hum-…`, `agt-…`) of the memberships `people` names."""
+    if not people:
+        return set()
+    return {
+        row.agent_id or row.human_id
+        for row in conn.execute(
+            select(t.membership.c.agent_id, t.membership.c.human_id).where(
+                t.membership.c.id.in_(list(people))
+            )
+        )
     }
 
 

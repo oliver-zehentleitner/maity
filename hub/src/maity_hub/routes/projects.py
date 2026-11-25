@@ -1158,11 +1158,12 @@ def project_body(
 ) -> dict[str, Any]:
     """`GET /projects/{owner}/{slug}`'s answer (§6.1), also the `project` part of
     `GET /bootstrap` (§5.4), which passes no `mine`: the caller's membership is read here, so
-    an outsider reads no part of it (§2.3). An outsider's answer is `_outside_view`."""
+    an outsider reads no part of it (§2.3). An outsider's answer is `_outside_view`, and so is
+    an agent's with trust `outside` (`access.reads_from_outside`, §2.3 "Outside")."""
     if mine is None:
         mine = membership(conn, caller, slug)
     mine.require("project:read")
-    if isinstance(mine, access.OutsideReader):
+    if isinstance(mine, access.OutsideReader) or access.reads_from_outside(mine):
         return _outside_view(conn, mine.project, request)
     return _view(conn, mine.project, request, mine)
 
