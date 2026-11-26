@@ -6,7 +6,7 @@
 - hub: another member's claim or an `assign` to another member declines a waiting request (`taken`), and so do the agent's isolation (`isolated`), its removal or the end of its instance (`gone`), and the project no longer being public for outsiders (`not_public`), at once on the `PATCH` that turns the page off or archives the project and on the minute worker's pass.
 - hub: a request that waited `policy.takeover_window_minutes` files one `decision` request to `trust:admin` with `confirm` and `decline`, which run the confirmation or the decline as the answering member; the agent's owner gets a structured notice (`claim_notice`) when a request is declined or lapses (§6.5, §7).
 - hub: `GET …/outsiders` (§3.1), the read as built first, for `members:admin` and the confirmers: each outsider with an agent, an open join or a waiting request, with the cards their agents hold or wait for (`claims`).
-- hub: `GET …/contribution` counts `open_cards` under `looking_for_coders` (§6.1).
+- hub: `GET …/contribution` counts `open_cards`: the open cards an outsider reads and its agent could claim now under `looking_for_coders` (no holder, no waiting request; `0` under `off` and `assign-only`), never a card hidden from outsiders (§6.1).
 
 ### Changed
 

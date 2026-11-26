@@ -600,3 +600,154 @@ def test_contribution_counts_the_open_cards(
     assert outsider.get(f"{P}/contribution").json()["open_cards"] == 2
     _policy(owner, looking_for_coders="off")
     assert outsider.get(f"{P}/contribution").json()["open_cards"] == 0
+
+
+def test_open_cards_counts_only_what_an_outsider_could_claim_and_reads(
+    agent: flow.Agent,
+    owner: flow.Human,
+    outsider: flow.Human,
+    make_client: ClientFactory,
+    migrated: Engine,
+) -> None:
+    """The lead's ruling of 2026-11-26: claimable open cards an outsider reads, never a hidden
+    one, under `per_card` and `all` alike."""
+
+    def count() -> int:
+        found: int = outsider.get(f"{P}/contribution").json()["open_cards"]
+        return found
+
+    _card(owner, "Free")
+    secret = _card(owner, "Secret")
+    with migrated.begin() as conn:  # a security card, which an outsider does not read (§2.3)
+        conn.execute(update(t.card).where(t.card.c.id == secret).values(label="security"))
+    held = _card(owner, "Held")
+    waiting = _card(owner, "Waiting")
+    member = flow.agent(make_client, owner)
+    assert member.post(f"{TASKS}/{held}/claim", {}).status_code == 200
+    _requested(agent, waiting)
+    _card(owner, "Closed", open_to_outsiders=False)
+    assert count() == 1  # Free only
+    _policy(owner, looking_for_coders="all")
+    assert count() == 2  # Free and Closed; never Secret, Held or Waiting
+    _policy(owner, claim_policy="assign-only")
+    assert count() == 0
+
+
+# --- the lead's rulings of 2026-11-26: the lapse's answer forms, one settling event ------------
+
+
+def _lapsed(engine: Engine, request: dict[str, Any]) -> str:
+    with engine.begin() as conn:
+        conn.execute(
+            update(t.claim_request)
+            .where(t.claim_request.c.id == request["id"])
+            .values(lapses_at=clock.now() - timedelta(minutes=1))
+        )
+    claim_requests.sweep(engine)
+    lapse: str = _row(engine, request["id"]).lapse_request_id
+    return lapse
+
+
+@pytest.mark.parametrize(
+    "body",
+    [{"text": "yes please"}, {"talk": True}, {"talk": True, "text": "let us talk"}],
+)
+def test_talk_and_text_alone_on_the_lapse_are_reply_id_unknown(
+    agent: flow.Agent, owner: flow.Human, migrated: Engine, body: dict[str, Any]
+) -> None:
+    card = _card(owner)
+    request = _requested(agent, card)
+    lapse = _lapsed(migrated, request)
+    refused = owner.post(f"{P}/requests/{lapse}/answer", body)
+    assert refused.status_code == 400, refused.text
+    assert refused.json()["error"]["details"]["fields"] == {"reply_id": "unknown"}
+    assert _row(migrated, request["id"]).pending is True  # both requests stay open
+
+
+def test_an_unknown_reply_on_the_lapse_stays_not_a_reply(
+    agent: flow.Agent, owner: flow.Human, migrated: Engine
+) -> None:
+    card = _card(owner)
+    lapse = _lapsed(migrated, _requested(agent, card))
+    refused = owner.post(f"{P}/requests/{lapse}/answer", {"reply_id": "maybe"})
+    assert refused.status_code == 400, refused.text
+    assert refused.json()["error"]["details"]["fields"] == {"reply_id": "not_a_reply"}
+    declined = owner.post(f"{P}/requests/{lapse}/answer", {"reply_id": "decline"})
+    assert declined.status_code == 200, declined.text
+
+
+def test_another_requests_text_answer_keeps_its_forms(
+    owner: flow.Human, make_client: ClientFactory
+) -> None:
+    """The counter-check: a request of another kind still takes text alone."""
+    asker = flow.agent(make_client, owner)
+    asked = asker.post(f"{P}/requests", {"class": "decision", "title": "Which?"})
+    assert asked.status_code == 201, asked.text
+    answered = owner.post(f"{P}/requests/{asked.json()['id']}/answer", {"text": "the first"})
+    assert answered.status_code == 200, answered.text
+
+
+def _settling(engine: Engine, card: str) -> list[Any]:
+    """The `task_updated` events of `card` that name `claim_requests`."""
+    return [
+        e
+        for e in _events(engine, "task_updated")
+        if e.subject_id == card and "claim_requests" in (e.payload.get("fields") or [])
+    ]
+
+
+def _one_settlement(engine: Engine, card: str, fields: list[str]) -> Any:
+    [settled] = _settling(engine, card)
+    assert settled.payload["fields"] == fields
+    assert settled.payload["claim_requests"] == []
+    return settled
+
+
+def test_each_settlement_emits_one_task_updated(
+    agent: flow.Agent, owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    member = flow.agent(make_client, owner)
+    path = f"{TASKS}/{{}}/claim/{{}}"
+    # A confirmation folds into the status change's task_updated.
+    card = _card(owner, "Confirmed")
+    req = _requested(agent, card)
+    assert owner.post(path.format(card, "confirm"), {"request_id": req["id"]}).status_code == 200
+    _one_settlement(migrated, card, ["claim_requests", "status"])
+    # A decline has no enclosing one: its own.
+    card = _card(owner, "Declined")
+    req = _requested(agent, card)
+    assert owner.post(path.format(card, "decline"), {"request_id": req["id"]}).status_code == 200
+    _one_settlement(migrated, card, ["claim_requests"])
+    # A member's claim folds into the claim's status task_updated.
+    card = _card(owner, "Taken")
+    _requested(agent, card)
+    assert member.post(f"{TASKS}/{card}/claim", {}).status_code == 200
+    _one_settlement(migrated, card, ["claim_requests", "status"])
+    # An assign elsewhere keeps task_assigned and adds its own task_updated.
+    card = _card(owner, "Assigned")
+    _requested(agent, card)
+    assert owner.post(f"{TASKS}/{card}/assign", {"assignee": member.id}).status_code == 200
+    _one_settlement(migrated, card, ["claim_requests"])
+    assert [e for e in _events(migrated, "task_assigned") if e.subject_id == card]
+    # An assign that confirms: one, in the status change.
+    card = _card(owner, "Assign confirms")
+    _requested(agent, card)
+    assert owner.post(f"{TASKS}/{card}/assign", {"assignee": agent.id}).status_code == 200
+    _one_settlement(migrated, card, ["claim_requests", "status"])
+    # A failed re-check: one, after the rollback.
+    card = _card(owner, "Re-check")
+    req = _requested(agent, card)
+    assert owner.patch(f"{TASKS}/{card}", {"open_to_outsiders": False}).status_code == 200
+    assert owner.post(path.format(card, "confirm"), {"request_id": req["id"]}).status_code == 409
+    settled = _one_settlement(migrated, card, ["claim_requests"])
+    assert f"member:{owner.id}" in settled.audience  # the confirmers of that moment
+    # The lapse's decline: one.
+    card = _card(owner, "Lapse")
+    lapse = _lapsed(migrated, _requested(agent, card))
+    assert owner.post(f"{P}/requests/{lapse}/answer", {"reply_id": "decline"}).status_code == 200
+    _one_settlement(migrated, card, ["claim_requests"])
+    # The hub's decline when the page goes off: one per card.
+    card = _card(owner, "Page off")
+    _requested(agent, card)
+    assert owner.patch(P, {"public_page": "off"}).status_code == 200
+    _one_settlement(migrated, card, ["claim_requests"])

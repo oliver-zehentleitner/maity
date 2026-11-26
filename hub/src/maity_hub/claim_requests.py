@@ -823,6 +823,7 @@ def _register() -> None:
             refusal="only a confirmer answers a claim request's lapse",
             predicate=_lapse_answerer,
             reply_required=True,
+            replies_only=True,
         ),
     )
 

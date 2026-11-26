@@ -1678,12 +1678,19 @@ def _check_answer(row: Any, body: AnswerIn) -> None:
     """One of reply_id, text, talk; text may go with reply_id or with talk, and talk is never
     with reply_id (§7); a reply it offers."""
     given = {k for k in ("reply_id", "text", "talk") if getattr(body, k) is not None}
+    rule = proposals.answerer(row)
+    if (
+        rule is not None
+        and rule.replies_only
+        and given
+        and ("talk" in given or body.reply_id is None)
+    ):
+        raise invalid({"reply_id": "unknown"}, "this request is answered with one of its replies")
     if not given or {"talk", "reply_id"} <= given:
         raise invalid({"answer": "reply_id_or_text_or_talk"})
     reply_ids = {r["id"] for r in replies(klass(row), row.options, action=row.action is not None)}
     if body.reply_id is not None and body.reply_id not in reply_ids:
         raise invalid({"reply_id": "not_a_reply"})
-    rule = proposals.answerer(row)
     if rule is not None and rule.reply_required and body.reply_id is None:
         raise invalid({"reply_id": "required"}, "this request is answered with one of its replies")
     edits = body.markdown is not None or body.base_version is not None

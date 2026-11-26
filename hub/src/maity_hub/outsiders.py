@@ -232,22 +232,29 @@ def listing(conn: Connection, project: Any) -> list[dict[str, Any]]:
 
 def open_cards(conn: Connection, project: Any) -> int:
     """`open_cards` of "What the project allows" (§6.1): the `open` cards an outsider's agent
-    may claim under `looking_for_coders`: those with `open_to_outsiders` under `per_card`,
-    every `open` card under `all`, none under `off`."""
+    may claim under `looking_for_coders`, counting only cards an outsider reads: unheld, with
+    no waiting request, and with `open_to_outsiders` under `per_card`; every such card under
+    `all`; none under `off`, nor under `claim_policy: assign-only`."""
     from sqlalchemy import func
 
     from maity_hub import policy, public_cards
 
     looking = policy.looking_for_coders(project)
-    if looking == "off":
-        return 0
+    if looking == "off" or project.claim_policy == "assign-only":
+        return 0  # nothing an outsider's own claim could take (§6.5)
+    c = t.claim_request.c
+    waiting = select(c.id).where(c.task_id == t.card.c.id, c.pending.is_(True)).exists()
     query = (
         select(func.count())
         .select_from(t.card)
         .where(
             t.card.c.project_id == project.id,
             t.card.c.status == "open",
-            public_cards.outside_clause(),  # only cards an outsider reads (§2.3)
+            t.card.c.claim_holder.is_(None),
+            ~waiting,  # another agent's request waits there: `already_claimed`
+            # Only cards an outsider reads (§2.3), decided in this statement, so the count
+            # never includes a card hidden from it.
+            public_cards.outside_clause(),
         )
     )
     if looking == "per_card":

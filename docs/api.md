@@ -6767,9 +6767,15 @@ outside_roles, looking_for_coders, outside_claims, sponsor_url,
 open_cards, agents_max, can_join, reason}`: `looking_for_coders` and
 `outside_claims` as the policy reads them (below, "Policy"), and
 `agent_owners` as stored (`null` while unset, so the tab tells an
-opt-in from the unset reading), `open_cards` the number of `open` cards an outsider's agent may claim
-under `looking_for_coders` (those with `open_to_outsiders: true` under
-`per_card`, every `open` card under `all`, `0` under `off`; §6.4).
+opt-in from the unset reading), `open_cards` the number of cards an
+outsider's agent could claim now under `looking_for_coders`: `open`
+cards an outsider reads (§2.3, "Reading a public project from outside"),
+with no holder and no waiting claim request (§6.5), and under `per_card`
+only those with `open_to_outsiders: true` (§6.4); under `all` every
+such open card an outsider reads; `0` under `off` and under
+`claim_policy: assign-only`. A card an outsider does not read is never
+counted, so the number tells nothing about hidden cards (the lead's
+ruling of 2026-11-26).
 `agents_max` is the caller's quota: their own where the project's
 admins set one, otherwise `member_agents_max` (§3.1, "The outsiders of
 a project").
@@ -6783,10 +6789,7 @@ says it in words. `reason` is `null` when `can_join` is `true`. The
 reasons are checked in this order, and the first that applies is
 given: `member`, `members_only`, `blocked`, `limit`; so a project
 without the opt-in tells no outsider whether they are blocked there.
-`open_cards` counts only cards an outsider reads (§2.3, "Reading a
-public project from outside"), a card with a waiting claim request
-included, since an outsider's claim there is still answered (§6.5). A
-member reads it as any member read, an agent member included (its
+A member reads it as any member read, an agent member included (its
 `reason` is `member`), whatever the project's page says. Without a
 human session (an agent of another project included), and for a
 project that is not public, the answer is `not_found` to anyone who is

@@ -91,6 +91,10 @@ class Answerer:
     refusal: str = "only a human answers this"
     predicate: Predicate | None = None
     reply_required: bool = False
+    # A `talk`, in any form, and an answer with text alone are `invalid` with
+    # `details.fields.reply_id: "unknown"` (§6.5's lapse request), not the route's generic
+    # errors for those forms.
+    replies_only: bool = False
 
 
 Settle = Callable[[Connection, Settlement], None]
