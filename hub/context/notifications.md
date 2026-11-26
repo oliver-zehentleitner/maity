@@ -18,6 +18,10 @@ translation. Mails, link pages, bell titles and the public pages' frame all go t
 language touches no module. Sentences are whole keys with placeholders; none is built from pieces, which
 is why the second-factor mail has one key with its link and one without.
 
+The loader builds its table of catalog files from the fixed interface language tags. Looking up a
+tag in that table keeps the choice of files inside the loader, even when a new caller supplies the
+language. A missing file still counts as an untranslated catalog for the English fallback.
+
 `language_of` passes over a language without words for its section yet (`catalog.speaks`): a person who
 accepts `fr, de` reads German rather than English until the French arrives.
 
