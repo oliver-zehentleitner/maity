@@ -11,6 +11,102 @@ Keep a Changelog records what changed. Why it changed is in [`context/`](context
 
 Unreleased changes are collected in `changelog.d/` (one file per pull request) and folded in at release.
 
+## [0.1.0a13] - 2026-11-26
+
+### Added
+
+- web: **Managed agents** and a runner's own list of agents name which instance each placement
+  runs, as `handle#id`, and Managed agents also names its clone. Two instances of one agent on
+  the same runner are told apart, and a placement not yet picked up says "no instance yet".
+- Contract: the built-in Keep the Why steward role, `steward` (§2.3 "The steward", decided
+  by the lead on 2026-11-25, not built yet). It replaces the "preset in the
+  join dialog, not a role". Built on the expert: it answers why questions across `context/`
+  with the source and carries `expert_for` and `expert_sources`, and it follows up on open
+  entries and on merges without an entry by asking their authors, with a short status to its
+  lead. Every member still writes its own entries; `policy.steward_writes` says whether the
+  steward may write one itself where no author can (`self`) or only opens cards
+  (`cards_only`). Every merge item of the ticker wakes it (§17.3). Its rules line (§6.9)
+  says to ask the author first and not to write for others, and the dashboard hides the
+  role where the memory provider is `none`.
+
+### Changed
+
+- docs: the footer of every page on the docs site links the Discord in its follow row, after
+  LinkedIn, as the landing page already does (tsk-txdezz3cb4d5).
+- web: the **Join an agent** form keeps one shape whether the agent joins by a line or starts
+  on a runner (tsk-6w4qckma672q). Ticking **On a runner** adds the runner's fields at the end
+  and hides nothing above them: take over, hand-over and the line's validity stay visible but
+  switched off with a one-line reason, **Replace instance** is off with its reason (a start
+  makes another instance), and a member's agents that a start cannot take stay listed, off,
+  with the reason. Every field keeps its value when the part is turned on and off.
+- web: an agent already in the project shows its membership (trust, role, subagents, briefing,
+  and its areas where the form has that field) read-only where those fields stand, with a link
+  to its Manage; its boss is still changed here, saved before the start on a runner too, and a
+  refused start says a saved change stays saved, or that one across owners waits for consent.
+  The form's fields follow the members' Manage in order and words.
+- web: a dashed tab looks like a member's tab, only dashed (tsk-q8s9dfjmjsxy): the project's
+  logo and name, a lock where the project is private, the state dot once the project's view was
+  read, and its star last inside the dashed outline instead of beside the tab. The star stays its
+  own button: a click on it stars or unstars, a click on the name opens the tab.
+- hub: the six public page kinds end in one function, `public_pages.page`, and the Board, Team,
+  Organisation and Why pages share the project page's `targets`; an agent page's address is
+  `public_agents.path_of`. No page changes: every stored digest stays as it was.
+- docs: `docs/api.md` §16.7's section table says that `profiles` and `explore` draw nothing in this
+  version, as `collab` does, and that `activity` is not the project page's **Recently**.
+- hub: the public pages name their members by one rule: one member-picture rule (the online list asks
+  it too), the members read once per project render, one link helper, one member card, one `monogram`
+  and one list of the statistics' keys. No page changes: every stored page, its `data` and the
+  public routes' answers are the same.
+- docs: the README and its nine translations show new dashboard screenshots: the inbox and
+  the board again, then team, organisation, agents, managed agents, a Why entry and runners in
+  a gallery, one line each; the dashboard guide and the runners page show them where they
+  describe each view, every image with an alt text of what it shows (tsk-kctcw62tp8f4).
+- docs: "What Maity delivers" promises only what the contract does: in a project that requires
+  signing, an agent's work after joining goes through the CLI; the answers open on a request
+  depend on the request; a report holds the pull request when one is found
+  (tsk-4g4wd3rnt07e).
+- cli: one helper each for the "every page" read, the `more:` line, a card's linked pull
+  requests, JSON read from a file or stdin, project paths and the dict helpers, in place of
+  copies in `cli.py` (tsk-sgaz43qazfzx). Behaviour stays the same, except: `jourfixe statement
+  --file`, `jourfixe report --file` and `jourfixe answer --file` now say why a file is not JSON
+  with the parser's full message (position included), and they also turn any other decoder
+  `ValueError` (for example the integer conversion limit) into a usage error, where they used
+  to catch only `JSONDecodeError`; a non-object file for `jourfixe answer` says "the body is
+  one JSON object" before the keys are checked; and `hub.USER_AGENT` and `MESSAGE_TYPES` are
+  gone. `--review-file` still turns any decoder `ValueError` into a usage error, as it already
+  did.
+
+### Fixed
+
+- web: on a person's or an organisation's page, a project you are not a member of opens in the
+  dashboard as its dashed tab, no longer as its stored public page in a new browser tab.
+- web: a menu in the header (the project tabs menu, "+", the gear and profile menus) no longer runs
+  past the bottom of the screen. With many projects on a phone, the tabs menu's list scrolls
+  inside the menu, and the page behind it does not scroll along.
+- web: on a phone with the on-screen keyboard open, a chat composer's Send button could go missing
+  below Attach (tsk-ftrkm6wda8yq). A chat in full screen now fits what is visible above the
+  keyboard, Send sits in the composer's row beside Attach, at its end, where the row's controls fit
+  in one line, and the open chat in the page is never shorter than its heading and composer. The
+  automated checks move a stand-in for the visible area in a desktop browser; how an Android
+  keyboard reports it is confirmed on a phone, not by them.
+- web: a start on a runner never sent the owner's subagent instruction (`subagents`,
+  `subagents_language`); it now goes with a new or admitted profile's placement as with a
+  join.
+- cli: use the runner's harness default model for Claude Code, Codex and Antigravity
+  when the placement names no model.
+- cli: disable automatic OpenCode snapshots in runner placements. Initializing a snapshot's Git store can set `core.worktree` in the placement clone and cause the runner to refuse its next start.
+- runner: when the runner refuses a clone before starting a placement, its finding now gives the
+  clone check's reason and identifies recognized Git metadata such as `core.worktree`.
+  The owner's outage request points to the Runner log (tsk-27rm0ay2ntnx).
+
+### Security
+
+- cli: under the runner, maity takes the clone's `.git` only as the
+  directory whose device and inode the runner recorded at the session's
+  start (`MAITY_GIT_DEVICE` beside `MAITY_GIT_INODE`), no longer by the
+  inode alone. A session started by an older runner runs no maity git
+  until the placement is restarted.
+
 ## [0.1.0a12] - 2026-11-25
 
 ### Added
