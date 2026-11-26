@@ -1,4 +1,4 @@
-"""The public views of a project (docs/api.md §16.9): Board, Team and Organisation, each a
+"""The public views of a project (docs/api.md §16.9): Board, Team, Organisation and Why, each a
 page of its own at `/{owner}/{slug}/<view>` while the project's page is served.
 
 Who is named follows the project page: every active member and every agent that is not
@@ -9,7 +9,6 @@ Whatever changes one of these inputs calls `public_pages.touch` for the kind `pr
 
 from __future__ import annotations
 
-import hashlib
 from collections.abc import Collection
 from datetime import timedelta
 from typing import Any
@@ -24,14 +23,14 @@ from maity_hub import (
     ktw,
     moderation,
     namespace,
+    public_agents,
     public_design,
     public_pages,
     public_people,
-    render,
 )
 from maity_hub import tables as t
 from maity_hub.config import Settings
-from maity_hub.public_projects import member_pictures, served
+from maity_hub.public_projects import member_pictures, served, targets
 
 KIND = "project_views"
 # Apart from the members' cache, which may have read with an owner's grant: what the public
@@ -131,7 +130,7 @@ def members(
                 agent.handle if ok else None,
                 agent.display_name,
                 False,
-                f"/{owner.handle}/agents/{agent.handle}" if ok else None,
+                public_agents.path_of(owner.handle, agent.handle) if ok else None,
             )
     return found
 
@@ -141,16 +140,19 @@ def person_data(name: str, handle: str, page: str) -> dict[str, str]:
     return {"name": name, "handle": handle, "page": page}
 
 
-def _shown(person: Person) -> dict[str, str] | None:
+def shown_data(person: Person) -> dict[str, str] | None:
+    """The member as the page names them (`person_data`), None for one that is not shown."""
     if not person.shown:
         return None
     return person_data(person.name or "", person.handle or "", person.address or "")
 
 
-def _holder(person: Person | None, gone_agent: bool) -> dict[str, str] | str:
+def holder_data(person: Person | None, gone_agent: bool) -> dict[str, str] | str:
+    """A card's holder, note author or editor as the page names them: the member shown, else
+    the word `member` or `agent` (a hold, an account not served, an agent gone from the project)."""
     if person is None:
         return "agent" if gone_agent else "member"
-    return _shown(person) or ("member" if person.human else "agent")
+    return shown_data(person) or ("member" if person.human else "agent")
 
 
 def _gone_agents(conn: Connection, project_id: str, who: dict[int, Person]) -> set[int]:
@@ -217,7 +219,7 @@ def board_data(
                         "title": r.title,
                         "label": r.label,
                         "holder": (
-                            _holder(who.get(r.claim_holder), r.claim_holder in gone)
+                            holder_data(who.get(r.claim_holder), r.claim_holder in gone)
                             if r.claim_holder
                             else None
                         ),
@@ -250,9 +252,9 @@ def shown_pictures(conn: Connection, who: dict[int, Person]) -> dict[str, str | 
     )
 
 
-def _pictured(person: Person, pictures: dict[str, str | None]) -> dict[str, Any] | None:
+def pictured(person: Person, pictures: dict[str, str | None]) -> dict[str, Any] | None:
     """Someone shown with the picture their own page shows; None for one the page does not name."""
-    named = _shown(person)
+    named = shown_data(person)
     return None if named is None else {**named, "picture": pictures.get(person.principal)}
 
 
@@ -262,7 +264,7 @@ def members_data(who: dict[int, Person], pictures: dict[str, str | None]) -> dic
     shown = sorted((p for p in who.values() if p.shown), key=lambda p: (p.handle or "", p.id))
     return {
         "shown": [
-            {**(_pictured(p, pictures) or {}), "trust": p.trust, "role": p.role} for p in shown
+            {**(pictured(p, pictures) or {}), "trust": p.trust, "role": p.role} for p in shown
         ],
         "others": [{"role": r, "count": n} for r, n in sorted(_other_roles(who).items())],
     }
@@ -288,7 +290,7 @@ def organisation_data(who: dict[int, Person], pictures: dict[str, str | None]) -
         nodes.append(
             {
                 "index": index[p.id],
-                "person": _pictured(p, pictures),
+                "person": pictured(p, pictures),
                 "role": p.role,
                 "reports_to": None if boss is None else index[boss],
             }
@@ -392,34 +394,19 @@ def render_views(conn: Connection, hub: Settings, project_id: str) -> list[publi
         path = f"/{full}/{view}"
         # The HTML in the dashboard's design, from `data` alone (`public_design.page`).
         content = public_design.page(view, data, path)
-        digest = hashlib.sha256("\x00".join((path, project.name, content)).encode())
         pages.append(
-            public_pages.Page(
-                path=path,
-                body=render.page_document(
-                    lang="en",
-                    title=f"{heading} of {project.name} ({full})",
-                    canonical=f"{hub.public_url.rstrip('/')}{path}",
-                    content=content,
-                    styled=False,
-                ),
-                inputs=digest.hexdigest(),
-                lastmod=clock.now(),
-                view=view,
-                data=data,
+            public_pages.page(
+                hub,
+                path,
+                f"{heading} of {project.name} ({full})",
+                content,
+                (project.name,),
+                view,
+                data,
             )
         )
     return pages
 
 
-def targets(conn: Connection, among: Collection[str] | None = None) -> list[str]:
-    return list(
-        conn.execute(
-            select(t.project.c.id)
-            .where(t.project.c.public_page == "on", *public_pages.only(t.project.c.id, among))
-            .order_by(t.project.c.id)
-        ).scalars()
-    )
-
-
+# The views follow their project's page: the same targets (§16.9).
 public_pages.register(public_pages.Kind(KIND, render_views, targets, prepare=prepare_why))

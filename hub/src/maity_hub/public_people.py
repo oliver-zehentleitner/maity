@@ -17,7 +17,6 @@ in the transaction that changed it, by `public_pages.touch`.
 
 from __future__ import annotations
 
-import hashlib
 import re
 from collections.abc import Collection
 from datetime import datetime
@@ -25,7 +24,7 @@ from typing import Any, NamedTuple
 
 from sqlalchemy import Connection, select
 
-from maity_hub import clock, moderation, namespace, person_links, public_pages, render
+from maity_hub import moderation, namespace, person_links, public_design, public_pages
 from maity_hub import tables as t
 from maity_hub.config import Settings
 
@@ -134,7 +133,7 @@ def listed_agents(conn: Connection, human: Any) -> list[ListedAgent]:
         if found is not None:
             model, harness = public_agents.latest_session(conn, found)
             roles = sorted({project.member_role for project, _ in found})
-            page = f"/{human.handle}/agents/{agent.handle}"
+            page = public_agents.path_of(human.handle, agent.handle)
             listed.append(ListedAgent(agent, page, roles, model, harness))
         elif agent.id in working and moderation.hold(conn, "profile", agent.id) is None:
             listed.append(ListedAgent(agent, None, [], None, None))
@@ -190,9 +189,6 @@ class Shown(NamedTuple):
     statistics: dict[str, Any] | None
 
 
-STAT_KEYS = ("cards_done", "reviews_given", "prs_merged")  # a person's three (§16.9)
-
-
 def _shown(conn: Connection, human: Any, named: list[Listed]) -> Shown:
     """Member since, online and the numbers, by the person's switches (§16.9): none of them
     while `public_profile` is off, online only with `public_presence` on as well, the numbers
@@ -213,7 +209,7 @@ def _shown(conn: Connection, human: Any, named: list[Listed]) -> Shown:
         totals = public_agents.statistics(
             conn, [(listed.project, listed.membership_id) for listed in named]
         )
-        numbers = {key: totals[key] for key in STAT_KEYS}
+        numbers = {key: totals[key] for key in public_design.PERSON_FIGURES}
     return Shown(member_since(human.created_at), online, numbers)
 
 
@@ -266,24 +262,14 @@ def render_person(conn: Connection, hub: Settings, human_id: str) -> list[public
     path = f"/{human.handle}"
     # One page: the agents stand under the projects, no tabs (§16.9, "A person's agents").
     content = public_design.profile(KIND, data, path)
-    body = render.page_document(
-        lang="en",
-        title=f"{human.display_name} ({human.handle})",
-        canonical=f"{hub.public_url.rstrip('/')}{path}",
-        content=content,
-        indexed=chosen,
-        styled=False,
-    )
-    inputs = hashlib.sha256(
-        "\x00".join((path, human.display_name, "on" if chosen else "off", content)).encode()
-    )
-    page = public_pages.Page(
-        path=path,
-        body=body,
-        inputs=inputs.hexdigest(),
-        lastmod=clock.now(),
-        view=KIND,
-        data=data,
+    page = public_pages.page(
+        hub,
+        path,
+        f"{human.display_name} ({human.handle})",
+        content,
+        (human.display_name, "on" if chosen else "off"),
+        KIND,
+        data,
         indexed=chosen,
     )
     return [page]

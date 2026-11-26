@@ -521,8 +521,11 @@ def launch(ctx: Context) -> Launch:
     ctx.as_user.mkdir(ctx.clone / ".git" / "maity")
     ctx.as_user.write(ctx.clone / clonecheck.MARKER_PATH, ctx.placement["id"] + "\n")
     # Which directory `.git` is: the sandbox does not keep the agent from renaming it, so
-    # maity outside the sandbox takes `.git` only as this one (clonecheck.opened_git).
-    env[clonecheck.GIT_INODE_ENV] = str(ctx.as_user.inode(ctx.clone / ".git"))
+    # maity outside the sandbox takes `.git` only as this one, by device and inode
+    # (clonecheck.opened_git).
+    device, inode = ctx.as_user.dev_inode(ctx.clone / ".git")
+    env[clonecheck.GIT_DEVICE_ENV] = str(device)
+    env[clonecheck.GIT_INODE_ENV] = str(inode)
     # git's own repository for each run maity starts, outside the clone, in the agent's
     # directory the sandbox hides (clonecheck._private_dir). Codex runs maity in its sandbox,
     # which cannot write there: named as the clone's `.git/maity`.
@@ -993,7 +996,7 @@ def _claude_code(ctx: Context, env: dict[str, str]) -> Launch:
     ]  # fmt: skip
     if ctx.skill is not None:  # the Keep the Why skill for this session only (skills.py)
         base += [f"--plugin-dir={ctx.skill}"]
-    model = ctx.placement.get("model")
+    model = ctx.placement.get("model") or ctx.harness.default_model
     if model:
         base += ["--model", model]
     if ctx.placement.get("mode") == "interactive":
@@ -1180,7 +1183,7 @@ def _codex(ctx: Context, env: dict[str, str]) -> Launch:
             ctx.as_user.link(auth, home / "auth.json")
     ctx.as_user.mkdir(ctx.clone / ".git" / "maity")
     env = {**env, "CODEX_HOME": str(home)}
-    model = ctx.placement.get("model")
+    model = ctx.placement.get("model") or ctx.harness.default_model
     chosen = ["-m", model] if model else []
     prompt = START_PROMPT + _sandbox_prompt(ctx)
     if ctx.placement.get("mode") == "interactive":
@@ -1216,6 +1219,8 @@ def opencode_config(ctx: Context) -> dict[str, Any]:
     edit = {"*": "allow", f"{ctx.clone}/.git/*": "deny"}
     return {
         "$schema": "https://opencode.ai/config.json",
+        # Snapshot capture initializes a second Git store while GIT_COMMON_DIR names the clone.
+        "snapshot": False,
         "permission": {
             "*": "deny",
             # grep and glob cannot be scoped to a path here, so they are off.
@@ -1388,7 +1393,7 @@ def _antigravity(ctx: Context, env: dict[str, str]) -> Launch:
     # agy takes the work tree from $PWD: the folder's real path (workspace.check_folder).
     env = {**env, "PWD": str(ctx.folder)}
     base = [ctx.binary, "--settings", str(settings)]
-    model = ctx.placement.get("model")
+    model = ctx.placement.get("model") or ctx.harness.default_model
     if model:
         base += ["--model", model]
     # In `base`, so the first command and every continued one run the same level. A model id

@@ -983,6 +983,7 @@ def main() -> int:
                     chat_height_views(run, browser)
                     chat_phone_views(run, browser)
                     chat_phone_head(run, browser)
+                    chat_keyboard_send(run, browser)
                     chat_bubble_width(run, browser)
                     paths_views(run, browser)
                     notification_sessions_layout(run, browser)
@@ -4019,6 +4020,140 @@ def chat_height_views(run: Run, browser) -> None:
             context.close()
 
 
+SEND_IN_VIEW = """() => {
+  const send = document.querySelector('.chat-layout.open .chat-pane .compose-actions button[type="submit"]');
+  const attach = document.querySelector('.chat-layout.open .chat-pane .compose-actions .attach-button');
+  if (!send) return { send: null };
+  const r = send.getBoundingClientRect(), vh = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+  const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+  const a = attach ? attach.getBoundingClientRect() : null;
+  // Each part's height, for a failure to name what took the room.
+  const tall = (el) => Array.from(el ? el.children : []).filter((c) => c.getClientRects().length)
+    .map((c) => (c.tagName.toLowerCase() + "." + String(c.className || "").split(" ")[0]) + ":" + Math.round(c.getBoundingClientRect().height));
+  const pane = send.closest('.chat-pane');
+  return { send: { top: r.top, bottom: r.bottom, height: r.height }, vh, covered: !(hit && (hit === send || send.contains(hit))),
+           sameRow: a ? Math.abs((a.top + a.bottom) / 2 - (r.top + r.bottom) / 2) <= Math.max(a.height, r.height) / 2 : null,
+           parts: { pane: tall(pane), compose: tall(send.closest('.compose')) } };
+}"""
+
+
+def chat_keyboard_send(run: Run, browser) -> None:
+    """Send while a phone's keyboard is open (the maintainer on a12, tsk-ftrkm6wda8yq), in fixture mode,
+    in a direct and a group chat: the field focused at 390 x 844, then the window shrunk as an open
+    keyboard leaves it. Send is never scrolled to: only the field is brought into view, as the browser
+    does for a focused field, and Send is measured where it then stands: inside the window, not covered,
+    in the composer's one row beside Attach, taking the click.
+    - Full screen (the reported case), at 390 x 400 and 390 x 300: the pane is sized from the visual
+      viewport (js/chat.js fullScreen). Headless Chromium shrinks the layout and the visual viewport
+      together here, which the old 100dvh would follow as well; full_over_keyboard shrinks the visual
+      one only, as an Android keyboard does, and fails with the old sizing. At 390 x 300 the heading
+      and the composer at its rows need more than the window: the history gives up all its room, then
+      the field down to one line (css/app.css, full screen). A failure lists each part's height.
+    - The chat in the page, at 390 x 400 only. At 390 x 300 the page's sticky header (about 200 px on a
+      phone) leaves the composer no room below it, and a header that scrolls away is a layout change
+      beyond this card."""
+    run.step("fixtures: Send stays on screen, in Attach's row, while a phone's keyboard is open")
+    index = (WEB / "index.html").as_uri()
+    context = browser.new_context(viewport={"width": 390, "height": 844})
+    page = context.new_page()
+    errors: list[str] = []
+    page.on("pageerror", lambda err: errors.append(str(err)))
+    cases = [(mode, height) for mode, heights in (("full", (400, 300)), ("page", (400,))) for height in heights]
+    try:
+        for route in ("#/maintainer/maity/chat/agt-a", "#/maintainer/maity/chat/cnv-0007"):
+            for mode, height in cases:
+                page.set_viewport_size({"width": 390, "height": 844})
+                page.goto("about:blank")
+                page.goto(f"{index}?lang=en{route}")
+                field = page.locator(".chat-layout.open .chat-pane .compose textarea")
+                field.wait_for()
+                page.evaluate("() => { const b = document.querySelector('main .signin-banner'); if (b) b.remove(); }")
+                if mode == "full":
+                    page.locator(".chat-layout.open .chat-pane .chat-full-toggle").click()
+                    page.locator("html.chat-full .chat-pane.chat-full-pane").wait_for()
+                field.click()
+                field.fill("When is the deploy?")
+                page.set_viewport_size({"width": 390, "height": height})
+                page.wait_for_timeout(400)
+                field.scroll_into_view_if_needed()
+                send = page.locator('.chat-layout.open .chat-pane .compose-actions button[type="submit"]')
+                page.wait_for_timeout(200)
+                m = page.evaluate(SEND_IN_VIEW)
+                where = f"{route} {mode} at 390x{height} with the field focused"
+                assert m["send"], f"{where}: no Send"
+                assert m["send"]["height"] >= 44 and m["send"]["top"] >= -0.5 and m["send"]["bottom"] <= m["vh"] + 0.5, f"{where}: Send at {m}"
+                assert not m["covered"], f"{where}: something covers Send: {m}"
+                assert m["sameRow"] is True, f"{where}: Send is not in Attach's row, or no Attach: {m}"
+                run.shot(page, f"fixtures-chat-keyboard-{mode}-{height}-{'group' if 'cnv-' in route else 'direct'}")
+                send.click(trial=True)
+            # Only the visual viewport shrinks, as an Android keyboard does (see the docstring).
+            full_over_keyboard(run, page, route)
+        assert not errors, errors
+    finally:
+        context.close()
+
+
+# A stand-in for window.visualViewport that a test moves: the page's layout stays as it is.
+VV_STANDIN = """() => {
+  const vv = new EventTarget();
+  vv.height = window.innerHeight; vv.offsetTop = 0;
+  Object.defineProperty(window, "visualViewport", { configurable: true, get: () => vv });
+  if (window.visualViewport !== vv) throw new Error("visualViewport could not be replaced");
+  window.__vvMove = (height, top, kind) => { vv.height = height; vv.offsetTop = top; vv.dispatchEvent(new Event(kind)); };
+}"""
+
+FULL_IN_VV = """() => {
+  const pane = document.querySelector('.chat-pane.chat-full-pane');
+  const send = document.querySelector('.chat-layout.open .chat-pane .compose-actions button[type="submit"]');
+  const attach = document.querySelector('.chat-layout.open .chat-pane .compose-actions .attach-button');
+  if (!pane || !send) return { pane: !!pane, send: null };
+  const p = pane.getBoundingClientRect(), r = send.getBoundingClientRect(), a = attach ? attach.getBoundingClientRect() : null;
+  const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+  const tall = (el) => Array.from(el ? el.children : []).filter((c) => c.getClientRects().length)
+    .map((c) => (c.tagName.toLowerCase() + "." + String(c.className || "").split(" ")[0]) + ":" + Math.round(c.getBoundingClientRect().height));
+  return { parts: { pane: tall(pane), compose: tall(send.closest('.compose')) },
+           pane: { top: p.top, height: p.height }, send: { top: r.top, bottom: r.bottom, height: r.height },
+           vv: { top: window.visualViewport.offsetTop, height: window.visualViewport.height }, inner: window.innerHeight,
+           covered: !(hit && (hit === send || send.contains(hit))),
+           sameRow: a ? Math.abs((a.top + a.bottom) / 2 - (r.top + r.bottom) / 2) <= Math.max(a.height, r.height) / 2 : null };
+}"""
+
+
+def full_over_keyboard(run: Run, page, route: str) -> None:
+    """The reported case as Android makes it: the window (the layout viewport) stays 390 x 844 and only
+    the visual viewport shrinks to 400 above the keyboard, then is moved down by 200 (its scroll). The
+    full-screen pane must cover exactly that strip, Send inside it, uncovered, in Attach's row; with the
+    pane at 100dvh (the old sizing) Send stays near the window's bottom, under the keyboard, and this
+    fails. Headless Chromium has no on-screen keyboard: window.visualViewport is a stand-in moved by the
+    test, so this proves the pane follows the visual viewport, not that a phone reports it so."""
+    index = (WEB / "index.html").as_uri()
+    page.set_viewport_size({"width": 390, "height": 844})
+    page.goto("about:blank")
+    page.goto(f"{index}?lang=en{route}")
+    field = page.locator(".chat-layout.open .chat-pane .compose textarea")
+    field.wait_for()
+    page.evaluate("() => { const b = document.querySelector('main .signin-banner'); if (b) b.remove(); }")
+    page.evaluate(VV_STANDIN)
+    page.locator(".chat-layout.open .chat-pane .chat-full-toggle").click()
+    page.locator("html.chat-full .chat-pane.chat-full-pane").wait_for()
+    field.click()
+    field.fill("When is the deploy?")
+    kind_name = "group" if "cnv-" in route else "direct"
+    for height, top, kind in ((400, 0, "resize"), (400, 200, "scroll")):
+        page.evaluate(f"() => window.__vvMove({height}, {top}, '{kind}')")
+        page.wait_for_timeout(200)
+        m = page.evaluate(FULL_IN_VV)
+        where = f"{route} full, the visual viewport {height} high at {top} ({kind}) in a 844 window"
+        assert m["send"], f"{where}: no pane or no Send: {m}"
+        assert m["inner"] == 844, f"{where}: the window changed, the case needs it unchanged: {m}"
+        assert abs(m["pane"]["top"] - top) <= 1 and abs(m["pane"]["height"] - height) <= 1, f"{where}: the pane is not the visual viewport: {m}"
+        assert m["send"]["height"] >= 44 and m["send"]["top"] >= top - 0.5 and m["send"]["bottom"] <= top + height + 0.5, f"{where}: Send outside what is seen: {m}"
+        assert not m["covered"], f"{where}: something covers Send: {m}"
+        assert m["sameRow"] is True, f"{where}: Send is not in Attach's row, or no Attach: {m}"
+    run.shot(page, f"fixtures-chat-keyboard-vv-{kind_name}")
+    page.locator('.chat-layout.open .chat-pane .compose-actions button[type="submit"]').click(trial=True)
+
+
 def chat_phone_head(run: Run, browser) -> None:
     """The owner's feedback on the full-screen chat (tsk-2a56j80p3p9h), in fixture mode, in a direct
     and a group chat, light and dark. On a phone (390 x 844) the full-screen button is at the top
@@ -5545,7 +5680,10 @@ def report_pages_round(run: Run, browser) -> None:
 
 
 OUTSIDER_TAB = "header nav.switcher a.outsider[data-outsider='owner/e2e-alpha']"
-DASHED = ("(s) => { const e = document.querySelector(s);"
+# The dashed outline is drawn by the tab's box, which holds the link and its star where there is
+# one (tsk-q8s9dfjmjsxy), else by the link alone.
+EDGE = "e => getComputedStyle(e.closest('.outsider-tab') || e).borderTopStyle"
+DASHED = ("(s) => { const a = document.querySelector(s); const e = a && (a.closest('.outsider-tab') || a);"
           " return !!e && getComputedStyle(e).borderTopStyle === 'dashed'; }")
 CONTRIBUTION = "{base}/api/v1/projects/owner/e2e-alpha/contribution"
 
@@ -5652,8 +5790,15 @@ def outsider_tab_round(run: Run, browser) -> None:
     expect(tab).to_have_attribute("aria-current", "page")
     expect(tab).to_have_attribute("href", "/owner/e2e-alpha/overview")
     settle(page, DASHED, OUTSIDER_TAB)
-    assert tab.evaluate("e => getComputedStyle(e).borderTopStyle") == "dashed", "the outsider's tab is not dashed"
-    # The slot for the outsider's own actions: in the head, empty, taking no room.
+    assert tab.evaluate(EDGE) == "dashed", "the outsider's tab is not dashed"
+    # A member's tab, only dashed (the maintainer, tsk-q8s9dfjmjsxy): the project's state dot after the name,
+    # from the project's view the page read, inside the dashed outline.
+    dot = tab.locator("span.dot")
+    expect(dot).to_have_count(1)
+    expect(dot).to_have_class(re.compile(r"\bstate-dot-[a-z_]+\b"))
+    expect(dot).to_be_visible()
+    assert tab.evaluate("e => { const d = e.querySelector('span.dot'); const t = Array.from(e.childNodes).findIndex((n) => n.nodeType === 3);"
+                        " return t >= 0 && Array.from(e.childNodes).indexOf(d) > t; }"), "the state dot does not follow the name"
     slot = page.locator("header .project-state #outsider-actions")
     expect(slot).to_have_count(1)
     expect(slot).to_have_attribute("data-slot", "outsider-add-agent")
@@ -5701,9 +5846,18 @@ def outsider_tab_round(run: Run, browser) -> None:
             expect(star_tab).to_have_count(1)
             # The dashed edge as the stylesheet draws it, waited for before it is read once (tsk-z4ps7cg7ve25).
             settle(fresh, DASHED, OUTSIDER_TAB)
-            assert star_tab.evaluate("e => getComputedStyle(e).borderTopStyle") == "dashed", f"{where}: not dashed"
+            assert star_tab.evaluate(EDGE) == "dashed", f"{where}: not dashed"
             box = star.bounding_box()
             assert box and box["width"] >= 24 and box["height"] >= 24, f"{where}: the star's target is {box}"
+            # Inside the dashed outline, right of the name (the maintainer, tsk-q8s9dfjmjsxy).
+            # filter(has=) looks for its locator inside each box, so it takes the link's own selector,
+            # not OUTSIDER_TAB, which starts at the header and so is inside no box.
+            outline = (fresh.locator("header nav.switcher .outsider-tab")
+                       .filter(has=fresh.locator("a.outsider[data-outsider='owner/e2e-alpha']")).bounding_box())
+            name = star_tab.bounding_box()
+            assert (outline and name and outline["x"] <= box["x"] and box["x"] + box["width"] <= outline["x"] + outline["width"] + 0.5
+                    and outline["y"] <= box["y"] + 0.5 and box["y"] + box["height"] <= outline["y"] + outline["height"] + 0.5
+                    and box["x"] >= name["x"] + name["width"] - 0.5), f"{where}: the star {box} is not inside {outline}, right of {name}"
             settle(fresh, NOT_WIDER, None)
             wide = fresh.evaluate("document.documentElement.scrollWidth - document.documentElement.clientWidth")
             assert wide <= 0, f"{where}: {wide} px wider than the window"
@@ -6683,6 +6837,7 @@ def start_on_runner_form(run: Run, page: Page, name: str) -> None:
     expect(page.get_by_role("heading", name="Managed agents", exact=True, level=3)).to_be_visible()
     expect(page.locator("main section.placements button.placement-new-open")).to_have_count(0)
     agents_page_tabs(run, page)
+    placement_instances_case(run, page)
     run.step("placements: Join an agent → On a runner: without a repository no runner fields; with one the paired runner allowed here is offered, no tool yet")
     page.goto(f"{run.base}/owner/e2e-alpha/placements")
     section = page.locator("main .join-slot")
@@ -6722,6 +6877,46 @@ def start_on_runner_form(run: Run, page: Page, name: str) -> None:
         page.unroute(runners_read, offering_it)
         page.unroute(BOOTSTRAP, in_bundle)
     no_problems(run, "start on a runner")
+
+
+def placement_instances_case(run: Run, page: Page) -> None:
+    """Which instance a placement runs (§15.5 `instance`, tsk-m8rpxpnyg0zd), in a real browser: the e2e
+    hub runs no runner, so the placements' read is answered with two placements of e2e-agent on one
+    runner (instances wqe2 and k7mq, clones e2e-agent and e2e-agent-2) and one not picked up yet.
+    Each row names its instance as handle#id with its clone; the unpicked one says no instance yet."""
+    run.step("placements: each row names its instance, handle#id, with its clone; none yet before the first pickup")
+    members = page.request.get(f"{run.base}/api/v1/projects/owner/e2e-alpha/members").json()["items"]
+    agent = next(m for m in members if m.get("handle") == "e2e-agent")
+
+    def row(pid: str, instance: str | None, clone: str) -> dict:
+        return {
+            "id": pid, "project": "owner/e2e-alpha",
+            "agent": {"id": agent["id"], "handle": "e2e-agent", "display_name": agent.get("display_name") or "E2E Agent", "avatar_url": None},
+            "runner": {"id": "rnr-e2e", "name": "e2e-box"}, "target": None, "harness": "claude-code", "mode": "interactive", "model": None,
+            "workspace": {"clone": clone, "branch": None, "continues_existing": False},
+            "desired": "running", "generation": 1, "rejoin": False, "fresh_session": False, "stop_grace_seconds": 120,
+            "approval": {"status": "approved", "request_id": None, "pending_change": None},
+            "credential_id": None, "instance": instance, "reported_current": False, "reported": None,
+            "session_hint": None, "logs_hint": None, "active": True, "closed_at": None, "closed_reason": None,
+            "created_by": "hum-owner", "proposed_by": None, "foreign": False,
+            "created_at": "2026-11-25T10:00:00Z", "updated_by": None, "updated_at": "2026-11-25T10:00:00Z",
+        }
+
+    items = [row("plc-e2e1", "wqe2", "e2e-agent"), row("plc-e2e2", "k7mq", "e2e-agent-2"), row("plc-e2e3", None, "e2e-agent-3")]
+    listing = re.compile(r"/api/v1/projects/owner/e2e-alpha/placements(\?|$)")
+    page.route(listing, lambda route: route.fulfill(json={"items": items, "next_cursor": None}))
+    try:
+        page.goto(f"{run.base}/owner/e2e-alpha/placements")
+        heads = page.locator("main section.placements li.placement .placement-head")
+        expect(heads).to_have_count(3)
+        got = [h.strip() for h in heads.all_inner_texts()]
+        assert got[0].startswith("e2e-agent#wqe2") and got[1].startswith("e2e-agent#k7mq"), f"the instances are not named: {got}"
+        assert "no instance yet" in got[2] and "#" not in got[2].split(" on ")[0], f"the unpicked placement: {got}"
+        facts = page.locator("main section.placements li.placement dl.facts").all_inner_texts()
+        assert "clone e2e-agent" in facts[0] and "clone e2e-agent-2" in facts[1], f"the clones are not named: {facts}"
+        run.shot(page, "placements-instances")
+    finally:
+        page.unroute(listing)
 
 
 def agents_page_tabs(run: Run, page: Page) -> None:

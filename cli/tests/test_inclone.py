@@ -49,6 +49,7 @@ def placed(
     monkeypatch.setenv(clonecheck.PLACEMENT_ENV, "plc-0003")
     monkeypatch.setenv("GIT_COMMON_DIR", str(clone / ".git"))
     monkeypatch.setenv(clonecheck.GIT_INODE_ENV, str(os.lstat(clone / ".git").st_ino))
+    monkeypatch.setenv(clonecheck.GIT_DEVICE_ENV, str(os.lstat(clone / ".git").st_dev))
     private = tmp_path / "agent" / "git"
     private.mkdir(parents=True)
     monkeypatch.setenv(clonecheck.GIT_PRIVATE_ENV, str(private))

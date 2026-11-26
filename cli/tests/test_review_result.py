@@ -505,6 +505,7 @@ def test_under_a_placement_the_cites_are_checked_in_the_clone_from_its_folder(
     monkeypatch.setenv(clonecheck.PLACEMENT_ENV, "plc-0003")
     monkeypatch.setenv("GIT_COMMON_DIR", str(clone / ".git"))
     monkeypatch.setenv(clonecheck.GIT_INODE_ENV, str(os.lstat(clone / ".git").st_ino))
+    monkeypatch.setenv(clonecheck.GIT_DEVICE_ENV, str(os.lstat(clone / ".git").st_dev))
     private = clone.parent / "agent-git"
     private.mkdir()
     git = shutil.which("git")
@@ -571,6 +572,7 @@ def test_under_a_placement_a_clone_its_git_refuses_sends_nothing(
     monkeypatch.setenv(clonecheck.PLACEMENT_ENV, "plc-0003")
     monkeypatch.setenv("GIT_COMMON_DIR", str(clone / ".git"))
     monkeypatch.setenv(clonecheck.GIT_INODE_ENV, str(os.lstat(clone / ".git").st_ino))
+    monkeypatch.setenv(clonecheck.GIT_DEVICE_ENV, str(os.lstat(clone / ".git").st_dev))
     private = clone.parent / "agent-git"
     private.mkdir()
     git = shutil.which("git")
