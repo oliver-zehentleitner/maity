@@ -106,9 +106,9 @@ def test_a_note_author_follows_their_name(world: World) -> None:
     card_id = world.owner.post(TASKS, {"title": "Noted by anna"}).json()["id"]
     world.anna.post(f"{TASKS}/{card_id}/notes", {"body": "from anna"})
     assert data(world, card_id).json()["data"]["notes"][0]["author"]["handle"] == "anna"
-    assert world.anna.patch("/me", {"handle": "anne"}).status_code == 200
-    assert data(world, card_id).json()["data"]["notes"][0]["author"]["handle"] == "anne"
-    assert '<a href="/anne">Human anna</a>' in (page(world, card_id) or "")
+    assert world.anna.patch("/me", {"handle": "anne-marie"}).status_code == 200
+    assert data(world, card_id).json()["data"]["notes"][0]["author"]["handle"] == "anne-marie"
+    assert '<a href="/anne-marie">Human anna</a>' in (page(world, card_id) or "")
 
 
 def test_a_redacted_note_shows_as_removed_without_its_text_or_reason(world: World) -> None:
@@ -244,8 +244,8 @@ def test_the_holder_on_a_card_page_follows_their_name_and_a_hold(world: World) -
         )
         public_pages.touch(conn, "card", card_id)
     assert data(world, card_id).json()["data"]["holder"]["handle"] == "anna"
-    assert world.anna.patch("/me", {"handle": "anne"}).status_code == 200
-    assert data(world, card_id).json()["data"]["holder"]["handle"] == "anne"
+    assert world.anna.patch("/me", {"handle": "anne-marie"}).status_code == 200
+    assert data(world, card_id).json()["data"]["holder"]["handle"] == "anne-marie"
     made = report(world.owner, {"type": "profile", "id": world.anna.id}, "impersonation")
     assert made.status_code == 201, made.text
     path = f"/admin/reports/{made.json()['id']}/resolve"

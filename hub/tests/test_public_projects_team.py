@@ -6,8 +6,9 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
-from sqlalchemy import Engine, select
+from sqlalchemy import Connection, Engine, select
 
+from maity_hub import moderation, public_members, public_people, public_projects
 from maity_hub import tables as t
 from tests import factory, flow
 from tests.conftest import ClientFactory
@@ -195,3 +196,290 @@ def test_a_person_under_a_hold_or_a_suspension_leaves_the_project_page(world: Wo
     assert "Human anna" in shown(world.anyone)
     assert world.owner.post(path, {"action": "suspend"}).status_code == 200
     assert "Human anna" not in shown(world.anyone)
+
+
+def _team_from_rows(conn: Connection, project_id: str) -> tuple[list[Any], list[Any]]:
+    """The form `team` had before it was built from `members` (tsk-mtyyaqj39c22)."""
+    m = t.membership.c
+    people = conn.execute(
+        select(t.human)
+        .join(t.membership, m.human_id == t.human.c.id)
+        .where(m.project_id == project_id, m.active.is_(True))
+        .order_by(t.human.c.handle)
+    ).all()
+    humans = [h for h in people if public_people.served(conn, h)]
+    agents = conn.execute(
+        select(t.agent_profile)
+        .join(t.membership, m.agent_id == t.agent_profile.c.id)
+        .where(m.project_id == project_id, m.active.is_(True), m.isolated_since.is_(None))
+        .order_by(t.agent_profile.c.handle)
+    ).all()
+    owners = (
+        {
+            h.id: h
+            for h in conn.execute(
+                select(t.human).where(t.human.c.id.in_({a.owner_id for a in agents}))
+            )
+        }
+        if agents
+        else {}
+    )
+    held = moderation.holds_of(conn, "profile", [a.id for a in agents])
+    shown = [
+        a for a in agents if a.id not in held and public_people.served(conn, owners[a.owner_id])
+    ]
+    return humans, shown
+
+
+def _named(
+    humans: list[Any], agents: list[Any]
+) -> tuple[list[tuple[str, str, str]], list[tuple[str, str, str]]]:
+    """Handle, principal id and display name, in the order `team` returns them."""
+    return (
+        [(h.handle, h.id, h.display_name) for h in humans],
+        [(a.handle, a.id, a.display_name) for a in agents],
+    )
+
+
+def _from_persons(
+    humans: list[Any], agents: list[Any]
+) -> tuple[list[tuple[str, str, str]], list[tuple[str, str, str]]]:
+    return (
+        [(h.handle, h.principal, h.name) for h in humans],
+        [(a.handle, a.principal, a.name) for a in agents],
+    )
+
+
+def _compare_team(conn: Connection, project_id: str) -> None:
+    old = _named(*_team_from_rows(conn, project_id))
+    new = _from_persons(*public_projects.team(conn, project_id))
+    who = public_members.members(conn, project_id)
+    from_who = _from_persons(*public_projects.team(conn, project_id, who))
+    assert new == old
+    assert from_who == old
+
+
+def test_team_is_the_shown_members_in_handle_order(world: World) -> None:
+    """`team` is the shown members of `members`, split by human, in handle order: the same
+    set and order the row-wise form had, including a hidden person, a held agent and an
+    isolated agent (tsk-mtyyaqj39c22 items 9 and 11)."""
+    with world.migrated.connect() as conn:
+        _compare_team(conn, world.project_id)
+        humans, agents = public_projects.team(conn, world.project_id)
+    # Memberships were created owner, anna, ben, then the agent; handle order is not that.
+    assert [h.handle for h in humans] == ["anna", "ben", "maintainer"]
+    assert len(agents) == 1
+
+    made = world.owner.post(
+        "/reports", {"target": {"type": "profile", "id": world.anna.id}, "reason": "spam"}
+    )
+    assert made.status_code == 201, made.text
+    hide = f"/admin/reports/{made.json()['id']}/resolve"
+    assert world.owner.post(hide, {"action": "hide"}).status_code == 200
+    with world.migrated.connect() as conn:
+        _compare_team(conn, world.project_id)
+        humans, agents = public_projects.team(conn, world.project_id)
+        who = public_members.members(conn, world.project_id)
+    assert [h.handle for h in humans] == ["ben", "maintainer"]
+    # Hidden in `members`, dropped by `team`.
+    hidden = [p for p in who.values() if p.principal == world.anna.id]
+    assert len(hidden) == 1 and not hidden[0].shown
+    assert world.owner.post(hide, {"action": "dismiss"}).status_code == 200
+
+    agent = world.bot.get("/me").json()["member"]
+    held = world.anna.post(
+        "/reports", {"target": {"type": "profile", "id": agent["id"]}, "reason": "spam"}
+    )
+    assert held.status_code == 201, held.text
+    hold_path = f"/admin/reports/{held.json()['id']}/resolve"
+    assert world.owner.post(hold_path, {"action": "hide"}).status_code == 200
+    with world.migrated.connect() as conn:
+        _compare_team(conn, world.project_id)
+        _, agents = public_projects.team(conn, world.project_id)
+        who = public_members.members(conn, world.project_id)
+    assert agents == []
+    held_row = [p for p in who.values() if p.principal == agent["id"]]
+    assert len(held_row) == 1 and not held_row[0].shown
+    assert world.owner.post(hold_path, {"action": "dismiss"}).status_code == 200
+
+    path = f"/projects/maintainer/maity/members/{agent['id']}/isolate"
+    isolated = world.owner.post(path, {"reason": "it rewrote the release notes"})
+    assert isolated.status_code == 200, isolated.text
+    with world.migrated.connect() as conn:
+        _compare_team(conn, world.project_id)
+        _, agents = public_projects.team(conn, world.project_id)
+        who = public_members.members(conn, world.project_id)
+    assert agents == []
+    assert all(p.principal != agent["id"] for p in who.values())
+
+
+# Handles a hyphen orders differently: by code point (Python, SQLite, MySQL's binary tables,
+# PostgreSQL's "C") aaaa-a, aaaa-b, aaaaaa, aaaaba; by a PostgreSQL locale such as en_US.utf8,
+# which weighs the hyphen last, aaaa-a, aaaaaa, aaaa-b, aaaaba.
+HYPHENATED = ("aaaa-a", "aaaaaa", "aaaa-b", "aaaaba")
+
+
+def test_team_keeps_the_database_s_handle_order_for_hyphens_and_several_agents(
+    world: World,
+) -> None:
+    """`team` keeps the order the database's `ORDER BY handle` gives, whatever the engine's
+    collation, for humans and for several agents with hyphenated handles: the row-wise form's
+    order, so that no stored page and no page digest changes (tsk-mtyyaqj39c22, A2755, A2756).
+    On PostgreSQL CI the database's locale decides, on SQLite the bytes."""
+    for handle in reversed(HYPHENATED):  # created against either order
+        human_id = factory.human(world.migrated, handle)
+        factory.membership(world.migrated, world.project_id, "member", human_id=human_id)
+    for handle in reversed(HYPHENATED):
+        made = factory.agent(world.migrated, world.project_id, world.owner.id)
+        with world.migrated.begin() as conn:
+            conn.execute(
+                t.agent_profile.update()
+                .where(t.agent_profile.c.id == made.agent_id)
+                .values(handle=f"bot-{handle}")
+            )
+    with world.migrated.connect() as conn:
+        _compare_team(conn, world.project_id)
+        humans, agents = public_projects.team(conn, world.project_id)
+        database = (
+            conn.execute(
+                select(t.human.c.handle)
+                .where(t.human.c.handle.in_(HYPHENATED))
+                .order_by(t.human.c.handle)
+            )
+            .scalars()
+            .all()
+        )
+    named = [h.handle for h in humans if h.handle in HYPHENATED]
+    assert named == database
+    assert named in (
+        ["aaaa-a", "aaaa-b", "aaaaaa", "aaaaba"],
+        ["aaaa-a", "aaaaaa", "aaaa-b", "aaaaba"],
+    )
+    bots = [a.handle for a in agents if a.handle and a.handle.startswith("bot-")]
+    assert bots == [f"bot-{h}" for h in database]
+    assert len(agents) == 1 + len(HYPHENATED)
+
+
+def _stale_world(world: World) -> tuple[dict[int, Any], Any, Any]:
+    """The project with the hyphenated humans as well, its `members` read, and the `team` of
+    that read: then anna and the human `aaaaaa` are removed and the agent isolated, after the
+    read, as another transaction may do under READ COMMITTED (and on MariaDB, where
+    `xact_lock` takes no lock) between `members` and `team`."""
+    for handle in reversed(HYPHENATED):
+        human_id = factory.human(world.migrated, handle)
+        factory.membership(world.migrated, world.project_id, "member", human_id=human_id)
+    with world.migrated.connect() as conn:
+        who = public_members.members(conn, world.project_id)
+        before = _from_persons(*public_projects.team(conn, world.project_id, who))
+        assert before == _named(*_team_from_rows(conn, world.project_id))
+    agent = world.bot.get("/me").json()["member"]
+    removed = world.owner.delete(f"/projects/maintainer/maity/members/{world.anna.id}")
+    assert removed.status_code in (200, 204), removed.text
+    with world.migrated.connect() as conn:
+        gone = conn.execute(select(t.human.c.id).where(t.human.c.handle == "aaaaaa")).scalar_one()
+    removed = world.owner.delete(f"/projects/maintainer/maity/members/{gone}")
+    assert removed.status_code in (200, 204), removed.text
+    path = f"/projects/maintainer/maity/members/{agent['id']}/isolate"
+    isolated = world.owner.post(path, {"reason": "it rewrote the release notes"})
+    assert isolated.status_code == 200, isolated.text
+    return who, before, agent
+
+
+def test_team_of_an_earlier_read_names_that_read_after_a_removal_and_an_isolation(
+    world: World,
+) -> None:
+    """A `members` read passed to `team` after a person left and the agent was isolated: `team`
+    names exactly the shown members of that read, in the database's handle order, and does
+    not fail (A2757, A2758: a `KeyError` before). The fresh read no longer has them."""
+    who, before, agent = _stale_world(world)
+    with world.migrated.connect() as conn:
+        humans, agents = public_projects.team(conn, world.project_id, who)
+        statistics = public_projects.agent_statistics(conn, world.project_id, agents)
+        fresh = _from_persons(*public_projects.team(conn, world.project_id))
+        old = _named(*_team_from_rows(conn, world.project_id))
+    assert _from_persons(humans, agents) == before
+    assert {"anna", "aaaaaa"} <= {h.handle for h in humans}
+    assert [a.principal for a in agents] == [agent["id"]]
+    # The isolated agent is named from the read but not counted (`agent_statistics` reads the
+    # memberships itself).
+    assert statistics["members"] == []
+    assert fresh == old
+    assert not {"anna", "aaaaaa"} & {handle for handle, _, _ in fresh[0]} and fresh[1] == []
+
+
+def test_the_project_page_renders_from_an_earlier_read_after_a_removal_and_an_isolation(
+    world: World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`render_project` with a `members` read from before the changes (what a render that
+    read the members just before they were committed sees): the page is rendered, with that
+    read's team, instead of failing and taking the project's page offline."""
+    from maity_hub.config import Settings
+
+    who, before, _ = _stale_world(world)
+    read = public_members.members
+    monkeypatch.setattr(
+        public_members,
+        "members",
+        lambda conn, project_id, only=None: (
+            who if project_id == world.project_id else read(conn, project_id, only)
+        ),
+    )
+    hub = Settings.from_env(
+        {
+            "MAITY_DATABASE_URL": "sqlite://",
+            "MAITY_PUBLIC_URL": "https://hub.example",
+            "MAITY_PUBLIC_PAGES": "on",
+        }
+    )
+    with world.migrated.connect() as conn:
+        (page,) = public_projects.render_project(conn, hub, world.project_id)
+    assert [p["handle"] for p in page.data["people"]] == [h for h, _, _ in before[0]]
+    assert [a["handle"] for a in page.data["agents"]] == [h for h, _, _ in before[1]]
+    assert page.data["members"] == len(who)
+
+
+def test_in_handle_order_keeps_every_person_once_a_duplicate_and_a_profile_gone(
+    world: World,
+) -> None:
+    """Each of the persons given comes back exactly once: two memberships of one principal
+    (a duplicate in an older or inconsistent read) stay together at its handle, and one whose
+    profile row is gone since the read follows the others instead of being dropped."""
+    with world.migrated.connect() as conn:
+        who = public_members.members(conn, world.project_id)
+    humans = [p for p in who.values() if p.human]
+    assert [p.handle for p in humans] == ["maintainer", "anna", "ben"]  # membership order
+    ben = humans[2]
+    twin = public_members.Person.__new__(public_members.Person)
+    twin.__dict__.update(ben.__dict__, id=-1)
+    bot = next(p for p in who.values() if not p.human)
+    deleted = world.owner.delete(f"/agents/{bot.principal}?cascade=true")
+    assert deleted.status_code in (200, 204), deleted.text
+    with world.migrated.connect() as conn:
+        ordered = public_projects._in_handle_order(conn, [twin, *humans], human=True)
+        agents = public_projects._in_handle_order(conn, [bot], human=False)
+    assert [(p.handle, p.id) for p in ordered] == [
+        ("anna", humans[1].id),
+        ("ben", -1),
+        ("ben", ben.id),
+        ("maintainer", humans[0].id),
+    ]
+    assert agents == [bot]
+
+
+def test_in_handle_order_groups_missing_profiles_by_first_seen_principal(world: World) -> None:
+    """Persons whose profile row is gone follow the others grouped by principal: the
+    principals in the order each first appears, each group's persons in their order there,
+    not the input's person order (missing principals A and B, input A1, B1, A2: A1, A2, B1)."""
+    with world.migrated.connect() as conn:
+        who = public_members.members(conn, world.project_id)
+    anna = next(p for p in who.values() if p.human and p.handle == "anna")
+
+    def ghost(principal: str, pid: int) -> Any:
+        p = public_members.Person.__new__(public_members.Person)
+        p.__dict__.update(anna.__dict__, principal=principal, id=pid)
+        return p
+
+    a1, b1, a2 = ghost("gone-a", -1), ghost("gone-b", -2), ghost("gone-a", -3)
+    with world.migrated.connect() as conn:
+        ordered = public_projects._in_handle_order(conn, [a1, anna, b1, a2], human=True)
+    assert [p.id for p in ordered] == [anna.id, -1, -3, -2]

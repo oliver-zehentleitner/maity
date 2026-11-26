@@ -87,16 +87,16 @@ def test_pages_follow_the_handle_and_a_cursor_belongs_to_its_filter(
     make_client: ClientFactory, migrated: Engine, admin: flow.Human
 ) -> None:
     anna = flow.human(make_client, migrated, "anna")
-    for handle in ("org-c", "org-a", "org-e", "org-b", "org-d"):
+    for handle in ("group-c", "group-a", "group-e", "group-b", "group-d"):
         make_org(anna, handle, handle)
     first = admin.get(PATH, params={"limit": 2}).json()
-    assert [i["handle"] for i in first["items"]] == ["org-a", "org-b"]
+    assert [i["handle"] for i in first["items"]] == ["group-a", "group-b"]
     second = admin.get(PATH, params={"limit": 2, "cursor": first["next_cursor"]}).json()
-    assert [i["handle"] for i in second["items"]] == ["org-c", "org-d"]
+    assert [i["handle"] for i in second["items"]] == ["group-c", "group-d"]
     third = admin.get(PATH, params={"limit": 2, "cursor": second["next_cursor"]}).json()
-    assert [i["handle"] for i in third["items"]] == ["org-e"]
+    assert [i["handle"] for i in third["items"]] == ["group-e"]
     assert third["next_cursor"] is None
-    other = admin.get(PATH, params={"limit": 2, "q": "org", "cursor": first["next_cursor"]})
+    other = admin.get(PATH, params={"limit": 2, "q": "group", "cursor": first["next_cursor"]})
     assert other.status_code == 400, other.text
     assert admin.get(PATH, params={"limit": 0}).status_code == 400
 

@@ -25,11 +25,11 @@ import time
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from .. import hub, onboarding, sign, state
+from ..stamp import stamp as utc_stamp
 from . import capabilities, config, keeper, supervisor, targets
 
 EXIT_CONFIG = 78  # EX_CONFIG; RestartPreventExitStatus in the unit
@@ -55,8 +55,7 @@ class Stop(BaseException):
 
 
 def utc(stamp: float | None = None) -> str:
-    moment = datetime.fromtimestamp(time.time() if stamp is None else stamp, tz=UTC)
-    return moment.strftime("%Y-%m-%dT%H:%M:%SZ")
+    return utc_stamp(stamp)
 
 
 def log(message: str) -> None:

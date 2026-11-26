@@ -228,6 +228,10 @@ window.Maity = window.Maity || {};
   const NAME_RULES = {
     handle: { pattern: "[a-z0-9][a-z0-9\\-]{1,30}", test: /^[a-z0-9][a-z0-9-]{1,30}$/,
       get text() { return M.t("name_rules.handle"); } },
+    // A new person's or organisation's handle: six characters at least (docs/api.md §16.11). An
+    // agent's keeps the syntax above, and one's own old handle may be taken back however short.
+    personHandle: { pattern: "[a-z0-9][a-z0-9\\-]{5,30}", test: /^[a-z0-9][a-z0-9-]{5,30}$/,
+      get text() { return M.t("name_rules.handle_person"); } },
     slug: { pattern: "[a-z0-9][a-z0-9\\-]{1,62}", test: /^[a-z0-9][a-z0-9-]{1,62}$/,
       get text() { return M.t("name_rules.slug"); } },
   };

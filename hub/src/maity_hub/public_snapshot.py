@@ -24,7 +24,7 @@ from maity_hub import tables as t
 from maity_hub.config import Settings
 
 if TYPE_CHECKING:
-    from maity_hub.public_project_views import Person
+    from maity_hub.public_members import Person
 
 log = logging.getLogger(__name__)
 
@@ -139,11 +139,11 @@ def online(
 ) -> dict[str, Any]:
     """Who is online at the snapshot: the counts per kind, and those the page names; a
     person whose `public_presence` is off, and a member under a moderation hold, is neither
-    named nor counted (§16.9). `who` is the project's members (`public_project_views.members`)
-    and `pictures` those of the members it names (`public_project_views.shown_pictures`), both
+    named nor counted (§16.9). `who` is the project's members (`public_members.members`)
+    and `pictures` those of the members it names (`public_members.shown_pictures`), both
     read once by the render that asks."""
     from maity_hub.availability import presences_of
-    from maity_hub.public_project_views import pictured
+    from maity_hub.public_members import pictured
 
     m = t.membership.c
     rows = conn.execute(select(t.membership).where(m.id.in_(list(who))).order_by(m.id)).all()

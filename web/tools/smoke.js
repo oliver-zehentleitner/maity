@@ -10383,25 +10383,31 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   // before anything is sent, and the form never lower-cases it into another handle.
   const hdInput = () => hdForm().querySelector("input");
   const hdCheck = () => hdForm().querySelector(".handle-check");
-  expect(text(hdForm()).includes("Lowercase letters, digits and -, 2–31 characters") && hdCheck() && text(hdCheck()) === ""
+  expect(text(hdForm()).includes("Lowercase letters, digits and -, 6–31 characters") && hdCheck() && text(hdCheck()) === ""
     && hdCheck().getAttribute("role") === "status" && hdInput().getAttribute("aria-describedby").includes(hdCheck().getAttribute("id"))
     && /\.handle-check:empty \{ display: none; \}/.test(hdCss),
     "handles: the rename shows the handle's rule, its live word empty while nothing breaks it");
-  hdInput().value = "Boss"; hdInput().dispatch("input");
+  hdInput().value = "Bosses"; hdInput().dispatch("input");
   expect(text(hdCheck()) === "Lowercase only: a handle has no capital letters." && hdCheck().className.includes("field-error"),
     "handles: an upper-case letter is said while it is typed");
   await hdRename("Boss");
   expect(!hdPatches.length && text(byId(hdInput().getAttribute("id") + "-error")).includes("lower-case letters") && hdInput().value === "Boss",
     "handles: an upper-case handle is refused locally, not lower-cased and sent");
-  hdInput().value = "boss"; hdInput().dispatch("input");
+  hdInput().value = "bosses"; hdInput().dispatch("input");
   expect(text(hdCheck()) === "", "handles: the word goes once the handle keeps the rule");
+  // A person's handle has six characters at least (docs/api.md §16.11), said before sending.
+  hdInput().value = "boss"; hdInput().dispatch("input");
+  expect(text(hdCheck()).includes("6–31 characters"), "handles: a person's handle of five or fewer is said too short while typed");
+  hdInput().value = "bosses"; hdInput().dispatch("input");
   await hdRename("Bad_Handle");
-  expect(!hdPatches.length && text(main.querySelector(".handle-form .field-error")).includes("lower-case letters"), "handles: a handle with the wrong syntax is refused locally");
+  expect(!hdPatches.length && text(main.querySelector(".handle-form .field-error")).includes("Six to 31 characters: lower-case letters"), "handles: a handle with the wrong syntax is refused locally, with a person's rule of six to 31");
   await hdRename("boss");
   expect(hdPatches.length === 1 && hdPatches[0][0] === "/me" && JSON.stringify(hdPatches[0][1]) === JSON.stringify({ handle: "boss" }), "handles: a rename is PATCH /me {handle}");
   expect(text(main).includes("@boss") && text(main).includes("Aliases: @maintainer") && text(main).includes("the old handle stays as an alias"), "handles: the new handle shows and the old one is an alias");
   await hdRename("second"); await hdRename("maintainer");
   expect(text(main).includes("an old alias taken back") && text(main).includes("Aliases: @boss, @second"), "handles: the own old handle taken back leaves the aliases");
+  hdInput().value = "boss"; hdInput().dispatch("input");
+  expect(text(hdCheck()) === "", "handles: one's own old alias may be taken back however short, nothing said");
   await hdRename("boss");
   expect(text(main.querySelector(".handle-form .field-error")).includes("Three renames in 24 hours"), "handles: the fourth rename within a day is rate limited");
   win.Maity.api.patch = realPatch6;
@@ -11436,8 +11442,10 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(plainTitle() === "Organisations · Maity" && main.querySelector('ul.org-list a[href="#/account/orgs/oz-team"]') && text(main).includes("@oz-team · owner")
     && byId("org-new-handle"), "orgs: #/account/orgs lists the human's organisations with their role and offers a new one");
   const orgCreate = () => main.querySelector("form.org-create");
+  // An organisation's handle has six characters at least (docs/api.md §16.11); an agent's rule stays 2–31.
+  expect(text(orgCreate()).includes("Lowercase letters, digits and -, 6–31 characters"), "orgs: the new organisation's handle rule says six characters before sending");
   byId("org-new-handle").value = "Bad Handle"; byId("org-new-name").value = "Bad"; orgCreate().dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
-  expect(text(orgCreate()).includes("Not created: handle: 2 to 31 lowercase letters"), "orgs: a handle the hub refuses is said with its rule");
+  expect(text(orgCreate()).includes("Not created: handle: 6 to 31 lowercase letters"), "orgs: a handle the hub refuses is said with its rule");
   byId("org-new-handle").value = "@acme"; byId("org-new-name").value = " Acme "; orgCreate().dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
   expect(win.location.hash === "#/account/orgs/acme", "orgs: created (the @ dropped), the page goes to the new organisation");
   await go("#/account/orgs/acme"); for (let k = 0; k < 6; k++) await tick();

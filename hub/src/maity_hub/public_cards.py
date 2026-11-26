@@ -26,7 +26,7 @@ from maity_hub import clock, moderation, namespace, public_design, public_pages
 from maity_hub import tables as t
 from maity_hub.cards import CLOSED
 from maity_hub.config import Settings
-from maity_hub.public_project_views import holder_data, members
+from maity_hub.public_members import holder_data, members
 from maity_hub.public_projects import served
 
 KIND = "card"

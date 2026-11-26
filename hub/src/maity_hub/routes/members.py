@@ -664,21 +664,21 @@ OUTSIDE_COUNT_KEYS = ("members", "instances")  # of `manages.direct` and `manage
 
 def outside_shown(conn: Connection, project_id: str) -> dict[int, Any]:
     """The members an outsider reads, by membership id: those the public page names (§16.9,
-    `public_project_views.members`), so never an isolated member nor one under a hold of
+    `public_members.members`), so never an isolated member nor one under a hold of
     moderation or whose account is not served."""
-    from maity_hub import public_project_views  # the public pages' modules, as `access` reads
+    from maity_hub import public_members  # the public pages' modules, as `access` reads
 
-    people = public_project_views.members(conn, project_id)
+    people = public_members.members(conn, project_id)
     return {membership_id: person for membership_id, person in people.items() if person.shown}
 
 
 def outside_pictures(conn: Connection, shown: dict[int, Any]) -> dict[int, str | None]:
     """The picture of each member an outsider reads, by membership id: the one the public page
-    shows (`public_project_views.shown_pictures`), null while a person's `public_profile` is
+    shows (`public_members.shown_pictures`), null while a person's `public_profile` is
     off. One read for the page."""
-    from maity_hub import public_project_views
+    from maity_hub import public_members
 
-    pictures = public_project_views.shown_pictures(conn, shown)
+    pictures = public_members.shown_pictures(conn, shown)
     return {membership_id: pictures.get(p.principal) for membership_id, p in shown.items()}
 
 

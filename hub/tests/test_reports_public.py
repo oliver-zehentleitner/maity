@@ -258,17 +258,17 @@ def test_after_renames_only_the_current_names_resolve(
 ) -> None:
     zoe = stranger(world, make_client)
     agent = bot(world)
-    assert world.anna.patch("/me", {"handle": "anna2"}).status_code == 200
+    assert world.anna.patch("/me", {"handle": "anna-two"}).status_code == 200
     assert report(zoe, {"type": "profile", "id": "anna"}).status_code == 404
-    assert report(zoe, {"type": "profile", "id": "anna2"}).status_code == 201
-    owner = world.owner.patch("/me", {"handle": "boss"})
+    assert report(zoe, {"type": "profile", "id": "anna-two"}).status_code == 201
+    owner = world.owner.patch("/me", {"handle": "big-boss"})
     assert owner.status_code == 200, owner.text
     assert (
         report(zoe, {"type": "profile", "id": f"maintainer/{agent['handle']}"}).status_code == 404
     )
-    assert report(zoe, {"type": "profile", "id": f"boss/{agent['handle']}"}).status_code == 201
+    assert report(zoe, {"type": "profile", "id": f"big-boss/{agent['handle']}"}).status_code == 201
     assert report(zoe, {"type": "project", "id": PROJECT}).status_code == 404
-    assert report(zoe, {"type": "project", "id": "boss/maity"}).status_code == 201
+    assert report(zoe, {"type": "project", "id": "big-boss/maity"}).status_code == 201
 
 
 @pytest.fixture

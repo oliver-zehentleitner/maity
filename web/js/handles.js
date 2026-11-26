@@ -62,7 +62,7 @@ window.Maity = window.Maity || {};
         }
       },
     }, h("label", { for: id }, M.t("handles.label", { what })), h("span", { class: "handle-at" }, "@"), input, " ", save,
-    explain("you", input), rule(input), error, status.el);
+    explain("you", input), rule(input, { person: true, keep: [who.handle].concat(aliases) }), error, status.el);
     return h("div", { class: "handle-editor" }, form,
       aliases.length
         ? h("p", { class: "muted" }, M.tn("handles.aliases", { list: aliases.map((a) => "@" + a).join(", ") }))
@@ -93,15 +93,18 @@ window.Maity = window.Maity || {};
   // what is typed breaks it (tsk-pxc5cx4hgb0y), before anything is sent. An upper-case letter
   // gets its own word: nothing is lower-cased for the person. A leading "@" is the form's to
   // drop, as the forms that take one do. Returns the two hints, in order, for the field's form.
-  function rule(input) {
+  // opts.person: a person's or an organisation's handle, six characters at least (§16.11);
+  // opts.keep: its own current handle and aliases, which may be taken back however short.
+  function rule(input, opts) {
+    const o = opts || {};
     const id = "handle-rule-" + (++explained);
-    const HANDLE = M.dom.NAME_RULES.handle;
+    const HANDLE = o.person ? M.dom.NAME_RULES.personHandle : M.dom.NAME_RULES.handle;
     const said = h("p", { class: "hint", id }, HANDLE.text);
     const state = h("p", { class: "hint handle-check", id: id + "-check", role: "status" });
     const before = input.getAttribute("aria-describedby");
     input.setAttribute("aria-describedby", (before ? before + " " : "") + id + " " + id + "-check");
     const check = () => {
-      const words = problem(input.value.trim().replace(/^@/, ""));
+      const words = problem(input.value.trim().replace(/^@/, ""), HANDLE, o.keep);
       state.textContent = words || "";
       state.className = "hint handle-check" + (words ? " field-error" : "");
     };
@@ -110,12 +113,14 @@ window.Maity = window.Maity || {};
     return [said, state];
   }
 
-  // What is wrong with a typed handle, in words, or "" for one that keeps the rule or is empty.
-  function problem(v) {
-    if (!v || M.dom.NAME_RULES.handle.test.test(v)) return "";
-    if (/[A-Z]/.test(v) && M.dom.NAME_RULES.handle.test.test(v.toLowerCase())) return M.t("name_rules.handle_lowercase");
-    if (/[A-Z]/.test(v)) return M.t("name_rules.handle_lowercase") + " " + M.dom.NAME_RULES.handle.text;
-    return M.t("name_rules.handle_bad", { rule: M.dom.NAME_RULES.handle.text });
+  // What is wrong with a typed handle, in words, or "" for one that keeps the rule, is one of
+  // `keep` or is empty. `rules`: M.dom.NAME_RULES.handle unless given.
+  function problem(v, rules, keep) {
+    const RULE = rules || M.dom.NAME_RULES.handle;
+    if (!v || RULE.test.test(v) || (keep || []).includes(v)) return "";
+    if (/[A-Z]/.test(v) && RULE.test.test(v.toLowerCase())) return M.t("name_rules.handle_lowercase");
+    if (/[A-Z]/.test(v)) return M.t("name_rules.handle_lowercase") + " " + RULE.text;
+    return M.t("name_rules.handle_bad", { rule: RULE.text });
   }
 
   M.handles = { editor, refusal, explain, rule, problem, FORMAT };
