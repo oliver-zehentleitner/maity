@@ -415,7 +415,7 @@ nav.views a:focus-visible { outline-offset: -2px; }
 /* The tabs menu is drawn as the row's last tab (the owner, 2026-11-10, tsk-qa2r972wjsws): the tabs'
    pill, padding, size, colour and gap, on the tabs' line. It stays a menu button (no role=tab, no view
    behind it) and stands outside nav.switcher, so a drag or Alt+Shift+Arrow never moves it and on a phone
-   it keeps the row's right end while the tabs scroll. Its gap to the last tab is the tabs' own: the
+   it stays after the scrolling tabs, before the Explore link where present. Its gap to the last tab is the tabs' own: the
    negative margin cancels the row's column gap, and nav.switcher's end padding (the drop line's room) remains. */
 .switcher-row .tabs-menu-box { align-self: flex-start; margin-top: 8px; padding-bottom: 2px; margin-inline-start: calc(-1 * var(--switcher-row-gap)); }
 .tabs-menu-box .menu-button.tabs-menu { min-width: 0; min-height: 0; padding: 8px 10px; border: 1px solid var(--border);
@@ -503,6 +503,31 @@ nav.views a:focus-visible { outline-offset: -2px; }
 .switcher .tab-star.unstarred { color: var(--muted); }
 .switcher .tab-star.unstarred .icon-fill { fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linejoin: round; }
 .switcher .tab-star.unstarred:hover { color: var(--accent); }
+/* Explore (js/app.js exploreLink, exploreTab; docs/api.md §16.9, "Explore, signed in"). The link stands
+   at the row's right end, after the tabs menu; in a row with it the tabs shrink and scroll instead of
+   wrapping, so the menu stays right after the last tab and the link at the end (tsk-r6bk2py3ezwg). */
+.switcher-row:has(> .explore-link) { flex-wrap: nowrap; }
+.switcher-row:has(> .explore-link) .switcher { max-width: none; }
+.switcher-row .explore-link { flex: none; align-self: flex-start; display: inline-flex; align-items: center; gap: 6px; margin-top: 8px;
+  margin-inline-start: auto; padding: 3px 10px; border: 1px solid transparent; border-radius: 999px; color: var(--muted);
+  text-decoration: none; font-size: 0.88rem; white-space: nowrap; }
+.switcher-row .explore-link:hover { color: var(--text); border-color: var(--border); }
+/* The Explore tab: a tab like the others, with its own × beside the link (a link holds no other control). */
+.switcher .explore-tab-box { display: inline-flex; align-items: center; gap: 2px; flex: none; }
+.switcher .tab-close { display: inline-flex; align-items: center; justify-content: center; min-width: 24px; min-height: 24px;
+  padding: 0; border: 1px solid transparent; border-radius: 999px; background: transparent; color: var(--muted); cursor: pointer; }
+.switcher .tab-close:hover { color: var(--text); border-color: var(--border); background: var(--surface-2); }
+.switcher .tab-close:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.explore-link .icon-fill, .switcher .explore-tab .icon-fill, .switcher .tab-close .icon-fill { fill: currentColor; }
+/* The Explore tab's page: one card per project, each one link. */
+.explore-list { list-style: none; margin: 16px 0 0; padding: 0; display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(min(16rem, 100%), 1fr)); }
+.explore-card { display: flex; align-items: center; gap: 10px; padding: 12px; border: 1px solid var(--border); border-radius: var(--radius);
+  color: var(--text); text-decoration: none; min-width: 0; }
+.explore-card:hover { border-color: var(--accent); }
+.explore-name { display: flex; flex-direction: column; min-width: 0; flex: 1 1 auto; }
+.explore-name strong, .explore-name small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.explore-name small { color: var(--muted); }
+.explore-mark { flex: none; padding: 0 6px; border: 1px solid var(--border); border-radius: 999px; color: var(--muted); font-size: 0.8rem; }
 /* The tabs menu marks the dashed tabs as such: the same dashed edge, small, after the name. */
 .tabs-menu-box .outsider-mark { margin-inline-start: 6px; padding: 0 6px; border: 1px dashed var(--border); border-radius: 999px;
   color: var(--muted); font-size: 0.8rem; }
@@ -1474,8 +1499,12 @@ a.button { display: inline-block; padding: 6px 14px; border-radius: var(--radius
 @media (max-width: 600px) {
   main { --main-pad: 12px; }
   /* The row wraps by the tabs' full width, so the tabs menu fell to a line of its own. Here the tabs
-     take the room the menu leaves and scroll; the menu keeps the row's right end (tsk-2a56j80p3p9h). */
+     take the room the menu leaves and scroll; the menu keeps the row's end, or the spot just before the
+     Explore link where it is shown (tsk-2a56j80p3p9h). */
   .switcher-row .switcher { flex: 1 1 0; }
+  /* Explore's link keeps its compass and its name for a screen reader, so the tabs keep their room. */
+  .switcher-row .explore-link { position: relative; min-width: 24px; min-height: 24px; padding: 3px 6px; }
+  .switcher-row .explore-link .explore-link-words { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   /* Two lines (tsk-dradpje67ak1): the tabs scroll in theirs, and the block is a line of its own under them,
      where the keyboard reaches it after them (no flex order: what is seen and Tab's order stay one). */
   .views-row { flex-wrap: wrap; }

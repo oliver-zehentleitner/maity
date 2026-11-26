@@ -2764,6 +2764,12 @@ window.Maity = window.Maity || {};
   // endpoint the views use; the patterns match the path below /api/v1
   // without the query string. `headers` is set on a call that sends one.
   const routes = [
+    // §16.9, "Explore, signed in": every project with a page now, `{name, full_name}` alone, by its
+    // name without regard to case, then the full name; the same for everyone (starrable, above).
+    ["GET", /^\/public\/explore$/, () => ({
+      projects: starrable().map((p) => ({ name: p.name, full_name: p.full_name }))
+        .sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()) || (a.full_name < b.full_name ? -1 : a.full_name > b.full_name ? 1 : 0)),
+    })],
     // §6.27: a person or an organisation as this signed-in human may see
     // them; an alias answers with the current handle; whoever shows the
     // caller nothing, like an unknown name, not_found.
@@ -7187,7 +7193,7 @@ window.Maity = window.Maity || {};
   // visitor by design; every other /auth/* call is the session's own.
   // The path carries its query (the device-login wait, ?wait=0): a public
   // route ends at the path, whatever query follows.
-  const PUBLIC_PATH = /^\/(auth\/(session|login|logout|register|methods|device-login(\/complete)?|email-link|email-code|password-reset(\/check|\/complete)?)|auth\/pages\/[^/?]+|site\/chrome|public\/pages\/[^?]+|legal|maintenance|bootstrap|openapi\.json|invitations\/[^/?]+)(\?|$)/;
+  const PUBLIC_PATH = /^\/(auth\/(session|login|logout|register|methods|device-login(\/complete)?|email-link|email-code|password-reset(\/check|\/complete)?)|auth\/pages\/[^/?]+|site\/chrome|public\/pages\/[^?]+|public\/explore|legal|maintenance|bootstrap|openapi\.json|invitations\/[^/?]+)(\?|$)/;
 
   // Every page of a list, following next_cursor (docs/api.md §1.4). first, where given, is called
   // with the first page's items as soon as it is in, before the next is asked, and whether more
