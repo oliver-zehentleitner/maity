@@ -5929,12 +5929,14 @@ def explore_tab_round(run: Run, browser) -> None:
     expect(menu.get_by_role("menuitemcheckbox")).to_have_count(0)
     expect(menu.get_by_role("menuitem", name="Keep these tabs at start", exact=True)).to_have_count(0)
     page.keyboard.press("Escape")
-    # The link: a route change to /explore (no page load), the list from the public read.
+    # A new document would lose this marker. The dashboard should only change the route.
+    page.evaluate("window.exploreRouteMarker = true")
     with page.expect_response(lambda r: r.url == f"{run.base}/api/v1/public/explore") as listed:
         link.click()
     assert listed.value.status == 200, listed.value.status
     assert {"full_name": "owner/e2e-alpha", "name": "E2E Alpha"} in listed.value.json()["projects"], listed.value.text()
     expect(page).to_have_url(f"{run.base}/explore")
+    assert page.evaluate("window.exploreRouteMarker === true"), "opening the Explore tab reloaded the document"
     expect(page.locator("#main section.view-explore")).to_have_count(1)
     expect(tab).to_have_attribute("aria-current", "page")
     expect(page.locator("header nav.views")).to_have_count(0)
