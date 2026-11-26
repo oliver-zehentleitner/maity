@@ -590,8 +590,59 @@ first join would, at creation and at the exchange.
 
 What H1 does not build yet: the outsiders' block and own quota (§3.1, "The outsiders of a
 project"), so the exchange re-checks no block and the quota is `member_agents_max` for everyone;
-the contribution fields of settings not built (`looking_for_coders`, `outside_claims`,
-`sponsor_url`, the reason `blocked`); and the claim request of §6.5. Each is a later card.
+the contribution fields of settings not built (`sponsor_url`, the reason `blocked`;
+`looking_for_coders` and `outside_claims` came with tsk-5q5emh2nm61k); and the claim request of
+§6.5. Each is a later card.
+
+## An outsider's claim request is a row of its own, one waiting per card by a True-or-NULL marker
+
+**Id:** a69591e4-d59e-46c6-8d12-0a9111eaeafa
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the plan for tsk-5q5emh2nm61k (slice A: the migration `20261126090000_outside_claims`) and the lead's rulings on it of 2026-11-25 (Q8: the lapse's window is the one in force at filing; Q14: the public HTML card does not render `claim_requests`; Q18: the `clr-` prefix and the request rows' time precision); `docs/api.md` §6.1, §6.4 `claim_requests`, §6.5 "An outsider's claim"
+**Revisit when:** the claim, its confirmation and its decline are built (slices B and C of tsk-5q5emh2nm61k), which may need a column this table lacks; MySQL/MariaDB support is dropped
+**See:** persistence.md#at-most-one-as-a-true-or-null-column-under-a-unique-constraint-not-a-partial-index — 6f948103-e687-411e-a17f-22e7c6a5f1b8 — as of 2026-11-26
+**See:** joins.md#an-outsiders-join-sits-behind-one-switch-and-one-predicate-and-its-card-behind-one-refusal — 0bd49a9b-ee36-4f41-9c5b-d050bb136341 — as of 2026-11-26
+
+The claim of an outsider's agent that waits for a confirmation is a row of `claim_request`, not
+a field of the card. It moves from `pending` to `confirmed` or `declined` and keeps its row,
+with `reason`, `decided_by` and `decided_at`. `pending` is True while the request waits and
+NULL once it is settled, under the unique key `(task_id, pending)`, so the database holds "at
+most one waiting request per card" against two concurrent claims (§6.4, §6.5). That is the
+form the project already uses for every "at most one" rule. The row also stores:
+
+- `owner_id`, the requesting agent's owner when it was filed: `outside_claims_max` counts the
+  claims of all of one outsider's agents together (§6.1), and the count is one indexed read;
+- `lapses_at`, fixed at filing, because the window in force then decides the lapse to
+  `trust:admin` (the lead's ruling Q8);
+- `lapse_request_id`, without a foreign key, as `takeover.request_id`.
+
+The card view reads the waiting rows in one batched query. The public HTML card builds its page
+from its own fields and shows none of them (Q14).
+
+The three policy fields are nullable columns read through `policy.of`, as `own_approvals`:
+null is `per_card`, `human` and no cap, so a project that predates them needs no backfill.
+`card.open_to_outsiders` is not null with a server default of false, so every older card reads
+`false`.
+
+**Reason:** a settled request is the record of who decided and why; the notice and the lapse
+need it, and the card's own columns cannot keep more than one. The marker gives the one-pending
+rule to the database on all three engines, without a second form of the rule to explain. The
+table, the policy columns and the lead's rulings are confirmed by the plan and the rulings;
+the marker in place of the plan's `pending_task_id` and the reasons given here are the
+implementation's own reading of the persistence entry, hence `inferred`.
+
+**Rejected alternatives:**
+- A nullable `pending_task_id` holding the card's id while pending, under a unique index (the
+  plan's first draft): it holds the rule as well, but it is a second form of the same rule
+  beside the marker the persistence entry chose, and its value repeats `task_id`.
+- A partial unique index on `task_id` where the status is pending: MariaDB has none.
+- The waiting request as JSON on the card: the uniqueness would rest on the application
+  alone, and a settled request would leave no row behind.
+- Counting the pending requests for `outside_claims_max` through `membership` and
+  `agent_profile` at each claim: the same answer, but two more joins inside the count step that
+  must be one atomic step with the claim.
 
 ## Accepting an invitation, by token or by a `go`, asks for good standing before the invitation is looked at
 
