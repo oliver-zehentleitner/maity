@@ -2827,3 +2827,73 @@ def test_org_link_check_adds_two_null_columns_and_its_downgrade_drops_organisati
         kept = conn.execute(text("SELECT id FROM forge_link ORDER BY id")).scalars().all()
     assert kept == ["fgl-user"]
     migrate(engine)
+
+
+def test_outside_claims_reads_the_defaults_on_older_rows_and_its_downgrade_drops_it_all(
+    engine: Engine,
+) -> None:
+    """§6.1, §6.4, §6.5: a project from before the revision reads `per_card`, `human` and no
+    cap from its null columns, and a card from before it reads `open_to_outsiders: false`; the
+    claim request table arrives empty with its one-pending key; the downgrade drops the table
+    and the four columns, a filed request included, and the upgrade adds them again."""
+    from sqlalchemy import inspect, select, update
+
+    from maity_hub import clock, policy
+    from maity_hub import tables as t
+    from maity_hub.ids import new_id
+    from tests import factory
+
+    rev = "20261126090000_outside_claims"
+    migrate(engine)
+    downgrade(engine, _before(engine, rev))
+    project_id = factory.project(engine, "alpha")
+    owner = factory.human(engine, "owner")
+    member = factory.membership(engine, project_id, "owner", human_id=owner)
+    with engine.begin() as conn:  # the card as it is before the revision: its own columns
+        columns = {c["name"] for c in inspect(conn).get_columns("card")}
+        assert "open_to_outsiders" not in columns
+    card_id = factory.card(engine, project_id, member)
+    for _ in range(2):  # up, down, up
+        migrate(engine)
+        assert current_revision(engine) == head_revision(engine)
+        with engine.connect() as conn:
+            project = conn.execute(select(t.project).where(t.project.c.id == project_id)).one()
+            card = conn.execute(select(t.card).where(t.card.c.id == card_id)).one()
+            assert conn.execute(select(t.claim_request)).all() == []
+        assert (project.looking_for_coders, project.outside_claims) == (None, None)
+        assert project.outside_claims_max is None
+        shown = policy.of(project)
+        assert [shown[f] for f in ("looking_for_coders", "outside_claims")] == ["per_card", "human"]
+        assert shown["outside_claims_max"] is None
+        assert card.open_to_outsiders is False
+        uniques = {u["name"] for u in inspect(engine).get_unique_constraints("claim_request")}
+        assert "uq_claim_request_one_pending" in uniques
+        with engine.begin() as conn:  # a request filed and a value set: both go down with it
+            conn.execute(
+                update(t.project)
+                .where(t.project.c.id == project_id)
+                .values(looking_for_coders="all", outside_claims="direct", outside_claims_max=2)
+            )
+            conn.execute(
+                update(t.card).where(t.card.c.id == card_id).values(open_to_outsiders=True)
+            )
+            conn.execute(
+                t.claim_request.insert().values(
+                    id=new_id("claim_request"),
+                    project_id=project_id,
+                    task_id=card_id,
+                    member_id=member,
+                    instance="wle2",
+                    owner_id=owner,
+                    status="pending",
+                    pending=True,
+                    requested_at=clock.now(),
+                    lapses_at=clock.now(),
+                )
+            )
+        downgrade(engine, _before(engine, rev))
+        assert "claim_request" not in inspect(engine).get_table_names()
+        project_columns = {c["name"] for c in inspect(engine).get_columns("project")}
+        assert not {"looking_for_coders", "outside_claims", "outside_claims_max"} & project_columns
+        assert "open_to_outsiders" not in {c["name"] for c in inspect(engine).get_columns("card")}
+    migrate(engine)

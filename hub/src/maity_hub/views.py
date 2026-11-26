@@ -1161,6 +1161,33 @@ def _approvals(row: Any, signing: set[str]) -> dict[str, Any] | None:
     return row.approvals or {"review": None, "test": None}
 
 
+def _claim_requests(conn: Connection, card_ids: Sequence[str]) -> dict[str, list[dict[str, Any]]]:
+    """The waiting claim request of each card, `[{id, member_id, instance, requested_at}]`
+    (§6.4 `claim_requests`): the one row whose `pending` is set, at most one per card by the
+    table's key. Every reader of the card reads it, an outsider included; the reason and who
+    settled a request never appear here. The public HTML card does not show it (the lead's
+    ruling of 2026-11-25, Q14: `public_cards.render_card` builds its page from its own
+    fields)."""
+    c = t.claim_request.c
+    found: dict[str, list[dict[str, Any]]] = {}
+    rows = conn.execute(
+        select(c.id, c.task_id, c.member_id, c.instance, c.requested_at)
+        .where(c.task_id.in_(card_ids), c.pending.is_(True))
+        .order_by(c.requested_at, c.id)
+    ).all()
+    members = principal_ids(conn, (row.member_id for row in rows))
+    for row in rows:
+        found.setdefault(row.task_id, []).append(
+            {
+                "id": row.id,
+                "member_id": members.get(row.member_id),
+                "instance": row.instance,
+                "requested_at": ts(row.requested_at),
+            }
+        )
+    return found
+
+
 def _task_views(conn: Connection, rows: Sequence[Any], fg: forge.Forge) -> list[dict[str, Any]]:
     edges: dict[str, dict[str, list[str]]] = {
         r.id: {"depends_on": [], "ships_with": [], "related": []} for r in rows
@@ -1195,6 +1222,7 @@ def _task_views(conn: Connection, rows: Sequence[Any], fg: forge.Forge) -> list[
     release_tags = tags(conn, [r for r in rows if r.kind == "release"])
     linked = links.views_of(conn, (r.id for r in rows))
     noted = notes.counts_of(conn, (r.id for r in rows))
+    waiting = _claim_requests(conn, [r.id for r in rows])
     now = clock.now()
     views = []
     for row in rows:
@@ -1226,6 +1254,8 @@ def _task_views(conn: Connection, rows: Sequence[Any], fg: forge.Forge) -> list[
                 "assigned_to": members.get(row.assigned_to),
                 "assigned_instance": row.assigned_instance,
                 "claim": claim,
+                "claim_requests": waiting.get(row.id, []),
+                "open_to_outsiders": bool(row.open_to_outsiders),
                 "checkpoint": row.checkpoint,
                 "depends_on": sorted(edges[row.id]["depends_on"]),
                 "ships_with": sorted(edges[row.id]["ships_with"]),

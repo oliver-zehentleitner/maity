@@ -699,6 +699,12 @@ project = Table(
     # §2.3 "Own approvals"). `own_agents` keeps `owners_of` as human ids, shown as handles.
     Column("own_approvals", Integer),
     Column("own_agents", JSON_VALUE),
+    # An outsider's claim (§6.1, §6.5): which open cards an outsider's agent may claim, null
+    # for `per_card`; who confirms it, null for `human`; and how many claims one outsider's
+    # agents may have together, null for no cap.
+    Column("looking_for_coders", String(16)),
+    Column("outside_claims", String(16)),
+    Column("outside_claims_max", Integer),
     Column("claim_policy", String(32), nullable=False),
     Column("done_authority", String(32), nullable=False),
     Column("contract_arbiter", String(ID + 8), nullable=False),  # member id or trust:admin
@@ -1640,6 +1646,9 @@ card = Table(
     # `{for, by, since}` while the card moved to a substitute (§6.12), with what moved
     # (`claim`, `assignment`) and whether the substitute has touched it since.
     Column("cover", JSON_VALUE),
+    # An outsider's agent may claim it under `policy.looking_for_coders: per_card` (§6.4);
+    # never set by a caller with trust `outside`.
+    Column("open_to_outsiders", Boolean, nullable=False, server_default=false()),
     # Releases: the version is unique per project; `release_in_flight` is
     # True on the one release card that is neither done nor cancelled and
     # NULL on every other card, so the unique constraint allows one per project.
@@ -2036,6 +2045,40 @@ takeover = Table(
     Column("created_at", UtcDateTime, nullable=False),
     Column("closed_at", UtcDateTime),
     Index("ix_takeover_project_status", "project_id", "status"),
+    **MYSQL_TABLE,
+)
+
+# The claim of an outsider's agent that waits for a confirmation (§6.5, "An outsider's
+# claim"): `pending`, then `confirmed` or `declined`, with the reason and who decided.
+# `pending` is True while it waits and NULL once settled, under a unique key with the card:
+# one waiting request per card, on every engine (hub/context/persistence.md 6f948103).
+# `owner_id` is the requesting agent's owner when it was filed, which `outside_claims_max`
+# counts by. `lapse_request_id` names the request filed to `trust:admin` once it waited past
+# `lapses_at`; no foreign key, as for `takeover.request_id`.
+claim_request = Table(
+    "claim_request",
+    metadata,
+    _id(primary_key=True),
+    _ref("project_id", "project.id", nullable=False),
+    _ref("task_id", "card.id", nullable=False),
+    _membership_ref("member_id", nullable=False),
+    Column("instance", String(INSTANCE), nullable=False),
+    _ref("owner_id", "human.id", nullable=False),
+    Column("status", String(16), nullable=False),
+    Column("pending", Boolean),
+    Column("reason", String(32)),
+    Column("requested_at", UtcDateTime, nullable=False),
+    Column("lapses_at", UtcDateTime, nullable=False),
+    Column("lapsed_at", UtcDateTime),
+    Column("lapse_request_id", String(ID)),
+    _membership_ref("decided_by"),
+    Column("decided_at", UtcDateTime),
+    UniqueConstraint("task_id", "pending", name="uq_claim_request_one_pending"),
+    CheckConstraint("pending IS NOT FALSE", name="pending_true_or_null"),
+    Index("ix_claim_request_project_status", "project_id", "status"),
+    Index("ix_claim_request_member_status", "member_id", "status"),
+    Index("ix_claim_request_owner_status", "owner_id", "status"),
+    Index("ix_claim_request_status_lapses", "status", "lapses_at"),
     **MYSQL_TABLE,
 )
 
