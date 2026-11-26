@@ -14,6 +14,7 @@ import logging
 import re
 import urllib.parse
 from datetime import timedelta
+from functools import partial
 from importlib.resources import files
 from pathlib import Path
 from types import SimpleNamespace
@@ -97,7 +98,7 @@ EXCHANGE_BY_ADDRESS = Limiter(10, 60, name="routes.joins.EXCHANGE_BY_ADDRESS")
 # An outsider's joins (§3.1, "An outsider's agent"): per human across every project, and the
 # first joins per human in one project (keyed `<project id>:<human id>`).
 OUTSIDER_JOINS_HOUR = Limiter(10, 3600, name="routes.joins.OUTSIDER_JOINS_HOUR")
-OUTSIDER_JOINS_DAY = Limiter(30, 86400, name="routes.joins.OUTSIDER_JOINS_DAY")
+OUTSIDER_JOINS_DAY = Limiter(30, 86400, name="routes.joins.OUTSIDER_JOINS_DAY", exact=True)
 OUTSIDER_FIRST_JOINS_DAY = Limiter(5, 86400, name="routes.joins.OUTSIDER_FIRST_JOINS_DAY")
 # An outsider's open joins in one project: `member_agents_max` in effect plus this many, and at
 # most `OUTSIDER_OPEN_JOINS_PER_AGENT` for any one agent, an instance's and a replacement's
@@ -324,10 +325,8 @@ def _outsider_join(
         limits.of(conn, settings, "max_agents_per_human"),
     )
     allowed_projects.refuse(conn, agent_id, outsider.project)  # §6.3
-    existing = _active_member(
-        conn, SimpleNamespace(project_id=outsider.project.id, agent_id=agent_id)
-    )
     project = lock_project(conn, outsider.project.id)  # project roles and the count (§3.1)
+    existing = _active_member(conn, SimpleNamespace(project_id=project.id, agent_id=agent_id))
     if not outsiders.joins_open(conn, project):  # again, as read under the lock
         raise not_found()
     values = _outside_values(conn, project, body, outsider.principal_id, existing)
@@ -344,10 +343,13 @@ def _outsider_join(
     _refuse_open_joins(conn, project, human, agent_id)
     if existing is None:
         _require_slot(conn, project, outsider.principal_id, agent_id)
-    OUTSIDER_JOINS_HOUR.hit(human)
-    OUTSIDER_JOINS_DAY.hit(human)
+    reservations = [(OUTSIDER_JOINS_HOUR, human), (OUTSIDER_JOINS_DAY, human)]
     if existing is None:
-        OUTSIDER_FIRST_JOINS_DAY.hit(arrival)
+        reservations.append((OUTSIDER_FIRST_JOINS_DAY, arrival))
+    for limiter, key in reservations:
+        wait, mark = limiter.place(key)
+        _refuse_rate(wait)
+        events.on_rollback(conn, partial(limiter.release, key, mark))
     return _issue(
         conn,
         project,
@@ -1112,7 +1114,7 @@ def revoke_join(slug: str, join_id: str, request: Request, caller: HumanCaller) 
                 by=caller.principal_id,
                 # An outsider has no membership to act from: the event names no member, as
                 # for a revocation the hub carries out (§3.1); `by` still names the outsider.
-                actor_in=lambda _project_id: (Actor(None) if outsider else caller.actor(mine.id)),
+                actor_in=lambda _project_id: Actor(None) if outsider else caller.actor(mine.id),
             )
         return idempotency.Outcome(200, "join", join_id, load_join(conn, join_id))
 

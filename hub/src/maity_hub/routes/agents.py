@@ -300,6 +300,9 @@ def delete_agent(
         if row.deleted_at is not None:  # a second DELETE answers as it is
             return idempotency.Outcome(200, "agent", agent_id, load_agent(conn, agent_id))
         members, running = _in_use(conn, agent_id)
+        if cascade:
+            events.lock_projects(conn, (member.project_id for member in members))
+            members, running = _in_use(conn, agent_id)
         # An isolated membership with trust `outside` stays until an admin of its project
         # removes it or lifts the isolation (§6.2, §6.3): the cascade does not take it.
         kept = any(m.trust == OUTSIDE and m.isolated_since is not None for m in members)
@@ -313,10 +316,10 @@ def delete_agent(
                     "or lifts the isolation",
                 )
             raise ProfileInUse(entries, running)
-        wait = PROFILE_DELETIONS_DAY.blocked(caller.principal_id)
+        wait, mark = PROFILE_DELETIONS_DAY.place(caller.principal_id)
         if wait:
             raise rate_limited(wait)
-        PROFILE_DELETIONS_DAY.hit(caller.principal_id)
+        events.on_rollback(conn, lambda: PROFILE_DELETIONS_DAY.release(caller.principal_id, mark))
         delete_profile(
             conn,
             agent_id,
