@@ -9241,6 +9241,10 @@ def tabs_menu_scroll_step(run: Run, page: Page) -> None:
             const item = el.parentElement;
             for (let i = 0; i < 20; i++) item.before(item.cloneNode(true));
         }""")
+        # The inbox may be empty. Give the page room to scroll so the wheel-containment check
+        # would actually fail if the menu passed its overscroll to the page.
+        page.locator("main").evaluate("(el) => el.style.minHeight = '200vh'")
+        assert page.evaluate("document.scrollingElement.scrollHeight > innerHeight")
         before = page.evaluate("scrollY")
         got = menu.evaluate("(ul) => { const r = ul.getBoundingClientRect();"
                             " return { top: r.top, bottom: r.bottom, vh: innerHeight, scrolls: ul.scrollHeight > ul.clientHeight }; }")
@@ -9264,6 +9268,7 @@ def tabs_menu_scroll_step(run: Run, page: Page) -> None:
         expect(switch).to_have_attribute("aria-checked", "true")
         page.keyboard.press("Escape")
     finally:
+        page.locator("main").evaluate("(el) => el.style.removeProperty('min-height')")
         if size:
             page.set_viewport_size(size)
     no_problems(run, "tabs menu scroll")
