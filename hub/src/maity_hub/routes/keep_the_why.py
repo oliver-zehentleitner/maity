@@ -32,7 +32,7 @@ def _require_why(mine: access.Membership | access.OutsideReader) -> None:
     public, otherwise `not_found` as on every route closed to it. The cheap first check:
     `_outside_reader` asks the forge itself after it (the stored flag lags the forge)."""
     mine.require("project:read")
-    if isinstance(mine, access.OutsideReader) and mine.project.repository_public is not True:
+    if access.reads_from_outside(mine) and mine.project.repository_public is not True:
         raise not_found()
 
 
@@ -146,7 +146,7 @@ def read_keep_the_why(
         mine = access.reader(conn, caller, slug)
     _require_why(mine)
     project = mine.project
-    outside = isinstance(mine, access.OutsideReader)
+    outside = access.reads_from_outside(mine)  # an agent with trust `outside` too (§2.3)
     reader, cache = reader_of(request), ktw.CACHE
     if outside:  # never the members' cache, which a grant may fill
         reader, cache = _outside_reader(request, project, max_age), ktw_reads.OUTSIDE_CACHE
@@ -211,7 +211,7 @@ def _views_read(
     project = mine.project
     if not project.repository_url:
         raise ktw_not_configured()
-    outside = isinstance(mine, access.OutsideReader)
+    outside = access.reads_from_outside(mine)  # an agent with trust `outside` too (§2.3)
     read = ktw_reads.export if which == "state" else ktw_reads.bodies
     if outside:
         reader = _outside_reader(request, project, max_age)

@@ -558,13 +558,16 @@ def members_body(
         )
     ).all()
     admin = mine.may("members:admin")
-    outside = isinstance(mine, access.OutsideReader)
+    outside = access.reads_from_outside(mine)
+    # An agent with trust `outside` reads its own row as a member reads its own, every other
+    # one as its owner reads it from outside (§2.3 "Outside"); an outsider has no row (-1).
+    own = mine.id
     named: set[int] = set()
     pictures: dict[int, str | None] = {}
     if outside:  # the members the public page names, and only those (§2.3)
         people = outside_shown(conn, mine.project.id)
         named = set(people)
-        rows = [r for r in rows if r.id in named]
+        rows = [r for r in rows if r.id in named or r.id == own]
         pictures = outside_pictures(conn, people)
     # An outsider who owns an agent here reads it as any outsider does (§2.3): no details.
     owned: set[str] = set() if outside else _owned_agents(conn, mine)
@@ -581,7 +584,7 @@ def members_body(
         view["manages"] = counted[member_id]
     if outside:
         views = [
-            outside_member_view(v, r, named, picture=pictures.get(r.id))
+            v if r.id == own else outside_member_view(v, r, named, picture=pictures.get(r.id))
             for r, v in zip(rows, views, strict=True)
         ]
     views.sort(key=lambda v: (v["kind"] != "human", v["handle"]))
@@ -616,12 +619,16 @@ def get_member(slug: str, member_id: str, request: Request, caller: AnyCaller) -
         mine = access.reader(conn, caller, slug)
         mine.require("project:read")
         row = member_row(conn, mine.project.id, member_id)
-        if isinstance(mine, access.OutsideReader):
+        # Its own row an agent with trust `outside` reads as a member does (§2.3 "Outside").
+        if isinstance(mine, access.OutsideReader) or (
+            access.reads_from_outside(mine) and row.id != mine.id
+        ):
             people = outside_shown(conn, mine.project.id)
             if row.id not in people:  # one the public page does not name, as a hidden card
                 raise not_found()
             named = set(people)
-            view = member_view(conn, row, links=person_links.Reader(mine.principal_id))
+            reader = mine.principal_id if mine.kind == "human" else None
+            view = member_view(conn, row, links=person_links.Reader(reader))
             view["manages"] = instance_counts.for_member(conn, row, among=named)
             picture = outside_pictures(conn, {row.id: people[row.id]})[row.id]
             return JSONResponse(outside_member_view(view, row, named, picture=picture))

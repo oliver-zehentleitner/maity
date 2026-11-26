@@ -28,14 +28,19 @@ from maity_hub import (
 from maity_hub import tables as t
 from maity_hub.access import owns_agent
 from maity_hub.deps import HumanCaller, engine_of, settings_of
-from maity_hub.errors import ApiError, invalid, not_found
+from maity_hub.errors import ApiError, invalid, not_found, rate_limited
 from maity_hub.events import Actor
 from maity_hub.ids import new_id
 from maity_hub.models import HANDLE_PATTERN, GitIdentity, Name, Strict, title
 from maity_hub.plain_text import plain_name
+from maity_hub.ratelimit import Limiter
+from maity_hub.scopes import OUTSIDE
 from maity_hub.views import agent_view
 
 router = APIRouter()
+
+# The profiles one human deletes in a day (§6.3): deleting one is rare.
+PROFILE_DELETIONS_DAY = Limiter(10, 86400, name="routes.agents.PROFILE_DELETIONS_DAY")
 
 
 class AgentCreate(Strict):
@@ -234,11 +239,16 @@ def patch_agent(
 
 
 class ProfileInUse(ApiError):
-    def __init__(self, memberships: list[dict[str, Any]], placements: list[str]) -> None:
+    def __init__(
+        self,
+        memberships: list[dict[str, Any]],
+        placements: list[str],
+        message: str = "the profile is a member or runs; delete it with cascade=true",
+    ) -> None:
         super().__init__(
             409,
             "profile_in_use",
-            "the profile is a member or runs; delete it with cascade=true",
+            message,
             {"memberships": memberships, "placements": placements},
         )
 
@@ -290,19 +300,23 @@ def delete_agent(
         if row.deleted_at is not None:  # a second DELETE answers as it is
             return idempotency.Outcome(200, "agent", agent_id, load_agent(conn, agent_id))
         members, running = _in_use(conn, agent_id)
-        if (members or running) and not cascade:
-            raise ProfileInUse(
-                [
-                    {
-                        "project": f"{m.owner_handle}/{m.slug}",
-                        "member_id": agent_id,
-                        "trust": m.trust,
-                        "role": m.role,
-                    }
-                    for m in members
-                ],
-                running,
-            )
+        # An isolated membership with trust `outside` stays until an admin of its project
+        # removes it or lifts the isolation (§6.2, §6.3): the cascade does not take it.
+        kept = any(m.trust == OUTSIDE and m.isolated_since is not None for m in members)
+        if (members or running) and (not cascade or kept):
+            entries = [_in_use_entry(agent_id, m) for m in members]
+            if kept:
+                raise ProfileInUse(
+                    entries,
+                    running,
+                    "an isolated membership stays until an admin of its project removes it "
+                    "or lifts the isolation",
+                )
+            raise ProfileInUse(entries, running)
+        wait = PROFILE_DELETIONS_DAY.blocked(caller.principal_id)
+        if wait:
+            raise rate_limited(wait)
+        PROFILE_DELETIONS_DAY.hit(caller.principal_id)
         delete_profile(
             conn,
             agent_id,
@@ -316,6 +330,20 @@ def delete_agent(
         return idempotency.Outcome(200, "agent", agent_id, load_agent(conn, agent_id))
 
     return idempotency.run(engine_of(request), request, caller, action)
+
+
+def _in_use_entry(agent_id: str, member: Any) -> dict[str, Any]:
+    """One membership of `profile_in_use` (§6.3); `isolated: true` on one with trust
+    `outside` that is isolated, which the cascade does not remove."""
+    entry: dict[str, Any] = {
+        "project": f"{member.owner_handle}/{member.slug}",
+        "member_id": agent_id,
+        "trust": member.trust,
+        "role": member.role,
+    }
+    if member.trust == OUTSIDE and member.isolated_since is not None:
+        entry["isolated"] = True
+    return entry
 
 
 def delete_profile(

@@ -29,6 +29,7 @@ from maity_hub.chunks import chunks
 from maity_hub.config import Settings
 from maity_hub.cover import still_with as cover_still_with
 from maity_hub.cover import view as cover_view
+from maity_hub.errors import not_found
 from maity_hub.languages import known as known_language
 from maity_hub.seen import latest_call, presence_by_age
 
@@ -1110,9 +1111,13 @@ def _release(
 
 
 def task_view(conn: Connection, row: Any, fg: forge.Forge, viewer: Any = None) -> dict[str, Any]:
-    """The card as §6.4 shows it (the tasks slice adds its endpoints). Not for an outsider,
-    whose view may drop (`task_views`)."""
-    return task_views(conn, [row], fg, viewer)[0]
+    """The card as §6.4 shows it (the tasks slice adds its endpoints). For a reader from
+    outside (`access.reads_from_outside`), whose view may drop (`task_views`), a card it no
+    longer reads is `not_found`, as its read answers."""
+    views = task_views(conn, [row], fg, viewer)
+    if not views:
+        raise not_found()
+    return views[0]
 
 
 def task_views(
@@ -1120,15 +1125,15 @@ def task_views(
 ) -> list[dict[str, Any]]:
     """`task_view` for several cards: one query for the edges, one for the members. With
     `viewer` (the reader's membership) each card carries `watching`, the reader's own
-    watch or the one a dependency brings (§6.4), never anyone else's. A public project's
-    outsider (`access.OutsideReader`) reads no trace of a card it does not read (§2.3,
-    `public_cards.outside_views`)."""
+    watch or the one a dependency brings (§6.4), never anyone else's. A reader from outside
+    (`access.reads_from_outside`: a public project's outsider, an agent with trust `outside`)
+    reads no trace of a card it does not read (§2.3, `public_cards.outside_views`)."""
     if not rows:
         return []
     views = _task_views(conn, rows, fg)
     from maity_hub import access, public_cards  # they read views; imported here, not at the top
 
-    outside = isinstance(viewer, access.OutsideReader)
+    outside = access.reads_from_outside(viewer)
     if outside:
         # Decided on the rows its last statement returns: a view may drop (READ COMMITTED).
         views = public_cards.outside_views(conn, views)

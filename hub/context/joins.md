@@ -672,3 +672,61 @@ would decide what the contract says no one decides.
   more for its own agent is exactly what the narrowings exclude.
 - A check only where the change is applied: the request would be filed and shown to the owner
   for a change that can never be written, and the caller would learn it only at the `go`.
+
+## An outsider's agent reads at most what its owner reads from outside, plus its own cards; a hidden card is taken from it, and its joins are bounded
+
+**Id:** ca6ae088-db3e-4689-9f5a-48e08912ad4b
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decision of 2026-11-25; the lead's rulings of 2026-11-25 (the predicate, the closed list of reads, memory and group chats closed, no rules text in the resume packet, the numbers of the join limits and caps, the refusal of the cascade); card tsk-n0ef3c9j4s6f; `docs/api.md` §2.3 "Outside" ("What it reads"), §3.1 "An outsider's agent", §6.2 "Isolation", §6.3, §8.2
+**Revisit when:** the claim request of §6.5 is built and gives such an agent cards of its own choosing; the outsider's own read view gains memory, messages or requests; the outsiders' own quota or block (§3.1) is built, which the open-join cap then reads; or the security label becomes settable through the API, whose edit path the release already covers
+**See:** joins.md#an-outsiders-join-sits-behind-one-switch-and-one-predicate-and-its-card-behind-one-refusal — 0bd49a9b-ee36-4f41-9c5b-d050bb136341 — as of 2026-11-25
+**See:** memory.md#an-outsiders-agent-reads-and-writes-no-memory-of-the-project — d8275bae-25a1-40be-bc17-c5e42342261c — as of 2026-11-25
+
+An agent with trust `outside` reads the project as its owner, the outsider, reads it in the
+dashed tab, plus its own membership, instances, credentials and the cards it is given, and
+only while the outsider's card filter allows them. One predicate, `access.reads_from_outside`
+(an `OutsideReader`, or a membership row with trust `outside`, never `joined_outside`), is
+what every read path asks: the card list, search and board, a card with its history and notes
+(and the fetch every card write starts with), the card views, the project and member views,
+the events, the resume packet and the Keep the Why reads. Which project routes it reads at
+all is a closed list, `access.OUTSIDE_AGENT_READS` (the outsider's reads, its credentials, the
+events), enforced where its call's membership is resolved (`deps`), before any route runs:
+a read added later is closed to it until named there. It reads and writes no memory of the
+project and takes part in no group chat; the resume packet carries no rules text.
+
+A card it holds or is assigned that comes to be labelled `security` while not done, or comes
+under a moderation hold, is released from it and its assignment ends, with the events those
+changes always have and no reason naming why; lifting the label or the hold gives nothing
+back (`tasks.release_from_outside`, called after a card's creation and edit and after a hold).
+
+An outsider's joins are bounded: 10 an hour and 30 a day per human, 5 first joins a day per
+project, at most `member_agents_max` + 2 open joins per project and 2 per agent, every kind of
+join counted, and the outsider's `GET …/joins` lists its open joins and its 50 newest others.
+`DELETE /agents` takes 10 profiles a day per human, and its cascade answers `409
+profile_in_use` while the profile holds an isolated membership with trust `outside`; the
+account's deletion, which shares `delete_profile`, is not refused.
+
+**Reason:** an outsider is someone the project's admins did not choose, and what its agent
+reads its owner can read. Bounding the agent by its owner's own view keeps one rule for both,
+and the outsider's view was already built and reviewed as an allow-list. A closed list of
+routes, checked where the membership is resolved, answers a read nobody thought of with
+`not_found` rather than with whatever a route's scope would give. Taking a hidden card away
+keeps the rule true for the cards the agent holds as well, and giving it back on a lift would
+undo a decision a human made for a reason the agent is not told. The join bounds keep an
+outsider's open joins and profiles in proportion to what the project lets them bring, and the
+cascade's refusal leaves ending an isolated membership to the project's admins, who made it.
+
+**Rejected alternatives:**
+- Checking each route for the agent: one route that missed the check would answer as for a
+  member, and every new read would need the check added by hand.
+- Narrowing by scope: every one of these reads needs `project:read`, which the agent must keep
+  for its cards; there is no finer scope to withhold.
+- Keying the predicate on `joined_outside` as well: that mark also covers agents an admin kept
+  at `member` or `guest`, which the admins chose to treat as members.
+- Restoring the claim or the assignment when the label or the hold is lifted: the hub would
+  hand a card to an outsider's agent without a human doing so, which §6.5 rules out.
+- Keeping an isolated membership counted by remembering removed rows: every count of an
+  owner's agents would have to read removal causes for good; refusing the cascade keeps the
+  membership itself, and with it the count.
