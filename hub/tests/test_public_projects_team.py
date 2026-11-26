@@ -358,3 +358,109 @@ def test_team_keeps_the_database_s_handle_order_for_hyphens_and_several_agents(
     bots = [a.handle for a in agents if a.handle and a.handle.startswith("bot-")]
     assert bots == [f"bot-{h}" for h in database]
     assert len(agents) == 1 + len(HYPHENATED)
+
+
+def _stale_world(world: World) -> tuple[dict[int, Any], Any, Any]:
+    """The project with the hyphenated humans as well, its `members` read, and the `team` of
+    that read: then anna and the human `aaaaaa` are removed and the agent isolated, after the
+    read, as another transaction may do under READ COMMITTED (and on MariaDB, where
+    `xact_lock` takes no lock) between `members` and `team`."""
+    for handle in reversed(HYPHENATED):
+        human_id = factory.human(world.migrated, handle)
+        factory.membership(world.migrated, world.project_id, "member", human_id=human_id)
+    with world.migrated.connect() as conn:
+        who = public_members.members(conn, world.project_id)
+        before = _from_persons(*public_projects.team(conn, world.project_id, who))
+        assert before == _named(*_team_from_rows(conn, world.project_id))
+    agent = world.bot.get("/me").json()["member"]
+    removed = world.owner.delete(f"/projects/maintainer/maity/members/{world.anna.id}")
+    assert removed.status_code in (200, 204), removed.text
+    with world.migrated.connect() as conn:
+        gone = conn.execute(select(t.human.c.id).where(t.human.c.handle == "aaaaaa")).scalar_one()
+    removed = world.owner.delete(f"/projects/maintainer/maity/members/{gone}")
+    assert removed.status_code in (200, 204), removed.text
+    path = f"/projects/maintainer/maity/members/{agent['id']}/isolate"
+    isolated = world.owner.post(path, {"reason": "it rewrote the release notes"})
+    assert isolated.status_code == 200, isolated.text
+    return who, before, agent
+
+
+def test_team_of_an_earlier_read_names_that_read_after_a_removal_and_an_isolation(
+    world: World,
+) -> None:
+    """A `members` read passed to `team` after a person left and the agent was isolated: `team`
+    names exactly the shown members of that read, in the database's handle order, and does
+    not fail (A2757, A2758: a `KeyError` before). The fresh read no longer has them."""
+    who, before, agent = _stale_world(world)
+    with world.migrated.connect() as conn:
+        humans, agents = public_projects.team(conn, world.project_id, who)
+        statistics = public_projects.agent_statistics(conn, world.project_id, agents)
+        fresh = _from_persons(*public_projects.team(conn, world.project_id))
+        old = _named(*_team_from_rows(conn, world.project_id))
+    assert _from_persons(humans, agents) == before
+    assert {"anna", "aaaaaa"} <= {h.handle for h in humans}
+    assert [a.principal for a in agents] == [agent["id"]]
+    # The isolated agent is named from the read but not counted (`agent_statistics` reads the
+    # memberships itself).
+    assert statistics["members"] == []
+    assert fresh == old
+    assert not {"anna", "aaaaaa"} & {handle for handle, _, _ in fresh[0]} and fresh[1] == []
+
+
+def test_the_project_page_renders_from_an_earlier_read_after_a_removal_and_an_isolation(
+    world: World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`render_project` with a `members` read from before the changes (what a render that
+    read the members just before they were committed sees): the page is rendered, with that
+    read's team, instead of failing and taking the project's page offline."""
+    from maity_hub.config import Settings
+
+    who, before, _ = _stale_world(world)
+    read = public_members.members
+    monkeypatch.setattr(
+        public_members,
+        "members",
+        lambda conn, project_id, only=None: (
+            who if project_id == world.project_id else read(conn, project_id, only)
+        ),
+    )
+    hub = Settings.from_env(
+        {
+            "MAITY_DATABASE_URL": "sqlite://",
+            "MAITY_PUBLIC_URL": "https://hub.example",
+            "MAITY_PUBLIC_PAGES": "on",
+        }
+    )
+    with world.migrated.connect() as conn:
+        (page,) = public_projects.render_project(conn, hub, world.project_id)
+    assert [p["handle"] for p in page.data["people"]] == [h for h, _, _ in before[0]]
+    assert [a["handle"] for a in page.data["agents"]] == [h for h, _, _ in before[1]]
+    assert page.data["members"] == len(who)
+
+
+def test_in_handle_order_keeps_every_person_once_a_duplicate_and_a_profile_gone(
+    world: World,
+) -> None:
+    """Each of the persons given comes back exactly once: two memberships of one principal
+    (a duplicate in an older or inconsistent read) stay together at its handle, and one whose
+    profile row is gone since the read follows the others instead of being dropped."""
+    with world.migrated.connect() as conn:
+        who = public_members.members(conn, world.project_id)
+    humans = [p for p in who.values() if p.human]
+    assert [p.handle for p in humans] == ["maintainer", "anna", "ben"]  # membership order
+    ben = humans[2]
+    twin = public_members.Person.__new__(public_members.Person)
+    twin.__dict__.update(ben.__dict__, id=-1)
+    bot = next(p for p in who.values() if not p.human)
+    deleted = world.owner.delete(f"/agents/{bot.principal}?cascade=true")
+    assert deleted.status_code in (200, 204), deleted.text
+    with world.migrated.connect() as conn:
+        ordered = public_projects._in_handle_order(conn, [twin, *humans], human=True)
+        agents = public_projects._in_handle_order(conn, [bot], human=False)
+    assert [(p.handle, p.id) for p in ordered] == [
+        ("anna", humans[1].id),
+        ("ben", -1),
+        ("ben", ben.id),
+        ("maintainer", humans[0].id),
+    ]
+    assert agents == [bot]
