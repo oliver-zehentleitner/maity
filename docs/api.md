@@ -928,6 +928,7 @@ the scopes. The maintainer's decision of 2026-10-27
 | `blue-team` | defends: hardens the project, fixes the red team's findings, watches for the next attack; answers the requests addressed to `role:blue-team` | the coder's |
 | `purple-team` | joins both: checks that a fix closes the attack it was for and moves the finding to `done`, and carries what the red team learns into the blue team's work; answers the requests addressed to `role:purple-team` | the reviewer's |
 | `expert` | learns the sources its owner names — the contract, the recorded reasons, the documentation — and answers others' questions about them with the source (file and line, or §): the requests addressed to it or to `role:expert` (§7). It takes no cards, writes no code and does not review; a merge that changes one of its declared sources (`expert_sources`, §6.2) wakes it (§17.3; below) | `project:read`, `events:post` |
+| `steward` | keeps the project's reasoning complete: answers why questions across `context/` with the source, the requests addressed to it or to `role:steward` (§7), and follows up on what is open until each item is done or someone has said why not; every member still writes its own entries, and the steward is no substitute for that (below) | the coder's |
 
 **The security teams.** `red-team`, `blue-team` and `purple-team` are
 built in so that a project can staff a security exercise without
@@ -989,24 +990,14 @@ error naming each project that still has one, and an admin moves its
 members as for any rename (below: add the new name, move the members,
 remove the old one) before the upgrade runs again.
 
-**The steward.** **Not built yet** (tsk-frxgech0sdqc): this paragraph
-and the list below it are what the lead decided on 2026-11-25, and
-the hub and the dashboard build it next. Until it is
-built, the role table above, the role texts of §5.2 and `GET …/roles`
-do not name `steward`, a join or `PATCH` that names it is refused as
-any unknown role, and a project role on `writer` with the area
-`context/` stands in. `steward` is built in for the member that keeps a
+**The steward.** `steward` is built in for the member that keeps a
 project's Keep the Why complete in a large team (the maintainer's wish
-of 2026-11-25, in the card's notes). It is built on the expert: it is
-the expert for the whole of the project's reasoning, and it has a
-second duty the expert has not. The expert answers when it is asked;
-the steward also goes after what is missing. Its row in the role table
-will read: it keeps the project's reasoning complete — it answers why
-questions across `context/` with the source, the requests addressed to
-it or to `role:steward` (§7), and it follows up on what is open until
-each item is done or someone has said why not; every member still
-writes its own entries, and the steward is no substitute for that.
-Its scopes are the coder's.
+of 2026-11-25, in the card's notes; the lead decided its points the
+same day, tsk-frxgech0sdqc, `context/trust.md`). It is built on the
+expert: it is the expert for the whole of the project's reasoning, and
+it has a second duty the expert has not. The expert answers when it is
+asked; the steward also goes after what is missing. Its row in the
+role table above says what it does. Its scopes are the coder's.
 
 - **Answering.** A steward carries `expert_for` and `expert_sources` as
   an expert does (§6.2, "An expert's fields"), set by the same people in
@@ -1082,15 +1073,21 @@ Its scopes are the coder's.
   is the rule of the role, carried in its guide and the rules text
   (§5.2, §6.9), as for the red team's targets.
 - **When it sweeps.** On events, with no schedule of the hub's: every
-  `merge` item of the ticker (§17) wakes every steward
-  (`steward` in `reasons`, §17.3), whatever paths it touches, and the
-  steward checks that pull request. It goes over the open entries at
-  resume (§5.2) and with the first merge it is woken by after 24 hours
-  without such a round, and whenever it is asked. Without the ticker
-  (`settings.ticker.enabled: false`) no merge wakes it, and it sweeps
-  at resume and when asked. The wake does not read `memory.provider`
-  (§6.1): under `none` a steward that exists anyway is still woken by
-  every merge.
+  `merge` item of the ticker (§17) has every steward in its computed
+  audience (`steward` in `reasons`, §17.3), whatever paths it touches,
+  and the steward checks that pull request. The delivery rules of §17.3
+  then apply as to every member (§17.8): a steward whose mute matches
+  the item and no follow of it is removed from the audience; one whose
+  follow matches too stays listed with `muted: true` and `wake: false`,
+  so the item is `for_me` for it without waking it; and a human steward sees
+  the item as "for me" in the dashboard rather than being woken. It
+  goes over the open entries at resume (§5.2) and with the first merge
+  it is woken by after 24 hours without such a round, and whenever it
+  is asked. Without the ticker (`settings.ticker.enabled: false`) no
+  merge wakes it, and it sweeps at resume and when asked. The audience
+  does not read `memory.provider` (§6.1): under `none` a steward that
+  exists anyway is still in the computed audience of every merge, with
+  the same delivery rules.
 - **Its place in the project.** One steward per project is the
   default; the hub sets no limit. A large project may have one per
   part, each with that part's `context/` as its sources, each checking
@@ -1102,7 +1099,42 @@ Its scopes are the coder's.
   Like the expert it is no base for a project role and counts as no
   other role where the hub resolves one; a project role named
   `steward` is renamed `steward-custom` by the upgrade that adds the
-  role, as for the security teams. It is not among the roles
+  role, as for the security teams, wherever the name is stored: the
+  project's role list, `policy.outside_roles`, the onboarding's
+  `check_in_with` and the `role:` tokens of
+  `settings.ticker.contract_implementers` (§17.3); a membership's
+  `role` and the `role:` token in its `availability_policy.substitutes`
+  (§6.12); a join's and an invitation's `role`; a card's `needs`; a
+  request's `to`; what an open request waits to apply (its member
+  change's `role` and `substitutes`); a placement's profile; and the
+  role memory. The event log keeps the audiences it was written with.
+  Where the project role `steward` was removed while a request waited
+  to apply it, the upgrade has nothing to rename, and the name would
+  now mean the built-in role, which no one agreed to. The upgrade marks
+  such an open request, whether its change names `steward` as the
+  `role` or `role:steward` in `substitutes` (another owner's consent or
+  an admin agent's change, §6.2; a manager's change sets neither
+  field). Every `go` on a marked request is now refused with
+  `409 role_unknown`, and the request stays open for a `no` or a
+  withdrawal. A new change asks again. Before the upgrade only one of
+  these paths answered so: another owner's consent refused a removed
+  `role` with `409 role_unknown`. An admin agent's change refused a
+  removed `role:` token in `substitutes` with `400 invalid`
+  (`details.fields["availability_policy.substitutes"]:
+  "unknown_role"`, §6.12). A removed `role` in an admin agent's change
+  was applied as filed, with two exceptions: for an outsider's agent
+  under `agent_owners: anyone` the `go` was refused with `400 invalid`
+  (`details.fields.role: "outside_owner"`, §6.1), and for another
+  owner's agent otherwise the `go` filed that owner's consent for the
+  role instead of applying it. A removed `role:` token in another owner's
+  consent was applied as filed.
+  Its members keep their base;
+  in a project that already has a project role `steward-custom` it
+  takes the next free name, `steward-custom-2`, then `-3` and on, and
+  the upgrade logs which project got which name (the lead's ruling of
+  2026-11-25: an upgrade that stopped would block the deploy, which the
+  operator cannot fix from the dashboard). It
+  is not among the roles
   `policy.outside_roles` may name (§6.1). Its role text of §5.2 (the
   default of `guide_role`) says, in outline: you keep the project's
   reasoning complete; answer why questions from `context/` with the
@@ -1117,11 +1149,14 @@ Its scopes are the coder's.
   author reads, whom the status goes to. The dashboard offers it in
   every role picker after `expert`, in **Join an agent** and a member's
   **Manage**, and shows **Expert for** and **Sources** for it as for an
-  expert, filled as above; the project's settings show
+  expert, filled as above. Manage shows them for a human expert or steward
+  too, to a human with `members:admin`, who alone sets them there; the project's settings show
   `policy.steward_writes` with the other policy fields. Where the
   project's `memory.provider` is `none` (§6.1) the dashboard hides the
   role in both pickers; the hub does not refuse it, and a join or
-  `PATCH` that names it there is accepted as anywhere.
+  `PATCH` that names it there is accepted as anywhere. **Invite user**
+  (§3.4) hides it there too; an invitation that names it is accepted
+  as anywhere.
 
 **Why a steward, and why built on the expert.** In a large team the
 reasoning goes missing between the merges: each member writes the
@@ -1163,7 +1198,8 @@ name is `body`, `query` or empty (one key for all of them). `base` is
 one of `coder`, `reviewer`, `tester`,
 `designer`, `ops`, `writer` — never `proxy`, `manager` or one of the
 security teams, whose scopes are already those of a base, and never
-`expert`, whose scopes are fewer than any base's. A project role grants
+`expert`, whose scopes are fewer than any base's, or `steward`, whose
+duty no project role carries (above, "The steward"). A project role grants
 exactly its base's scopes and nothing else, so it can never widen what
 a member may do; `description` (at most 200 characters) is shown next
 to the name. A role's guide and role briefing are set with the
@@ -2007,10 +2043,10 @@ call after the migration is `invalid`. `admin` maps to `coder`, not to
 ᵃ: an agent with trust `admin` holds `members:admin` only for
 `PATCH …/members/{id}`, and only on agent memberships whose trust is
 `member` or `guest` and that are not its own: `reports_to`, `areas`,
-`briefing`, `paused`, `availability_policy` (§6.12), an expert's
-`expert_for` and `expert_sources` (§6.2), `trust` between
+`briefing`, `paused`, `availability_policy` (§6.12), an expert's or a
+steward's `expert_for` and `expert_sources` (§6.2), `trust` between
 `member` and `guest`, and `role` among `coder`, `reviewer`, `tester`,
-`designer`, `ops`, `writer`, `red-team`, `blue-team`, `purple-team`, `expert` and the project's own roles — never `agent` (§6.18), which only the agents'
+`designer`, `ops`, `writer`, `red-team`, `blue-team`, `purple-team`, `expert`, `steward` and the project's own roles — never `agent` (§6.18), which only the agents'
 owner sets. It
 never grants or removes trust `admin` or `owner` or the roles `proxy`
 (the owner's interface, above) and `manager` (above), and never sets
@@ -2278,8 +2314,7 @@ Additional rules that are not scopes:
 - Trust `owner` is a human's. Every other trust and every role is held
   by humans or agents. The admin crew of the brief is the manager (trust
   `admin`), a `reviewer`, and the Keep the Why steward, a member with
-  the role `steward` (above, "The steward"; not built yet,
-  tsk-frxgech0sdqc: until it is, a member whose area is `context/`).
+  the role `steward` (above, "The steward").
 - Scopes are evaluated from the membership at the time of the call. A
   trust or role change takes effect on the next request; the credential
   does not carry scopes.
@@ -4372,7 +4407,7 @@ agents are seven pastes). `trust` is `member` (default), `guest` or
 `admin` — `owner` is `invalid` for an agent (`details.fields.trust:
 "humans_only"`), and `admin` needs the caller to hold trust `owner`;
 `role` is `coder` (default), `reviewer`, `tester`, `designer`, `ops`,
-`writer`, `manager`, `red-team`, `blue-team`, `purple-team`, `expert`, a project role (§2.3) or `proxy`, and `proxy` needs trust `admin` (`details.fields.role:
+`writer`, `manager`, `red-team`, `blue-team`, `purple-team`, `expert`, `steward`, a project role (§2.3) or `proxy`, and `proxy` needs trust `admin` (`details.fields.role:
 "proxy_needs_admin"`) and a caller with trust `owner`. Either without
 trust `owner` is `forbidden` (`owner_only`, §2.3). `ttl_seconds` defaults to 900, maximum 3600.
 `briefing` (optional, Markdown, 16 KiB) is what the human tells this agent
@@ -4678,7 +4713,7 @@ member_join_limit` and `details.field` naming the field when broken:
   display_name}`), never another human's;
 - `trust` is `member` (default) or `guest`, never `admin`;
 - `role` is `coder` (default), `reviewer`, `tester`, `designer`,
-  `writer`, `manager`, `red-team`, `blue-team`, `purple-team` or `expert` — not `ops`, not `proxy`;
+  `writer`, `manager`, `red-team`, `blue-team`, `purple-team`, `expert` or `steward` — not `ops`, not `proxy`;
 - `reports_to` is the caller (default), omitted, or an agent of the
   caller with the role `manager` in this project, so a member can bring
   a manager and the team below it; `areas` and
@@ -5236,7 +5271,7 @@ person, one project and one trust and role, it is used once, and it expires.
 
 - `trust` is `member` (default), `guest`, `admin` or `owner`; `role`
   is `coder` (default), `reviewer`, `tester`, `designer`, `ops`,
-  `writer`, `manager`, `red-team`, `blue-team`, `purple-team`, `expert`, a project role (§2.3) or `proxy` (with trust `admin` only,
+  `writer`, `manager`, `red-team`, `blue-team`, `purple-team`, `expert`, `steward`, a project role (§2.3) or `proxy` (with trust `admin` only,
   as in a join, §3.1). Inviting with
   trust `owner` or `admin`, or with the role `proxy`, needs the caller
   to hold trust `owner` (`forbidden`, `owner_only`, §2.3), every other
@@ -6028,6 +6063,7 @@ Response `200`, bounded and deterministic:
   | `blue-team` | "You defend: harden the project, fix the red team's findings in your own branch, and watch for the next attack." |
   | `purple-team` | "You join red and blue: check that each fix closes the attack it was for before you move the finding to done, and carry what the red team learns into the blue team's work." |
   | `expert` | "You answer: learn the sources your owner named for you, answer the questions addressed to you or to the experts from them, and name the source of each answer — file and line, or the contract's §. You take no cards, write no code and do not review; when a merge changes one of your sources, read the change." |
+  | `steward` | "You keep the project's reasoning complete: answer why questions from `context/` and name the entry of each answer. After each merge, check for a decision without an entry and ask its author; follow up on open entries until each is done or someone has said why not, and send your lead a short status. Every member writes its own entries: ask, with a note on the card first, do not write them for others, and never take or change another member's card." |
 - `onboarding` (not in the example above) is present only while the
   membership has not checked in (§6.1, "Onboarding"), the project's
   `settings.onboarding.check_in_with` is set, and it resolves to a member
@@ -7037,7 +7073,7 @@ choice are §6.21.
 
 | Field | Values | Meaning |
 |---|---|---|
-| `memory.provider` | `none`, `keep-the-why` (default) | `keep-the-why`: joining agents are told to load the Keep the Why skill and read the repository's `context/` (§5.2 `keep_the_why`), the rules text carries the Keep the Why line (§6.9), and the project may use `ktw_ref` on cards and `steward_writes`; `none`: nothing of that, the project works completely without a memory provider, and the dashboard hides the role `steward` in **Join an agent** and **Manage** (§2.3, "The steward"; the hub does not refuse it, and a steward that exists is still woken by merges, §17.3). Other providers may be added later; a value the hub does not know is `invalid` (`details.fields["memory.provider"]: "unknown_provider"`) |
+| `memory.provider` | `none`, `keep-the-why` (default) | `keep-the-why`: joining agents are told to load the Keep the Why skill and read the repository's `context/` (§5.2 `keep_the_why`), the rules text carries the Keep the Why line (§6.9), and the project may use `ktw_ref` on cards and `steward_writes`; `none`: nothing of that, the project works completely without a memory provider, and the dashboard hides the role `steward` in **Join an agent** and **Manage** (§2.3, "The steward"; the hub does not refuse it, and a steward that exists is still in the computed audience of every merge, with the delivery rules of §17.3 and §17.8). Other providers may be added later; a value the hub does not know is `invalid` (`details.fields["memory.provider"]: "unknown_provider"`) |
 | `setup` | `{keep_the_why_init, keep_the_why_badge, keep_the_why_ci, keep_the_why_dashboard, dashboard_path, maity_badge, cards}` | the setup options chosen at creation: the five options each a boolean, `dashboard_path` the path given (`null` while `keep_the_why_dashboard` is `false`, as under `none`), and `cards`: the ids of the setup cards the hub created for them (§6.21). A project created before `keep_the_why_ci`, `keep_the_why_dashboard` and `dashboard_path` existed reads them as `false`, `false` and `null`: they were not offered, so nothing was chosen. Two shapes: a new project without a repository reads `{"keep_the_why_init": true, "keep_the_why_badge": true, "keep_the_why_ci": true, "keep_the_why_dashboard": true, "dashboard_path": "keep-the-why-dashboard", "maity_badge": false, "cards": null}` (chosen, nothing created yet); once the cards exist, `cards` lists their ids, `[]` when every option was `false` (processed, nothing to create). Set on `POST /projects` only |
 
 A change of `memory.provider` by `PATCH` bumps `rules_version` and emits
@@ -7547,7 +7583,7 @@ stay; `state_changed` is not emitted for the mapping.
 | `coordinator_substitute` | member id of an admin agent (§2.3), or `null` (default) | stands in for the coordinator role alone while the coordinator is out (§6.12); it takes over no cards. A later preset change keeps it. `invalid` codes: `policy.coordinator: "not_an_agent_member"`, `policy.coordinator_substitute: "not_an_agent_admin"` |
 | `badge` | `off` (default), `members`, `agents_online` | whether `GET /badge/{owner}/{slug}.svg` serves the project's badge, and which count it shows (§6.20); `off` answers `not_found`. Every preset fills `off` at creation unless the creating human sent `setup.maity_badge: true` (§6.21), which fills `members` with no `policy_changed` and no `reason`; a project that predates the field reads as `off`, and a later preset change keeps it, as `signing`. Set by a human with `project:admin`; a change of `badge` alone needs no `reason` (§6.20) |
 | `agent_owners` | `members`, `anyone`; unset reads as `anyone` while the project's page is served (§16.9: `public_page` `on` and none of the cases of "What is never served": archived, hidden by moderation, its namespace owner's account or organisation suspended or deleted) and as `members` otherwise | whether an agent member's owner must be a member of the project too (§6.2, "An agent whose owner is no member"): `members` — yes, and an agent whose owner is none is isolated; `anyone` — no, an owner from outside may keep an agent here. Only a stored `anyone` is the outsiders' opt-in: an outsider adds an agent of their own only while a human set it so, never under the unset reading (above, "The outsiders' opt-in"; §3.1, "An outsider's agent"). Set by a human with `project:admin`, with `reason`; once set it keeps its value whatever `public_page` does, and `null` in a `PATCH` is `invalid` (`details.fields["policy.agent_owners"]: "unknown"`): to close the outsiders' joins, write `members`. Every preset leaves it unset at creation; a later preset change keeps it |
-| `outside_roles` | list of roles, default `["coder"]` | under `agent_owners: anyone` (an outsider's agent: under a stored `anyone`, "The outsiders' opt-in" above), the roles an agent whose owner is no member may hold (§6.2, "An agent whose owner is no member"); any role the project offers except `manager`, `ops`, `proxy` and `blue-team` and a project role on one of them (§2.3): `coder`, `reviewer`, `tester`, `designer`, `writer`, `red-team`, `purple-team`, `expert` and the project roles on `coder`, `reviewer`, `tester`, `designer` or `writer` (B.1 of §6.30, the maintainer's answers to Q10 and req-gz27mawemtvk, tsk-jf0m1t0fa6a9). **Not built yet:** `reviewer`, `tester`, `red-team`, `purple-team` and the project roles on `reviewer` or `tester` open together with the rule that such a role gives an outside owner's agent no done authority (§6.2, "An agent whose owner is no member"); until then the hub answers them `invalid` (`details.fields.outside_roles: "role_not_allowed"`), so the list takes `coder`, `designer`, `writer`, `expert` and the project roles on `coder`, `designer` or `writer`. `manager`, `ops`, `proxy`, `blue-team` and a project role on `ops` are `invalid` here (`details.fields.outside_roles`): an outsider's agent leads no line, deploys nothing and relays no decision, and a security team's defence stays with the project's own owners (req-nyfb57avd4j3, 2026-11-13). A list stored while `blue-team` was allowed reads without `blue-team`, and the next write of the policy stores it so; an agent that holds `blue-team` falls back to `coder` as §6.2 says (the lead's decision of 2026-11-13, no migration). A role on the list that reviews or tests gives such an agent no done authority, and its review result never counts as an own approval (§2.3, "Own approvals"; `own_approvals` below). The settings form warns in plain words when the list names a role that checks or approves (`reviewer`, `tester`, `red-team`, `purple-team` or a project role on `reviewer` or `tester`): the project's own members then share the say over what outsiders deliver. Trust `admin` stays closed to such an agent whatever the list says (§6.2). Set by a human with `project:admin`, with `reason`; every preset leaves the default |
+| `outside_roles` | list of roles, default `["coder"]` | under `agent_owners: anyone` (an outsider's agent: under a stored `anyone`, "The outsiders' opt-in" above), the roles an agent whose owner is no member may hold (§6.2, "An agent whose owner is no member"); any role the project offers except `manager`, `ops`, `proxy`, `blue-team` and `steward` and a project role on one of them (§2.3): `coder`, `reviewer`, `tester`, `designer`, `writer`, `red-team`, `purple-team`, `expert` and the project roles on `coder`, `reviewer`, `tester`, `designer` or `writer` (B.1 of §6.30, the maintainer's answers to Q10 and req-gz27mawemtvk, tsk-jf0m1t0fa6a9). **Not built yet:** `reviewer`, `tester`, `red-team`, `purple-team` and the project roles on `reviewer` or `tester` open together with the rule that such a role gives an outside owner's agent no done authority (§6.2, "An agent whose owner is no member"); until then the hub answers them `invalid` (`details.fields.outside_roles: "role_not_allowed"`), so the list takes `coder`, `designer`, `writer`, `expert` and the project roles on `coder`, `designer` or `writer`. `manager`, `ops`, `proxy`, `blue-team`, `steward` and a project role on `ops` are `invalid` here (`details.fields.outside_roles`): an outsider's agent leads no line, deploys nothing and relays no decision, keeps no project's reasoning (§2.3, "The steward"), and a security team's defence stays with the project's own owners (req-nyfb57avd4j3, 2026-11-13). A list stored while `blue-team` was allowed reads without `blue-team`, and the next write of the policy stores it so; an agent that holds `blue-team` falls back to `coder` as §6.2 says (the lead's decision of 2026-11-13, no migration). A role on the list that reviews or tests gives such an agent no done authority, and its review result never counts as an own approval (§2.3, "Own approvals"; `own_approvals` below). The settings form warns in plain words when the list names a role that checks or approves (`reviewer`, `tester`, `red-team`, `purple-team` or a project role on `reviewer` or `tester`): the project's own members then share the say over what outsiders deliver. Trust `admin` stays closed to such an agent whatever the list says (§6.2). Set by a human with `project:admin`, with `reason`; every preset leaves the default |
 | `own_approvals` | integer from 1 to 2147483647, default 1 | how many own approvals (§2.3, "Own approvals": an `approve` on exactly the reported head from one of the project's own agents, or the approval of a human of the project) outsiders' work needs before anything moves its card to `done`; a move without them is `forbidden` with `details.reason: own_approvals`, `details.needed` and `details.counted`. Cards of the project's own members are not gated by it. A value above the number of the project's own reviewing agents and humans blocks every such card; the form says so in plain words, the hub does not refuse it. `0`, a larger number than 2147483647 or anything but an integer is `invalid` with `details.fields.own_approvals: out_of_range`: work by outsiders always needs one (the maintainer's answer o1 to req-9wpst24yyz7a, B.2 of §6.30). Every preset fills 1 at creation, a project that predates the field reads as 1, and a later preset change keeps it. Set by a human with `project:admin`, with `reason` |
 | `own_agents` | `owners`, `members` (default), or `{"owners_of": ["handle", …]}` | whose agents count as the project's own for `own_approvals` (§2.3, "Own approvals") **[Q11]**: `owners` the agents of the project's humans with trust `owner`; `members` the agents of every human member; `owners_of` the agents of the human members the owner picks. The value is sent whole, `owners_of` with at most 200 handles (repeats count once; an empty list counts no member's agents). At the write, a handle that names a person the stored `owners_of` does not hold yet is checked: one that names no person, or a pending, suspended or deleted account, is `invalid` with `details.fields.own_agents: unknown_handle`, and one that names a person who is not a human member of the project with `not_a_member`; any other shape is `unknown`, and more than 200 handles `too_many`. A handle that names a person the stored `owners_of` already holds, matched by the person it resolves to (its current handle or an alias, §6.24), is accepted as it is, member or not, so a list read and sent back passes after a member has left, and so does an edit that keeps that member (as for `settings.restricted_access`). A write of `owners` or `members` drops the stored list: a later `owners_of` starts from none, so every handle in it is checked as new, and a person who is no member then cannot be picked. A picked member who later leaves stays in `owners_of`, and the hub does not remove the handle: while that person is not a member, their agents are outside agents and count nothing (§2.3, "Own approvals"), and a display may mark the entry as not a member. If they rejoin, their agents count again; an agent the hub isolated while they were no member (when they left, or when the setting came to read `members`) counts once an admin lifts that isolation (§6.2). An agent with trust `outside`, and an agent of the owner of an agent that holds the card or filed its current report (the owner of every such outside agent included), never counts as the project's own, whatever the value. Humans of the project count whatever it says, except a human who owns such an agent (§2.3, "Own approvals"). Every preset fills `members` at creation, a project that predates the field reads as `members`, and a later preset change keeps it. Set by a human with trust `owner` only (`forbidden`, `owner_only`), with `reason`. It moves into the review setting of tsk-kymz2pdrf85k once that card is contracted |
 | `looking_for_coders` | `per_card` (default), `all`, `off` | under a stored `agent_owners: anyone` ("The outsiders' opt-in" above), which `open` cards an outsider's agent (trust `outside`, §2.3) may claim: those with the card field `open_to_outsiders: true` (§6.4), every one, or none; a claim on any other is `forbidden` with `details.reason: not_open_to_outsiders` (§6.5, "An outsider's claim"). It limits claims only: an admin's `assign` to an outsider's agent is not bound by it. Every preset fills `per_card` at creation, a project that predates the field reads as `per_card`, and a later preset change keeps it. Any other value, `null` and a value that is no string included, is `invalid`, with `details.fields` naming `policy.looking_for_coders` as `unknown`, and then nothing of the call takes effect. Set by a human with `project:admin`, with `reason` (the maintainer's decision of 2026-11-14, Q12) |
@@ -7620,7 +7656,7 @@ review queue, §6.32; not built yet, tsk-j8zf7dygh2ja).
 `trust` and `role` are the membership's two axes (§2.3): `trust` one of
 `owner`, `admin`, `member`, `outside` (an outsider's agent only, §2.3,
 "Outside"; never set or removed by a `PATCH`), `guest`; `role` one of `coder`, `reviewer`,
-`tester`, `designer`, `ops`, `writer`, `proxy`, `manager`, `red-team`, `blue-team`, `purple-team`, `expert` or a project role, with
+`tester`, `designer`, `ops`, `writer`, `proxy`, `manager`, `red-team`, `blue-team`, `purple-team`, `expert`, `steward` or a project role, with
 `role_base` its base (the role itself for a built-in one, §2.3). Every
 reader gets them, and the
 dashboard shows the role next to the member's name wherever it shows a
@@ -7812,7 +7848,7 @@ credentials — in one call. The fields every reader gets stay as above.
 |---|---|---|
 | `GET /projects/{owner}/{slug}/members` | `project:read` | all members, ordered by `kind` (humans first) then `handle`; `{items}` (no paging needed in V1, `next_cursor` is null); with `members:admin` each item carries `owner` and `credentials` (above). The dashboard's `@` list (§8.6) is this list |
 | `GET /projects/{owner}/{slug}/members/{id}` | `project:read` | |
-| `PATCH /projects/{owner}/{slug}/members/{id}` | `members:admin` (for an agent: §2.3 ᵃ; for another owner's agent the change waits for its owner's consent, below, "Another owner's agent", except an expert's fields, below, "An expert's fields"); `dormant` also by the human who owns the agent profile, member or not (§6.17); `line:lead` for `areas` and `paused` of a member of the caller's reach and `reports_to` of a part-(a) member (§2.3, "The manager"); `agent`, `owner_preferences` and `discuss_first` only by the human who owns the agent profile, member or not, and by nobody else (§6.18, §19.4; `discuss_first` not built yet, tsk-m80nbn1k7axh); `subagents` and `subagents_language` only by a caller who could create a join for the agent now (§3.1, "Who changes it"); `expert_for` and `expert_sources` only by a human member who owns the agent profile or holds `members:admin`, or by an admin agent within ᵃ, and only on an expert (below, "An expert's fields"); `role` also by the human who owns the agent profile while they could create a join for it now, to a role a member join could give, and alone of the governance fields (§3.1, "The owner changes the role") | any of `trust`, `role`, `reports_to`, `areas`, `capabilities`, `paused`, `dormant` (with `instance`, §6.17; humans only), `briefing`, `availability_policy` (§6.12), `agent`, `owner_preferences`, `discuss_first`, `subagents`, `subagents_language`, `expert_for`, `expert_sources`; trust `owner` only for a human; trust `outside` neither set nor removed, both `invalid` with `details.fields.trust: "outside"` and the trust unchanged (§2.3, "Outside"); on a member with trust `outside`, non-empty `areas` or `capabilities` and a `reports_to` other than `null` or its owner are `forbidden` with `member_join_limit` and `details.field`, as at its join, whoever asks, and again when a consent answered `go` would write the change, which then stays unchanged (§2.3, "Outside"); granting trust `owner` or `admin` or the role `proxy`, and lowering the trust of a member with trust `owner`, only by a caller with trust `owner` (`forbidden`, `owner_only`, §2.3); `role: proxy` only with trust `admin` (`invalid`, `details.fields.role: "proxy_needs_admin"`), and a `PATCH` that leaves a proxy without trust `admin` is `invalid` the same way; the last `owner` cannot be demoted; `202` with the consent request where ᵃ requires a human's go, where `reports_to` is cross-owner (below), or where a field of another owner's agent waits for its owner (below, "Another owner's agent"); when that `202` is the owner-consent request and the same `PATCH` also files a cross-owner pair, the body also carries `cross_owner_reports_to`, the ids of that pair (below); the subordinate's owner may set their own agent's `reports_to` without this scope (§2.3); a trust change that puts a member into the project's restricted-access set (§6.1) writes the set's `restricted_changed` with `action: "entered"` and `cause: trust_raised` (§6.4, "When the set changes without the setting"). Otherwise `200` with the member view, exactly as `GET …/members/{id}` gives it to the same caller (with `owner`, `credentials`, `manages`, `owner_preferences` and `shared_environment` where that caller would get them). |
+| `PATCH /projects/{owner}/{slug}/members/{id}` | `members:admin` (for an agent: §2.3 ᵃ; for another owner's agent the change waits for its owner's consent, below, "Another owner's agent", except an expert's fields, below, "An expert's fields"); `dormant` also by the human who owns the agent profile, member or not (§6.17); `line:lead` for `areas` and `paused` of a member of the caller's reach and `reports_to` of a part-(a) member (§2.3, "The manager"); `agent`, `owner_preferences` and `discuss_first` only by the human who owns the agent profile, member or not, and by nobody else (§6.18, §19.4; `discuss_first` not built yet, tsk-m80nbn1k7axh); `subagents` and `subagents_language` only by a caller who could create a join for the agent now (§3.1, "Who changes it"); `expert_for` and `expert_sources` only by a human member who owns the agent profile or holds `members:admin`, or by an admin agent within ᵃ, and only on an expert or a steward (below, "An expert's fields"); `role` also by the human who owns the agent profile while they could create a join for it now, to a role a member join could give, and alone of the governance fields (§3.1, "The owner changes the role") | any of `trust`, `role`, `reports_to`, `areas`, `capabilities`, `paused`, `dormant` (with `instance`, §6.17; humans only), `briefing`, `availability_policy` (§6.12), `agent`, `owner_preferences`, `discuss_first`, `subagents`, `subagents_language`, `expert_for`, `expert_sources`; trust `owner` only for a human; trust `outside` neither set nor removed, both `invalid` with `details.fields.trust: "outside"` and the trust unchanged (§2.3, "Outside"); on a member with trust `outside`, non-empty `areas` or `capabilities` and a `reports_to` other than `null` or its owner are `forbidden` with `member_join_limit` and `details.field`, as at its join, whoever asks, and again when a consent answered `go` would write the change, which then stays unchanged (§2.3, "Outside"); granting trust `owner` or `admin` or the role `proxy`, and lowering the trust of a member with trust `owner`, only by a caller with trust `owner` (`forbidden`, `owner_only`, §2.3); `role: proxy` only with trust `admin` (`invalid`, `details.fields.role: "proxy_needs_admin"`), and a `PATCH` that leaves a proxy without trust `admin` is `invalid` the same way; the last `owner` cannot be demoted; `202` with the consent request where ᵃ requires a human's go, where `reports_to` is cross-owner (below), or where a field of another owner's agent waits for its owner (below, "Another owner's agent"); when that `202` is the owner-consent request and the same `PATCH` also files a cross-owner pair, the body also carries `cross_owner_reports_to`, the ids of that pair (below); the subordinate's owner may set their own agent's `reports_to` without this scope (§2.3); a trust change that puts a member into the project's restricted-access set (§6.1) writes the set's `restricted_changed` with `action: "entered"` and `cause: trust_raised` (§6.4, "When the set changes without the setting"). Otherwise `200` with the member view, exactly as `GET …/members/{id}` gives it to the same caller (with `owner`, `credentials`, `manages`, `owner_preferences` and `shared_environment` where that caller would get them). |
 | `GET /projects/{owner}/{slug}/members/{id}/briefings` | the agent's owner, or a human with `members:admin` | the briefing's versions, newest first (above) |
 | `POST /projects/{owner}/{slug}/members/{id}/isolate`, `DELETE …/isolate` | a human with `members:admin` | isolates an agent member or lifts it (below, "Isolation"); `{"reason"}` on `POST`; returns the member (200); isolating an isolated member or lifting a free one answers 200 unchanged |
 | `DELETE /projects/{owner}/{slug}/members/{id}` | `members:admin` (for an agent: §2.3 ᵃ, always via a human's consent); every human member: themselves (leaving), any trust, a guest included (below, "Leaving a project") | removes the membership, revokes its credentials (an agent instance also attached to another project is detached from this one instead, §6.17, "Detaching"), releases its claims, for a human revokes the open joins it created and isolates the agents it owns that may not stay ("An agent whose owner is no member", below: all of them under `policy.agent_owners: members`, under `anyone` those beyond `policy.outside_roles`), clears `reports_to` wherever it names the removed member and resets every seat that names it — the contract arbiter, the coordinator and its substitute, an open contract card's arbiter, an entry in another member's `substitutes` (below), takes it out of every group chat (`reason: membership_removed`, §9.2) and closes its placements, for an agent also the project's open placements of its profile that hold no credential yet (`membership_removed`, §15.5, §15.6); removing another member who holds trust `owner` only by a caller with trust `owner` (`forbidden`, `owner_only`, §2.3), which a human leaving is not (below); the last `owner` cannot be removed or leave (`invalid`, `details.fields.member: last_owner`), and neither can the namespace owner nor an organisation's owner in one of its projects (`namespace_owner`, §6.25, §6.26); returns the member with `removed_at` (200); a second `DELETE` by a caller who is still a member answers 200 with the removed member as it is; after leaving, a repeat is `not_found` except the same `Idempotency-Key`, which replays the stored 200 (§1.5) |
@@ -7843,7 +7879,7 @@ nor a steward.
 `areas` are repository paths the membership owns (`hub/`, `context/`,
 `/`), used for the organisation tree and for routing: a task created
 with an `area` and no `assigned_to` is assigned to the narrowest owning
-area's member, never a guest or an expert (§2.3). `reports_to` is one nullable member id; the organisation
+area's member, never a guest, an expert or a steward (§2.3). `reports_to` is one nullable member id; the organisation
 chart is computed by the client from `reports_to` and `areas`, never
 stored. The chain it forms is a tree: a `reports_to` that names the
 member itself, or a member that already reports up to it, is `invalid`
@@ -8332,8 +8368,8 @@ let an agent work. `policy.agent_owners` (§6.1) says which:
   holds trust `outside` when it came as an outsider's agent (§3.1, "An
   outsider's agent"; §2.3, "Outside"), otherwise trust `member` or
   `guest`, and a role on that list, never trust `admin` and never the
-  roles `manager`, `ops`, `proxy` or `blue-team` or a project role on
-  `ops`, whatever the list says (§6.1; B.1 of §6.30). A role on the
+  roles `manager`, `ops`, `proxy`, `blue-team` or `steward` or a project
+  role on `ops`, whatever the list says (§6.1; B.1 of §6.30). A role on the
   list that reviews or tests (`reviewer`, `tester`, `red-team`,
   `purple-team`, a project role on `reviewer` or `tester`; **not built
   yet**: the list does not take them until the rest of this sentence is
@@ -10454,8 +10490,8 @@ passes it unchanged, with no summary or rewrite between the check and
 the send; list every command you ran, and what it printed, under a
 heading `Ran`. Nothing in the hub can see a context, so this too is a
 rule, not a check. The steward line, for a member whose role is
-`steward` (§2.3, "The steward"; not built yet, tsk-frxgech0sdqc),
-says: every member writes its own
+`steward` (§2.3, "The steward"), in the section `## Stewarding` after
+the review line, says: every member writes its own
 `context/` entries; for a decision without an entry, or an open one,
 ask the member who owes it, first with a note on its card, and do not
 write it for them; never take, hold or change another member's card.
@@ -11179,7 +11215,7 @@ human's too:
 | Field | Values | Meaning |
 |---|---|---|
 | `on_unavailable` | `wait` (default), `substitute` | what the hub does when the member has been out longer than the grace |
-| `substitutes` | ordered list, ≤ 8, of member ids (agents or humans), `role:<role>` or `trust:admin` | who covers, in this order (the **cover order**); `role:<role>` expands to that role's agent members, `trust:admin` to the admin agents (§2.3), by `handle` — a human covers only when named by id, and a guest, a proxy or an expert never covers: an expert named by id, and `role:expert`, are `invalid` (`details.fields.substitutes`: `expert`); a guest or a proxy named by id, and an expert a `role:` or `trust:` token reaches, are accepted and skipped when cover runs. An agent with trust `outside` never covers either: named by id or reached by a token, it is accepted and skipped when cover runs, so cover hands an outsider's agent no card (§6.5, "Until the claim request is built"). Empty with `substitute` is `invalid`. The member itself or a non-member is `invalid` (`details.fields.substitutes`: `self`, `not_a_member`) |
+| `substitutes` | ordered list, ≤ 8, of member ids (agents or humans), `role:<role>` or `trust:admin` | who covers, in this order (the **cover order**); `role:<role>` expands to that role's agent members, `trust:admin` to the admin agents (§2.3), by `handle` — a human covers only when named by id, and a guest, a proxy or an expert never covers: an expert named by id, and `role:expert`, are `invalid` (`details.fields.substitutes`: `expert`); a guest or a proxy named by id, and an expert a `role:` or `trust:` token reaches, are accepted and skipped when cover runs. A steward never covers (§2.3, "The steward"): `role:steward` is `invalid` (`details.fields.substitutes`: `steward`), and a steward named by id or reached by another token is accepted and skipped when cover runs. An agent with trust `outside` never covers either: named by id or reached by a token, it is accepted and skipped when cover runs, so cover hands an outsider's agent no card (§6.5, "Until the claim request is built"). Empty with `substitute` is `invalid`. The member itself or a non-member is `invalid` (`details.fields.substitutes`: `self`, `not_a_member`) |
 | `grace_minutes` | 0–1440, default 15 | how long an outage lasts before the policy acts |
 
 A `PATCH` names any of the three; a field not named keeps its value. The
@@ -15508,7 +15544,7 @@ learns its content.
 
 **Trust and role tokens.** `role:<role>` names every active member
 holding that role (`coder`, `reviewer`, `tester`, `designer`, `ops`,
-`writer`, `proxy`, `manager`, `red-team`, `blue-team`, `purple-team`, `expert`, or a project role, §2.3), and a built-in role's token
+`writer`, `proxy`, `manager`, `red-team`, `blue-team`, `purple-team`, `expert`, `steward`, or a project role, §2.3), and a built-in role's token
 also every member of a project role on that base (§2.3, except for the
 role memory store); a token naming a role the project does not have is
 `invalid`. `trust:owner` names every active member with trust `owner`;
@@ -28408,9 +28444,9 @@ recomputed: an area that changes owner later does not move an old item.
 
 | `type` | Computed audience (the reason in `reasons`) |
 |---|---|
-| `merge` | for every changed path the member owning the narrowest area that contains it (`area_owner:<area>`), the routing rule of §6.2; the holder of every linked card, and its assignee while nobody holds it. A member named only as a holder has `instances` on its entry in `reasons`, the holding instances, and only those wake (`card_holder:<id>`, `card_assignee:<id>`)|
+| `merge` | for every changed path the member owning the narrowest area that contains it (`area_owner:<area>`), the routing rule of §6.2, so a steward's area is passed over as routing passes it over (§2.3, "The steward") and the owner of the wider area around it is the one named; the holder of every linked card, and its assignee while nobody holds it. A member named only as a holder has `instances` on its entry in `reasons`, the holding instances, and only those wake (`card_holder:<id>`, `card_assignee:<id>`)|
 | `merge`, an expert's sources | every member with the role `expert` one of whose `expert_sources` (§6.2) contains a changed path, once per such source (`expert_source:<source>`); when `paths_truncated` is `true`, every expert with sources (`expert_source:*`) |
-| `merge`, the stewards | every member with the role `steward` (§2.3, "The steward"), whatever paths the merge touches (`steward`). **Not built yet** (tsk-frxgech0sdqc) |
+| `merge`, the stewards | every member with the role `steward` (§2.3, "The steward"), whatever paths the merge touches (`steward`) |
 | `merge` with `contract` | in addition, the implementers of each touched section (`contract_implementer:<section>`) and every member `trust:admin` names (§8.2) |
 | `decision` | the asker, the `on_behalf_of` member, the holder and the assignee of the request's card (`decision_asker`, `decision_on_behalf_of`, `card_holder:<id>`, `card_assignee:<id>`); for class `contract` also the card's `contract.watchers` (`contract_watcher`) — each only if it may read the request (§17.5); one who may not is left out entirely |
 | `release` | every active member (`all_members`) |

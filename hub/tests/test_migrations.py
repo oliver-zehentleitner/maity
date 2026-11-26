@@ -1518,6 +1518,249 @@ def test_the_expert_migration_stops_on_a_project_role_named_expert(engine: Engin
     assert current_revision(engine) == head_revision(engine)
 
 
+def test_the_steward_migration_renames_a_project_role_named_steward(engine: Engine) -> None:
+    """20261125120000: the built-in role `steward` takes the name (§2.3 "The steward"); a
+    project role `steward` becomes `steward-custom` wherever the name is stored, with its
+    members' base unchanged, and another project's roles are left alone."""
+    from sqlalchemy import select, update
+
+    from maity_hub import tables as t
+    from tests import factory
+
+    rev = "20261125120000_steward_role"
+    migrate(engine)
+    human = factory.human(engine, "a")
+    helper = factory.human(engine, "b")
+    shop = factory.project(engine, "shop", owner_id=human)
+    docs = factory.project(engine, "docs", owner_id=human)
+    downgrade(engine, _before(engine, rev))
+    role = {"name": "steward", "base": "writer", "description": "", "guide": "", "guide_by": None}
+    legal = {**role, "name": "legal"}
+    with engine.begin() as conn:
+        conn.execute(
+            update(t.project)
+            .where(t.project.c.id == shop)
+            .values(
+                roles=[role, legal],
+                outside_roles=["coder", "steward"],
+                settings={
+                    "onboarding": {"check_in_with": "role:steward"},
+                    "ticker": {
+                        "enabled": True,
+                        "contract_implementers": {"2.3": ["role:steward", "role:coder"]},
+                    },
+                },
+            )
+        )
+        conn.execute(update(t.project).where(t.project.c.id == docs).values(roles=[legal]))
+        conn.execute(
+            insert_membership(shop, helper, factory.at("2026-11-20T10:00:00Z"), True).values(
+                trust="member",
+                role="steward",
+                role_base="writer",
+                availability_policy={"substitutes": ["role:steward", "role:legal"]},
+            )
+        )
+    migrate(engine)
+    assert current_revision(engine) == head_revision(engine)
+    with engine.connect() as conn:
+        stored = conn.execute(
+            select(t.project.c.roles, t.project.c.outside_roles, t.project.c.settings).where(
+                t.project.c.id == shop
+            )
+        ).one()
+        member = conn.execute(
+            select(
+                t.membership.c.role, t.membership.c.role_base, t.membership.c.availability_policy
+            ).where(t.membership.c.human_id == helper)
+        ).one()
+        other = conn.execute(select(t.project.c.roles).where(t.project.c.id == docs)).scalar_one()
+    assert [r["name"] for r in stored.roles] == ["steward-custom", "legal"]
+    assert stored.outside_roles == ["coder", "steward-custom"]
+    assert stored.settings["onboarding"]["check_in_with"] == "role:steward-custom"
+    # A stored `role:steward` would otherwise reach the built-in stewards (A2648 P2-3).
+    assert stored.settings["ticker"] == {
+        "enabled": True,
+        "contract_implementers": {"2.3": ["role:steward-custom", "role:coder"]},
+    }
+    assert (member.role, member.role_base) == ("steward-custom", "writer")
+    assert member.availability_policy["substitutes"] == ["role:steward-custom", "role:legal"]
+    assert other == [legal]
+
+
+def test_the_steward_migration_renames_what_an_open_request_waits_to_apply(engine: Engine) -> None:
+    """20261125120000 (A2648 delta P2): an open request's `proposal` is renamed, `role`,
+    `role_base` only where it holds the project role's name (never a built-in base), and the
+    `role:` token in `availability_policy.substitutes`, with a consent's shown canonical form
+    and hash; a closed request keeps what it applied."""
+    import hashlib
+    import json
+
+    from sqlalchemy import insert, select, update
+
+    from maity_hub import tables as t
+    from tests import factory
+
+    rev = "20261125120000_steward_role"
+    migrate(engine)
+    human = factory.human(engine, "a")
+    shop = factory.project(engine, "shop", owner_id=human)
+    downgrade(engine, _before(engine, rev))
+    role = {"name": "steward", "base": "writer", "description": "", "guide": "", "guide_by": None}
+    now = factory.at("2026-11-20T10:00:00Z")
+
+    def shown(value: object) -> tuple[str, str]:
+        text = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+        return text, hashlib.sha256(text.encode()).hexdigest()
+
+    policy = {"on_unavailable": "substitute", "substitutes": ["role:steward", "role:coder"]}
+    proposals = {
+        "req-consent": ("open", {
+            "kind": "foreign_agent", "target": 1,
+            "values": {"role": "steward", "role_base": "writer", "availability_policy": policy},
+            "canonical": {"role": shown("steward")[0], "availability_policy": shown(policy)[0]},
+            "sha256": {"role": shown("steward")[1], "availability_policy": shown(policy)[1]},
+        }),
+        "req-base": ("open", {"action": "patch",
+                              "values": {"role": "steward", "role_base": "steward"}}),
+        "req-builtin": ("open", {"action": "patch",
+                                 "values": {"role": "coder", "role_base": "coder"}}),
+        "req-closed": ("withdrawn", {"action": "patch",
+                                     "values": {"role": "steward", "role_base": "writer"}}),
+    }  # fmt: skip
+    with engine.begin() as conn:
+        conn.execute(update(t.project).where(t.project.c.id == shop).values(roles=[role]))
+        conn.execute(insert_membership(shop, human, now, True))
+        asker = conn.execute(
+            select(t.membership.c.id).where(t.membership.c.project_id == shop)
+        ).scalar_one()
+        for request_id, (status, proposal) in proposals.items():
+            conn.execute(
+                insert(t.request).values(
+                    id=request_id, project_id=shop, title="Change", options=[],
+                    priority="normal", to_kind="owner", asked_by=asker, while_open="wait",
+                    status=status, created_at=now, proposal=proposal, **{"class": "consent"},
+                )
+            )  # fmt: skip
+    migrate(engine)
+    with engine.connect() as conn:
+        stored = dict(conn.execute(select(t.request.c.id, t.request.c.proposal)).all())
+    consent = stored["req-consent"]
+    renamed_policy = {**policy, "substitutes": ["role:steward-custom", "role:coder"]}
+    assert consent["values"] == {
+        "role": "steward-custom",
+        "role_base": "writer",  # a built-in base, never renamed
+        "availability_policy": renamed_policy,
+    }
+    assert consent["canonical"] == {
+        "role": shown("steward-custom")[0],
+        "availability_policy": shown(renamed_policy)[0],
+    }
+    assert consent["sha256"] == {
+        "role": shown("steward-custom")[1],
+        "availability_policy": shown(renamed_policy)[1],
+    }
+    assert stored["req-base"]["values"] == {"role": "steward-custom", "role_base": "steward-custom"}
+    assert stored["req-builtin"] == proposals["req-builtin"][1]
+    assert stored["req-closed"] == proposals["req-closed"][1]  # history keeps what it applied
+
+
+def test_the_steward_migration_marks_a_consent_for_a_removed_project_role_steward(
+    engine: Engine,
+) -> None:
+    """20261125120000 (A2692 P2-1): the project role `steward` was removed while a consent
+    waited to apply it. The upgrade has nothing to rename, and without a mark the old name
+    would now mean the built-in steward. So every open proposal that names `steward` (as role,
+    as base, or as a `substitutes` token) is marked `role_gone`, and a go stays refused. A
+    proposal for another role, a closed request, and a project that still has the project role
+    (renamed instead) are left alone."""
+    from sqlalchemy import insert, select, update
+
+    from maity_hub import tables as t
+    from tests import factory
+
+    rev = "20261125120000_steward_role"
+    migrate(engine)
+    human = factory.human(engine, "a")
+    gone = factory.project(engine, "gone", owner_id=human)
+    kept = factory.project(engine, "kept", owner_id=human)
+    downgrade(engine, _before(engine, rev))
+    role = {"name": "steward", "base": "writer", "description": "", "guide": "", "guide_by": None}
+    now = factory.at("2026-11-20T10:00:00Z")
+    cover = {"on_unavailable": "substitute", "substitutes": ["role:steward"]}
+    requests: dict[str, tuple[str, str, dict[str, Any]]] = {
+        "req-role": (gone, "open", {"kind": "foreign_agent", "target": 1,
+                                    "values": {"role": "steward", "role_base": "writer"}}),
+        "req-cover": (gone, "open", {"action": "patch",
+                                     "values": {"availability_policy": cover}}),
+        "req-other": (gone, "open", {"action": "patch",
+                                     "values": {"role": "coder", "role_base": "coder"}}),
+        "req-closed": (gone, "withdrawn", {"action": "patch",
+                                           "values": {"role": "steward", "role_base": "writer"}}),
+        "req-kept": (kept, "open", {"action": "patch",
+                                    "values": {"role": "steward", "role_base": "writer"}}),
+    }  # fmt: skip
+    with engine.begin() as conn:
+        conn.execute(update(t.project).where(t.project.c.id == kept).values(roles=[role]))
+        askers = {}
+        for project in (gone, kept):
+            conn.execute(insert_membership(project, human, now, True))
+            askers[project] = conn.execute(
+                select(t.membership.c.id).where(t.membership.c.project_id == project)
+            ).scalar_one()
+        for request_id, (project, status, proposal) in requests.items():
+            conn.execute(
+                insert(t.request).values(
+                    id=request_id, project_id=project, title="Change", options=[],
+                    priority="normal", to_kind="owner", asked_by=askers[project],
+                    while_open="wait", status=status, created_at=now, proposal=proposal,
+                    **{"class": "consent"},
+                )
+            )  # fmt: skip
+    migrate(engine)
+    with engine.connect() as conn:
+        stored = dict(conn.execute(select(t.request.c.id, t.request.c.proposal)).all())
+    for marked in ("req-role", "req-cover"):
+        assert stored[marked] == {**requests[marked][2], "role_gone": "steward"}
+    for untouched in ("req-other", "req-closed"):
+        assert stored[untouched] == requests[untouched][2]
+    assert "role_gone" not in stored["req-kept"]
+    assert stored["req-kept"]["values"]["role"] == "steward-custom"
+
+
+def test_the_steward_migration_takes_the_next_free_name_and_logs_it(
+    engine: Engine, caplog: pytest.LogCaptureFixture
+) -> None:
+    """20261125120000: where `steward-custom` (and `-2`) are taken, the project role gets the
+    next free name, `steward-custom-3`, and the upgrade logs which project got which name; it
+    never stops (the lead's ruling, seq 221098)."""
+    import logging
+
+    from sqlalchemy import select, update
+
+    from maity_hub import tables as t
+    from tests import factory
+
+    migrate(engine)
+    human = factory.human(engine, "a")
+    shop = factory.project(engine, "shop", owner_id=human)
+    before = _before(engine, "20261125120000_steward_role")
+    downgrade(engine, before)
+    role = {"name": "steward", "base": "coder", "description": "", "guide": "", "guide_by": None}
+    taken = [{**role, "name": "steward-custom"}, {**role, "name": "steward-custom-2"}]
+    with engine.begin() as conn:
+        conn.execute(update(t.project).where(t.project.c.id == shop).values(roles=[role, *taken]))
+    with caplog.at_level(logging.WARNING, logger="maity_hub.migrations.steward_role"):
+        migrate(engine)
+    assert current_revision(engine) == head_revision(engine)
+    with engine.connect() as conn:
+        roles = conn.execute(select(t.project.c.roles).where(t.project.c.id == shop)).scalar_one()
+    assert [r["name"] for r in roles] == ["steward-custom-3", "steward-custom", "steward-custom-2"]
+    assert f"project {human}/shop: the project role `steward` is renamed `steward-custom-3`" in (
+        caplog.text
+    )
+
+
 def test_the_invite_by_handle_downgrade_revokes_what_an_older_hub_would_show_as_open(
     engine: Engine,
 ) -> None:

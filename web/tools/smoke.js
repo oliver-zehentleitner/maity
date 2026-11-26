@@ -3024,7 +3024,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   byId("join-agent").value = ""; byId("join-agent").dispatch("change");
   const srOwnRoles = srForm() ? byId("join-role").querySelectorAll("option").map((o) => o.getAttribute("value") + ":" + text(o)) : [];
   if (srForm()) { byId("join-role").value = "popelwerfer"; byId("join-role").dispatch("change"); }
-  expect(srOwnRoles.length === 13 && srOwnRoles.slice(-2).join("|") === "popelwerfer:popelwerfer (permissions of Coder)|deployer:deployer (permissions of Ops)"
+  // The steward is the join form's too (§2.3 "The steward"), after the expert, hidden under memory provider none.
+  expect(srOwnRoles.length === 14 && srOwnRoles.slice(-2).join("|") === "popelwerfer:popelwerfer (permissions of Coder)|deployer:deployer (permissions of Ops)"
+    && srOwnRoles.indexOf("steward:Steward") === srOwnRoles.indexOf("expert:Expert") + 1
     && text(byId("join-role-help")) === "throws popels",
     "placements: a new profile's role offers the project's own roles after the built-in ones, with their base and description " + JSON.stringify(srOwnRoles));
   // The save check holds only with the option there: the DOM shim takes any value (A1248 at #1948).
@@ -3755,11 +3757,16 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "trust: a proxy never governs; an admin reviewer does; a guest reviewer reviews nothing");
   // Every role of §2.3, once, with its label and help; a security team holds the scopes of its base.
   const rlT = win.Maity.trust;
-  expect(rlT.ROLES.join() === "coder,reviewer,tester,designer,writer,ops,proxy,manager,red-team,blue-team,purple-team,expert"
+  expect(rlT.ROLES.join() === "coder,reviewer,tester,designer,writer,ops,proxy,manager,red-team,blue-team,purple-team,expert,steward"
     && rlT.roleLabel("red-team") === "Red team" && rlT.roleLabel("manager") === "Manager" && rlT.ROLES.every((r) => rlT.roleHelp(r).length > 10)
-    && rlT.MEMBER_ROLES.join() === "coder,reviewer,tester,designer,writer,manager,red-team,blue-team,purple-team,expert"
-    && !rlT.NEEDS_ROLES.includes("expert") && rlT.tokenWords("role:expert") === "every expert",
+    && rlT.MEMBER_ROLES.join() === "coder,reviewer,tester,designer,writer,manager,red-team,blue-team,purple-team,expert,steward"
+    && !rlT.NEEDS_ROLES.includes("expert") && rlT.tokenWords("role:expert") === "every expert"
+    && !rlT.NEEDS_ROLES.includes("steward") && rlT.tokenWords("role:steward") === "every steward" && rlT.roleLabel("steward") === "Steward",
     "roles: the dashboard's one list holds every role of §2.3 with a label and a help text; a member's own agent gets all but ops and proxy");
+  // The steward (§2.3 "The steward"): no role picker offers it where the memory provider is none.
+  expect(rlT.offered({ project: { memory: { provider: "none" } } }, rlT.ROLES).join() === rlT.ROLES.filter((r) => r !== "steward").join()
+    && rlT.offered({ project: { memory: { provider: "keep-the-why" } } }, rlT.ROLES).includes("steward"),
+    "roles: the steward is offered only where the project has a memory provider");
   expect(rlT.tests({ trust: "member", role: "red-team" }) && !rlT.reviews({ trust: "member", role: "red-team" })
     && rlT.reviews({ trust: "member", role: "purple-team" }) && rlT.releases({ trust: "member", role: "purple-team" })
     && !rlT.tests({ trust: "member", role: "blue-team" }) && !rlT.reviews({ trust: "member", role: "blue-team" }),
@@ -5093,7 +5100,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(byoButton() && !byoButton().disabled && /^\d+ of 10 agents of yours$/.test(text(byoNote())), "own agents: below the limit, Add my agent is on");
   await joinAny(); await tick();
   expect(byId("join-trust") && byId("join-trust").querySelectorAll("option").map((o) => o.getAttribute("value")).join() === "member,guest"
-    && byId("join-role").querySelectorAll("option").map((o) => o.getAttribute("value")).join() === "coder,reviewer,tester,designer,writer,manager,red-team,blue-team,purple-team,expert"
+    && byId("join-role").querySelectorAll("option").map((o) => o.getAttribute("value")).join() === "coder,reviewer,tester,designer,writer,manager,red-team,blue-team,purple-team,expert,steward"
     && byId("join-reports") && byId("join-reports").querySelectorAll("option").map((o) => o.getAttribute("value")).join() === "hum-maintainer"
     && byId("join-reports").value === "hum-maintainer" && !byId("join-areas") && text(main.querySelector(".join-panel")).includes("Join my agent"),
     "own agents: the panel offers only member or guest, every role but ops and proxy, reports to oneself or one's own managers (§3.1), no areas");
@@ -5106,7 +5113,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/agents"); for (let k = 0; k < 6; k++) await tick(); await openAgentCards();
   await joinAny(); for (let k = 0; k < 4; k++) await tick();
   const byoOwnRoles = byId("join-role") ? byId("join-role").querySelectorAll("option").map((o) => o.getAttribute("value")).join() : null;
-  expect(byoOwnRoles === "coder,reviewer,tester,designer,writer,manager,red-team,blue-team,purple-team,expert,popelwerfer",
+  expect(byoOwnRoles === "coder,reviewer,tester,designer,writer,manager,red-team,blue-team,purple-team,expert,steward,popelwerfer",
     "own agents: the project's own roles follow the built-in ones, one on ops not " + byoOwnRoles);
   win.Maity.api.get = byoRolesGet;
   // One's own agent with the role manager is offered as its boss; one on a project role based on
@@ -15511,7 +15518,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && JSON.stringify(ivItems()) === JSON.stringify(["inv-0003:open", "inv-0004:voided", "inv-0002:used", "inv-0001:revoked"])
     && !text(ivBox()).includes("#/invite/"), "invite: Members offers inviting, every trust for an owner; the list with each state, never a link");
   const ivRoles = byId("invite-role").querySelectorAll("option");
-  expect(ivRoles.map((o) => o.getAttribute("value")).join() === "coder,reviewer,tester,designer,writer,ops,manager,red-team,blue-team,purple-team,expert"
+  // The steward is offered here, where the project's memory provider is Keep the Why (§2.3 "The steward").
+  expect(ivRoles.map((o) => o.getAttribute("value")).join() === "coder,reviewer,tester,designer,writer,ops,manager,red-team,blue-team,purple-team,expert,steward"
     && ivRoles.find((o) => o.getAttribute("value") === "purple-team").textContent === "Purple team"
     && text(byId("invite-role-help")) === win.Maity.trust.roleHelp("coder") && byId("invite-role").getAttribute("aria-describedby") === "invite-role-help",
     "invite: every role but proxy (trust member), by its label, the chosen role's help under the picker");
@@ -19513,6 +19521,17 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     const notExpert = exParts({ id: "hum-owner", kind: "human" }, true).expertPart(Object.assign({}, exM, { role: "coder" }), "/x");
     expect(stranger === null && owner && admin && notExpert === null,
       "expert: the form is offered to the agent's owner and to members:admin, not to another member, and only on an expert");
+    // A human expert or steward (an invitation gives the role, §3.4): members:admin only (A2692 P2-3).
+    const humanSteward = { id: "hum-s", kind: "human", role: "steward", expert_for: null, expert_sources: [] };
+    const humanExpert = Object.assign({}, humanSteward, { id: "hum-e", role: "expert" });
+    const hsAdmin = exParts({ id: "hum-other", kind: "human" }, true).expertPart(humanSteward, "/x");
+    const heAdmin = exParts({ id: "hum-other", kind: "human" }, true).expertPart(humanExpert, "/x");
+    const hsPlain = exParts({ id: "hum-other", kind: "human" }, false).expertPart(humanSteward, "/x");
+    const hsSelf = exParts({ id: "hum-s", kind: "human" }, false).expertPart(humanSteward, "/x");
+    const hsCoder = exParts({ id: "hum-other", kind: "human" }, true).expertPart(Object.assign({}, humanSteward, { role: "coder" }), "/x");
+    expect(hsAdmin && heAdmin && hsPlain === null && hsSelf === null && hsCoder === null
+      && text(hsAdmin).includes("Expert for") && hsAdmin.querySelectorAll("input").find((i) => i.getAttribute("id") === "member-expert-sources-hum-s").value === "context/",
+      "expert: a human steward's or expert's fields are offered to members:admin only, a steward's prefilled with context/");
   }
   await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/team"); for (let k = 0; k < 6; k++) await tick();
   orManage("Agent A").click(); for (let k = 0; k < 4; k++) await tick();
@@ -19569,6 +19588,26 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.get = orGet; win.Maity.api.patch = orPatch; win.Maity.api.getAll = orAll;
   await orPatch("/projects/maintainer/maity/members/agt-b", { reports_to: "agt-a" });
   await go("#/maintainer/maity/inbox");
+  // A human steward's row, through Manage on Members as a human admin with members:admin
+  // (A2733 P3): its Expert for and Sources are reachable there, not only from expertPart.
+  {
+    const hsMember = { id: "hum-stew", kind: "human", handle: "stew", display_name: "Stew Ward", trust: "member", role: "steward", reports_to: null,
+      areas: [], capabilities: [], expert_for: null, expert_sources: [], last_seen_at: "2026-11-01T09:00:00Z", presence: "offline", paused: null, removed_at: null, joined_at: "2026-11-01T09:00:00Z", placements: [] };
+    const hsWith = (r) => Object.assign({}, r, { items: r.items.concat([hsMember]) });
+    win.Maity.api.getAll = (p) => (p.startsWith("/projects/maintainer/maity/members") ? orAll(p).then(hsWith) : orAll(p));
+    win.Maity.api.get = (p) => (p.startsWith("/projects/maintainer/maity/members") ? orGet(p).then((r) => (r && r.items ? hsWith(r) : r)) : orGet(p));
+    await go("#/maintainer/maity/team"); for (let k = 0; k < 6; k++) await tick();
+    const hsManage = main.querySelectorAll("button").find((b) => (b.getAttribute("aria-label") || "") === "Manage Stew Ward");
+    if (hsManage) hsManage.click();
+    for (let k = 0; k < 4; k++) await tick();
+    const hsRow = main.querySelectorAll("tr.member-manage").find((r) => r.getAttribute("id") === "member-manage-hum-stew");
+    const hsInput = (what) => (hsRow ? hsRow.querySelectorAll("input").find((i) => i.getAttribute("id") === "member-expert-" + what + "-hum-stew") : null);
+    expect(hsManage && hsRow && hsInput("for") && hsInput("sources")
+      && hsInput("sources").value === "context/" && text(hsRow).includes("Expert for"),
+      "expert: Manage on a human steward's row offers a human admin its Expert for and Sources, prefilled with context/");
+    win.Maity.api.get = orGet; win.Maity.api.getAll = orAll;
+    await go("#/maintainer/maity/inbox");
+  }
   // Lead routing and the direct/group boundary.
   const leadA = { id: "agt-lead-a", kind: "agent", trust: "admin", role: "coder", handle: "a", display_name: "Lead A", owner_id: "hum-other", presence: "online", availability: { state: "available" } };
   const leadB = { ...leadA, id: "agt-lead-b", handle: "b", display_name: "Lead B", owner_id: "hum-me" };

@@ -719,7 +719,8 @@ def member_views(
             "line_consent": bool(row.line_consent),
             "areas": row.areas,
             "capabilities": row.capabilities,
-            # An expert's fields (§2.3 "The expert", §6.2): null and [] for everyone else.
+            # An expert's and a steward's fields, a human's as an agent's (§2.3 "The expert",
+            # "The steward", §6.2): null and [] for every other role.
             "expert_for": row.expert_for,
             "expert_sources": row.expert_sources or [],
         }

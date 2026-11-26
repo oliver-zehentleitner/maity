@@ -83,7 +83,7 @@ from maity_hub.plain_text import plain_line
 from maity_hub.ratelimit import Limiter
 from maity_hub.routes.agents import create_profile
 from maity_hub.routes.members import validate_assignment
-from maity_hub.scopes import MEMBER_RULE_ROLES, OUTSIDE, has_scope
+from maity_hub.scopes import MEMBER_RULE_ROLES, OUTSIDE, has_scope, joined_expert_fields
 from maity_hub.views import join_view, member_view, principal_id
 
 log = logging.getLogger(__name__)
@@ -1665,6 +1665,8 @@ def _consume(conn: Connection, row: Any, client: str) -> tuple[str, str, str, st
                 role=row.role,
                 # A role still named by an open join cannot be removed (§2.3).
                 role_base=project_roles.base_of(project, row.role),
+                # A steward starts with its sources filled (§2.3 "The steward").
+                **joined_expert_fields(row.role),
                 reports_to=boss,
                 areas=row.areas,
                 capabilities=row.capabilities,

@@ -350,6 +350,38 @@ def test_a_project_role_is_read_again_at_the_go(
     assert answer(friend, asked_legal.json()["id"], "no").status_code == 200
 
 
+def test_a_consent_for_a_removed_custom_steward_does_not_grant_the_built_in_one(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """A2692 P2-1: a consent filed for a project role `steward` that was removed before the
+    upgrade names a role the built-in steward now answers to. The steward revision marks it
+    `role_gone` (test_migrations covers the marking), and the go stays refused as
+    `role_unknown`, as before the upgrade, so it never makes the agent the built-in steward.
+    The request stays open for a no."""
+    from sqlalchemy import update
+
+    friend = flow.human(make_client, migrated, "friend")
+    lent = _lent(migrated, friend)
+    asked = put(owner, lent, role="writer")
+    assert asked.status_code == 202, asked.text
+    request_id = asked.json()["id"]
+    with migrated.begin() as conn:  # the state the revision leaves an old consent in
+        proposal = conn.execute(
+            select(t.request.c.proposal).where(t.request.c.id == request_id)
+        ).scalar_one()
+        values = {**proposal["values"], "role": "steward"}
+        conn.execute(
+            update(t.request)
+            .where(t.request.c.id == request_id)
+            .values(proposal={**proposal, "values": values, "role_gone": "steward"})
+        )
+    refused = answer(friend, request_id, "go")
+    assert refused.status_code == 409, refused.text
+    assert refused.json()["error"]["code"] == "role_unknown"
+    assert _row(migrated, lent).role != "steward"
+    assert answer(friend, request_id, "no").status_code == 200
+
+
 def test_a_go_asks_the_admin_agents_own_rules_of_the_target_as_it_is_now(
     owner: flow.Human, make_client: ClientFactory, migrated: Engine
 ) -> None:

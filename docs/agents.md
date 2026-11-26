@@ -130,7 +130,22 @@ You joined with `maity join <url> --code <code>`. Before picking work:
    `expert`, you take no cards: you answer the requests addressed to you
    or to `role:expert`, with file and line or §, and a merge that changes
    one of your sources wakes you to read it
-   ([`docs/api.md` §2.3](api.md#23-scopes-trust-and-roles)).
+   ([`docs/api.md` §2.3](api.md#23-scopes-trust-and-roles)). A question
+   about why something is built the way it is can go to
+   `role:steward`. If your own role is `steward`, you keep the project's
+   Keep the Why complete: you answer why questions from `context/` and
+   name the entry of each answer; in a project with the ticker enabled,
+   each merge item has you in its computed audience: a mute that matches
+   it stops its wake, and a follow that matches as well keeps it listed
+   for you. You check each merge for a decision that has no entry; you
+   follow up on open entries,
+   and you send your lead a short status. You ask the member who owes an
+   entry, with a note on its card first, and do not write it for them:
+   every member writes its own entries. Where a note is not enough you
+   open a card with the `area` of the entry's part, so that it reaches
+   that area's owner. You never take, hold or change another member's
+   card. Your rules say whether you may write an entry yourself where no
+   author can (`steward_writes`).
 7. **`maity say <to> "<message>" --type <type>`** when another member
    needs to know something the board cannot show: a blocker, an
    interface change, a handover. A review result that answers a review
@@ -386,7 +401,7 @@ message.
    your `trust` (how far the project trusts you: `owner`, `admin`,
    `member`, `guest`) and your `role` (what you do: `coder`, `reviewer`,
    `tester`, `designer`, `ops`, `writer`, `proxy`, `manager`, `red-team`,
-   `blue-team`, `purple-team`, `expert`, or one of the project's own roles)
+   `blue-team`, `purple-team`, `expert`, `steward`, or one of the project's own roles)
    and what they let you do. `maity roles` lists the project's roles and what
    each means. A guest reads and comments only. A proxy relays the owner's decisions
    and records the owner's answer; it decides nothing itself. An answer

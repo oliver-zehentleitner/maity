@@ -739,6 +739,7 @@ window.Maity = window.Maity || {};
     "blue-team": () => M.t("settings.onboarding.role.blue_team"),
     "purple-team": () => M.t("settings.onboarding.role.purple_team"),
     "expert": () => M.t("settings.onboarding.role.expert"),
+    "steward": () => M.t("settings.onboarding.role.steward"),
   };
   function onboardingForm(ctx) {
     const current = ctx.project.settings.onboarding || { check_in_with: "coordinator" };
@@ -839,6 +840,7 @@ window.Maity = window.Maity || {};
     { tab: "work", when: (ctx) => ctx.canAdmin && !!M.projectSetup, build: (ctx, save) => memoryPanel(ctx, save, humanAdminOf(ctx)) },
     { tab: "work", when: humanAdminOf, build: (ctx, save) => keepTheWhyForm(ctx, save) },
     { tab: "work", when: humanAdminOf, build: (ctx, save) => keepTheWhyDefaultsForm(ctx, save) },
+    { tab: "work", when: humanAdminOf, build: (ctx, save) => stewardWritesForm(ctx, save) },
     // The jour fixe's series and their moderators (§20.1, §20.2) are kept at the top of the jour fixe
     // view (the maintainer, 2026-11-06); here only where to find them.
     { tab: "work", when: humanAdminOf, build: (ctx) => h("section", { class: "jf-series-moved", "aria-labelledby": "jfs-moved-title" },
@@ -1488,6 +1490,32 @@ window.Maity = window.Maity || {};
     h("label", { for: "ktw-defaults-select" }, M.t("settings.ktw_defaults.label")), select,
     h("label", { for: "ktw-defaults-reason" }, M.t("settings.ktw_defaults.reason")), reason,
     h("button", { type: "submit" }, M.t("settings.ktw_defaults.save")));
+  }
+
+  // How far the Keep the Why steward goes beyond asking the author (§6.1 `steward_writes`, §2.3
+  // "The steward"): with the other policy fields, under the provider keep-the-why only.
+  function stewardWritesForm(ctx, save) {
+    if ((ctx.project.memory || {}).provider === "none") return null;
+    const current = ctx.project.policy.steward_writes || "cards_only";
+    const select = h("select", { id: "steward-writes-select" },
+      [["cards_only", M.t("settings.steward_writes.cards_only")], ["self", M.t("settings.steward_writes.self")]]
+        .map(([v, l]) => h("option", { value: v, selected: v === current }, l)));
+    select.value = current;
+    const reason = h("input", { id: "steward-writes-reason", required: true, placeholder: M.t("settings.steward_writes.reason_placeholder") });
+    return h("form", {
+      class: "inline-form steward-writes-form",
+      onsubmit: (e) => {
+        e.preventDefault();
+        if (select.value === current) return;
+        if (!reason.value.trim()) { reason.focus(); return; }
+        save({ policy: { steward_writes: select.value }, reason: reason.value.trim() }, { saved: M.t("settings.steward_writes.saved"), notSaved: M.t("settings.steward_writes.not_saved") });
+      },
+    },
+    h("h2", { class: "panel-title" }, M.t("settings.steward_writes.title")),
+    h("p", { class: "hint" }, M.t("settings.steward_writes.hint")),
+    h("label", { for: "steward-writes-select" }, M.t("settings.steward_writes.label")), select,
+    h("label", { for: "steward-writes-reason" }, M.t("settings.steward_writes.reason")), reason,
+    h("button", { type: "submit" }, M.t("settings.steward_writes.save")));
   }
 
   function badgeForm(ctx, save) {

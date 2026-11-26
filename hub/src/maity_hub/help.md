@@ -691,7 +691,7 @@ the inbox.
   …/members/{id}` with `reports_to`, `areas`, `briefing`, `paused`, `trust`
   between `member` and `guest`, and `role` among the work roles (`coder`,
   `reviewer`, `tester`, `designer`, `writer`, `red-team`, `blue-team`,
-  `purple-team`, `expert`), `ops`, or any of the project's own roles; only a
+  `purple-team`, `expert`, `steward`), `ops`, or any of the project's own roles; only a
   human removes the role `manager` or lowers a `manager` to `guest`. A removal (`DELETE`), and
   a trust or role change or pause of a reviewer, a tester (a security team
   counts as the role it is built on) or the contract arbiter, answers
@@ -779,7 +779,7 @@ the inbox.
   …/credentials/{id}/revoke`. A human with trust `member` creates joins for
   agents of their own while `policy.member_agents` is `on`: trust `member` or
   `guest`, a work role (`coder`, `reviewer`, `tester`, `designer`, `writer`,
-  `red-team`, `blue-team`, `purple-team`, `expert`), `manager`, or a project
+  `red-team`, `blue-team`, `purple-team`, `expert`, `steward`), `manager`, or a project
   role built on one of them (not on `ops`),
   reporting to them or to a manager agent of theirs, no areas or capabilities, at most `policy.member_agents_max` agents
   (`forbidden` with `member_join_limit` and `details.field`, or

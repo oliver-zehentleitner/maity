@@ -105,6 +105,7 @@ WORDS: dict[str, Any] = {
     "role.ops": "Ops",
     "role.proxy": "Proxy",
     "role.expert": "Expert",
+    "role.steward": "Steward",
     "role.red_team": "Red team",
     "role.blue_team": "Blue team",
     "role.purple_team": "Purple team",
