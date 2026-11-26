@@ -1321,9 +1321,9 @@ def patch_task(
     slug: str, card_id: str, body: TaskPatch, request: Request, caller: AnyCaller
 ) -> JSONResponse:
     fg = reader_of(request)
-    given = body.model_fields_set
 
     def action(conn: Connection) -> idempotency.Outcome:
+        given = body.model_fields_set
         mine = membership(conn, caller, slug)
         # An arbiter without `tasks:write`, an expert, still moves its contract's state
         # (§2.3 "The expert", §6.8); every other edit needs the scope, checked first.
@@ -1387,6 +1387,15 @@ def patch_task(
             review_move and body.status == "done" and cards.two_signatures(mine.project)
         ):
             raise invalid({"approve": "not_applicable"})
+        if "parent" in given and access.reads_from_outside(mine):
+            from maity_hub import public_cards
+
+            if card.parent is None or not conn.scalar(
+                select(public_cards.outside_card(card.parent))
+            ):
+                if body.parent is not None:
+                    raise invalid({"parent": "no_visible_parent"})
+                given = given - {"parent"}
         _check_visible_edges(conn, mine, body)
         edge_patch = _edge_patch(conn, mine, card.id, body)
         values: dict[str, Any] = {}

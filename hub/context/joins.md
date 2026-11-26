@@ -781,3 +781,10 @@ cascade's refusal leaves ending an isolated membership to the project's admins, 
 - Keeping an isolated membership counted by remembering removed rows: every count of an
   owner's agents would have to read removal causes for good; refusing the cascade keeps the
   membership itself, and with it the count.
+
+On 2026-11-26 the owner decided that an outside writer editing a card whose
+parent reads as null can clear it as a no-op, and receives the same field
+error for every non-null replacement. A hidden parent and an absent parent
+have the same representation. Clearing a hidden parent would change a
+relationship the writer cannot see, and permitting a replacement only when
+the stored parent is absent would reveal which state the card is in.

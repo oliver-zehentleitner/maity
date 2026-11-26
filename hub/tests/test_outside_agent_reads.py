@@ -841,3 +841,23 @@ def test_outside_direct_recipients_follow_the_public_member_view(team: Team, sta
             assert sent.status_code == 400
             assert sent.json()["error"]["details"]["fields"] == {"to": "not_a_member"}
     assert team.agent.post(f"{P}/events", {**message, "to": team.agent.id}).status_code == 201
+
+
+def test_outside_parent_edits_follow_the_currently_visible_parent(team: Team) -> None:
+    for parent in (None, team.secret):
+        card = team.card("Child", parent=parent)
+        path = f"{P}/tasks/{card}"
+        assert team.owner.post(path + "/claim", {"holder": team.agent.id}).status_code == 200
+        for replacement in (team.open, team.held):
+            refused = team.agent.patch(path, {"parent": replacement})
+            assert refused.status_code == 400
+            assert refused.json()["error"]["details"]["fields"] == {"parent": "no_visible_parent"}
+        changed = team.agent.patch(path, {"parent": None, "title": "Edited"})
+        assert changed.status_code == 200
+        assert changed.json()["parent"] is None and changed.json()["title"] == "Edited"
+        assert team.owner.get(path).json()["parent"] == parent
+        assert team.owner.patch(path, {"parent": team.open}).status_code == 200
+        assert team.agent.patch(path, {"parent": None}).status_code == 200
+        assert team.owner.get(path).json()["parent"] is None
+    created = team.agent.post(f"{P}/tasks", {"title": "New child", "parent": team.open})
+    assert created.status_code == 201 and created.json()["parent"] == team.open

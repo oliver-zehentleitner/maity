@@ -9104,6 +9104,12 @@ Edges: `depends_on` and `ships_with` are arrays of task ids in the same
 project; `ships_with` is symmetric and the hub mirrors it on the other
 card. A cycle in `depends_on` is `invalid`.
 
+An outside writer editing a card whose current `parent` reads as `null`
+can clear the field as a no-op. Setting a non-null parent on that edit
+is `invalid` with `details.fields.parent: no_visible_parent`. This rule
+also applies when the card has no parent. The writer may create a card
+under a visible parent or edit the visible parent of an existing card.
+
 **Subtasks.** `parent` is `null` or the id of a card in the same
 project; the card is then a subtask of that card. The tree is two levels
 deep at most: a card that has a parent is not itself named as one
