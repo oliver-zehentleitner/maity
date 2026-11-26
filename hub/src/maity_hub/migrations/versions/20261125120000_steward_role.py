@@ -37,7 +37,7 @@ apart from the name the code before this revision reads.
 The chain is not fixed by this file: it follows whatever head `main` has when it lands.
 
 Revision ID: 20261125120000_steward_role
-Revises: 20261124170513_org_link_check
+Revises: 20261126090000_outside_claims
 Create Date: 2026-11-25
 """
 
@@ -52,7 +52,7 @@ from alembic import op
 from sqlalchemy.dialects import postgresql
 
 revision: str = "20261125120000_steward_role"
-down_revision: str | None = "20261124170513_org_link_check"
+down_revision: str | None = "20261126090000_outside_claims"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
