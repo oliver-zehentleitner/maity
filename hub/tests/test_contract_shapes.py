@@ -203,6 +203,7 @@ PENDING = {
     "/projects/{}/{}/tasks/{}/restricted",
     "/projects/{}/{}/ticker",
     "/projects/{}/{}/ticker/subscription",
+    "/public/explore",  # its keys are checked in test_public_read, with public pages on
     "/public/pages/{}",
     "/requests",
     "/requests/{}",
