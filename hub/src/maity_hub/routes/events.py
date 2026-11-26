@@ -712,11 +712,11 @@ def post_message(
             except ApiError:
                 raise invalid({"to": "not_a_member"}) from None
             if reads_from_outside(mine) and principal != me:
-                from maity_hub import public_project_views
+                from maity_hub import public_members
 
-                person = public_project_views.members(
-                    conn, mine.project.id, only=[addressee.id]
-                ).get(addressee.id)
+                person = public_members.members(conn, mine.project.id, only=[addressee.id]).get(
+                    addressee.id
+                )
                 if person is None or not person.shown:
                     raise invalid({"to": "not_a_member"})
             if addressee.isolated_since is not None:
