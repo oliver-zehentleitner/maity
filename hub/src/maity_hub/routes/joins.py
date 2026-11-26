@@ -14,6 +14,7 @@ import logging
 import re
 import urllib.parse
 from datetime import timedelta
+from functools import partial
 from importlib.resources import files
 from pathlib import Path
 from types import SimpleNamespace
@@ -23,7 +24,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, Response
 from markdown_it import MarkdownIt
 from pydantic import Field
-from sqlalchemy import Connection, insert, select, update
+from sqlalchemy import Connection, and_, func, insert, not_, select, update
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from starlette.concurrency import run_in_threadpool
 
@@ -94,6 +95,18 @@ WRONG_CODES_BEFORE_BURN = 3
 # What a member's own agent may hold (§3.1 "Bringing your own agent"): below governance.
 MEMBER_RULE_TRUSTS = ("member", "guest")
 EXCHANGE_BY_ADDRESS = Limiter(10, 60, name="routes.joins.EXCHANGE_BY_ADDRESS")
+# An outsider's joins (§3.1, "An outsider's agent"): per human across every project, and the
+# first joins per human in one project (keyed `<project id>:<human id>`).
+OUTSIDER_JOINS_HOUR = Limiter(10, 3600, name="routes.joins.OUTSIDER_JOINS_HOUR")
+OUTSIDER_JOINS_DAY = Limiter(30, 86400, name="routes.joins.OUTSIDER_JOINS_DAY", exact=True)
+OUTSIDER_FIRST_JOINS_DAY = Limiter(5, 86400, name="routes.joins.OUTSIDER_FIRST_JOINS_DAY")
+# An outsider's open joins in one project: `member_agents_max` in effect plus this many, and at
+# most `OUTSIDER_OPEN_JOINS_PER_AGENT` for any one agent, an instance's and a replacement's
+# included (§3.1).
+OUTSIDER_OPEN_JOINS_EXTRA = 2
+OUTSIDER_OPEN_JOINS_PER_AGENT = 2
+# The joins an outsider's `GET …/joins` lists besides the open ones, the newest first (§3.1).
+OUTSIDER_JOINS_LISTED = 50
 _TEMPLATE_PLACEHOLDER = re.compile(r"\{\{(\w+)\}\}")
 
 
@@ -298,8 +311,12 @@ def _outsider_join(
     of "Bringing your own agent" with trust `outside`, a role `outside_roles` gives, no boss,
     areas or capabilities, and `member_agents_max`, under the project's lock. A join for an
     agent that is already a member adds an instance to a membership with trust `outside`
-    only. Re-checked at the exchange (`outsiders.still_holds`)."""
+    only. Re-checked at the exchange (`outsiders.still_holds`). The outsider's joins are
+    limited per hour and per day, first joins per project per day (`rate_limited`), and the
+    open ones per project and per agent (`_refuse_open_joins`), whatever the join adds."""
     second_factor.require_step_up(conn, settings, caller)  # mints a credential (§2.8.4)
+    human = outsider.principal_id
+    _refuse_rate(OUTSIDER_JOINS_HOUR.blocked(human), OUTSIDER_JOINS_DAY.blocked(human))
     agent_id = _agent_for_join(
         conn,
         body.agent,
@@ -308,10 +325,8 @@ def _outsider_join(
         limits.of(conn, settings, "max_agents_per_human"),
     )
     allowed_projects.refuse(conn, agent_id, outsider.project)  # §6.3
-    existing = _active_member(
-        conn, SimpleNamespace(project_id=outsider.project.id, agent_id=agent_id)
-    )
     project = lock_project(conn, outsider.project.id)  # project roles and the count (§3.1)
+    existing = _active_member(conn, SimpleNamespace(project_id=project.id, agent_id=agent_id))
     if not outsiders.joins_open(conn, project):  # again, as read under the lock
         raise not_found()
     values = _outside_values(conn, project, body, outsider.principal_id, existing)
@@ -320,8 +335,21 @@ def _outsider_join(
     _check_takes_over(conn, body, project.id, agent_id, existing)
     _check_instance(conn, body, existing, outsider.principal_id)
     handed = _check_handover(conn, body.handover, project.id, outsider=True)
+    arrival = f"{project.id}:{human}"
+    if existing is None:
+        _refuse_rate(OUTSIDER_FIRST_JOINS_DAY.blocked(arrival))
+    # Also for an agent that holds an open join or a membership already, and for a new
+    # instance's join and a replacement's: `_require_slot` lets those through.
+    _refuse_open_joins(conn, project, human, agent_id)
     if existing is None:
         _require_slot(conn, project, outsider.principal_id, agent_id)
+    reservations = [(OUTSIDER_JOINS_HOUR, human), (OUTSIDER_JOINS_DAY, human)]
+    if existing is None:
+        reservations.append((OUTSIDER_FIRST_JOINS_DAY, arrival))
+    for limiter, key in reservations:
+        wait, mark = limiter.place(key)
+        _refuse_rate(wait)
+        events.on_rollback(conn, partial(limiter.release, key, mark))
     return _issue(
         conn,
         project,
@@ -369,6 +397,67 @@ def _outside_values(
     # The owner is no member, so the agent reports to nobody here (§6.2); the caller named as
     # the boss is the same as no boss.
     return {"trust": OUTSIDE, "role": role, "reports_to": None, "areas": [], "capabilities": []}
+
+
+def _refuse_rate(*waits: int) -> None:
+    """`rate_limited` with `Retry-After` the longest of the waits, when any limiter is full."""
+    wait = max(waits)
+    if wait:
+        raise rate_limited(wait)
+
+
+def _open_joins() -> tuple[Any, ...]:
+    """The joins still to be used: neither used, burned, revoked nor expired."""
+    j = t.join_link.c
+    return (
+        j.used_at.is_(None),
+        j.burned_at.is_(None),
+        j.revoked_at.is_(None),
+        j.expires_at > clock.now(),
+    )
+
+
+def _refuse_open_joins(conn: Connection, project: Any, human_id: str, agent_id: str) -> None:
+    """An outsider's open joins in the project stay within `member_agents_max` in effect plus
+    `OUTSIDER_OPEN_JOINS_EXTRA`, and those for one agent within
+    `OUTSIDER_OPEN_JOINS_PER_AGENT`, every kind of join counted (§3.1): `forbidden` with
+    `details.reason: open_joins_max` and the quota details of §6.31 without `ceiling` and
+    `raise`, scoped to the outsider (`member`) or to the agent (`agent`). Read under the
+    project's lock the caller took."""
+    j = t.join_link.c
+    count = select(func.count()).select_from(t.join_link).where(j.project_id == project.id)
+    held = conn.execute(count.where(j.created_by == human_id, *_open_joins())).scalar_one()
+    member_limit = member_agents_limit(conn, project)
+    most = member_limit.limit + OUTSIDER_OPEN_JOINS_EXTRA
+    if held >= most:
+        raise _open_joins_max(
+            most, held, member_limit.source, {"scope": "member", "member": human_id}
+        )
+    for_agent = conn.execute(count.where(j.agent_id == agent_id, *_open_joins())).scalar_one()
+    if for_agent >= OUTSIDER_OPEN_JOINS_PER_AGENT:
+        raise _open_joins_max(
+            OUTSIDER_OPEN_JOINS_PER_AGENT,
+            for_agent,
+            "default",
+            {"scope": "agent", "agent": agent_id},
+        )
+
+
+def _open_joins_max(most: int, count: int, source: str, scope: dict[str, str]) -> ApiError:
+    return ApiError(
+        403,
+        "forbidden",
+        "you hold as many open joins here as an outsider may",
+        {
+            "reason": "open_joins_max",
+            "name": "open_joins_max",
+            "limit": most,
+            "count": count,
+            "max": most,
+            **scope,
+            "source": source,
+        },
+    )
 
 
 def _owns(conn: Connection, agent_id: str, owner_id: str) -> bool:
@@ -980,7 +1069,17 @@ def list_joins(slug: str, request: Request, caller: HumanCaller) -> JSONResponse
             if not isinstance(mine, outsiders.Outsider):  # an outsider's own, as a member's
                 _require_own_joins(mine)
             query = query.where(t.join_link.c.created_by == mine.principal_id)
-        rows = conn.execute(query.order_by(t.join_link.c.created_at.desc())).all()
+        newest = query.order_by(t.join_link.c.created_at.desc(), t.join_link.c.id.desc())
+        if isinstance(mine, outsiders.Outsider):
+            # An outsider's own: every open one and the newest others, a bound, not a page
+            # (§3.1); its open joins are few (`_refuse_open_joins`).
+            still = conn.execute(newest.where(*_open_joins())).all()
+            others = conn.execute(
+                newest.where(not_(and_(*_open_joins()))).limit(OUTSIDER_JOINS_LISTED)
+            ).all()
+            rows = sorted([*still, *others], key=lambda r: (r.created_at, r.id), reverse=True)
+        else:
+            rows = list(conn.execute(newest).all())
         return JSONResponse({"items": [join_view(conn, r) for r in rows], "next_cursor": None})
 
 
@@ -1015,7 +1114,7 @@ def revoke_join(slug: str, join_id: str, request: Request, caller: HumanCaller) 
                 by=caller.principal_id,
                 # An outsider has no membership to act from: the event names no member, as
                 # for a revocation the hub carries out (§3.1); `by` still names the outsider.
-                actor_in=lambda _project_id: (Actor(None) if outsider else caller.actor(mine.id)),
+                actor_in=lambda _project_id: Actor(None) if outsider else caller.actor(mine.id),
             )
         return idempotency.Outcome(200, "join", join_id, load_join(conn, join_id))
 

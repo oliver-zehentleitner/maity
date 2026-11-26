@@ -13,13 +13,13 @@ from sqlalchemy import Connection, and_, or_, select
 
 from maity_hub import idempotency, paging, takeovers
 from maity_hub import tables as t
-from maity_hub.access import Membership, membership
+from maity_hub.access import Membership, membership, reads_from_outside
 from maity_hub.deps import AnyCaller, engine_of
 from maity_hub.errors import invalid, not_found
 from maity_hub.events import transaction
 from maity_hub.models import Strict, markdown
 from maity_hub.namespace import ProjectRoute
-from maity_hub.routes.tasks import _locked
+from maity_hub.routes.tasks import _locked, _project_card, of_read_card
 
 router = APIRouter(route_class=ProjectRoute)
 
@@ -52,17 +52,29 @@ def _load(conn: Connection, takeover_id: str, request: Request | None = None) ->
     return takeovers.view(conn, takeovers.load(conn, takeover_id))
 
 
-idempotency.register("takeover", _load, idempotency.in_project(idempotency.column_of(t.takeover)))
+def _visible_takeover(conn: Connection, mine: Membership, takeover_id: str) -> Any:
+    query = select(t.takeover).where(
+        t.takeover.c.id == takeover_id, t.takeover.c.project_id == mine.project.id
+    )
+    return conn.execute(of_read_card(query, mine, t.takeover.c.task_id)).first()
+
+
+def _may_replay(conn: Connection, mine: Membership, takeover_id: str) -> bool:
+    if not reads_from_outside(mine):
+        return True
+    # Keep the read check current through the subsequent idempotency loader.
+    return _visible_takeover(conn, _locked(conn, mine), takeover_id) is not None
+
+
+idempotency.register(
+    "takeover", _load, idempotency.in_project(idempotency.column_of(t.takeover), _may_replay)
+)
 
 
 def _takeover(conn: Connection, mine: Membership, takeover_id: str) -> Any:
-    """The takeover in the caller's project, after time has moved it on."""
+    """The visible takeover in the caller's project, after time has moved it on."""
     takeovers.settle(conn, mine.project.id)
-    row = conn.execute(
-        select(t.takeover).where(
-            t.takeover.c.id == takeover_id, t.takeover.c.project_id == mine.project.id
-        )
-    ).first()
+    row = _visible_takeover(conn, mine, takeover_id)
     if row is None:
         raise not_found()
     return row
@@ -82,11 +94,7 @@ def open_takeover(
         # Under the project lock `settle` took: the caller's own row again, as a role change
         # to expert may have committed since (§2.3 "The expert"; `to` omitted means itself).
         mine = _locked(conn, mine)
-        card = conn.execute(
-            select(t.card).where(t.card.c.id == card_id, t.card.c.project_id == mine.project.id)
-        ).first()
-        if card is None:
-            raise not_found()
+        card = _project_card(conn, mine, card_id)
         # A card a human holds is never taken over, by anyone: said before the scope and
         # the lease, as on the card routes (§2.3, §6.19).
         takeovers.refuse_human_holder(conn, card)

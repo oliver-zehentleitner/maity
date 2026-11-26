@@ -64,7 +64,7 @@ from maity_hub.ids import new_id
 from maity_hub.models import SLUG_PATTERN, Name, Strict, markdown, title
 from maity_hub.namespace import ProjectRoute
 from maity_hub.onboarding import OnboardingIn
-from maity_hub.scopes import in_admin_team
+from maity_hub.scopes import OUTSIDE, in_admin_team
 from maity_hub.views import confirmed_by_of, member_view, principal_id, project_view
 
 router = APIRouter(route_class=ProjectRoute)
@@ -942,6 +942,7 @@ def list_projects(request: Request, caller: AnyCaller) -> JSONResponse:
     settings = settings_of(request)
     with engine_of(request).begin() as conn:
         agent = caller.kind == "agent"
+        outside_in: set[str] = set()
         isolated_in: set[str] = set()
         if agent:
             # Every project the instance is attached to, an isolated one included (§6.1,
@@ -950,6 +951,7 @@ def list_projects(request: Request, caller: AnyCaller) -> JSONResponse:
             query = select(t.project).where(
                 t.project.c.id.in_([r.project_id for r in attached_rows])
             )
+            outside_in = {r.project_id for r in attached_rows if r.trust == OUTSIDE}
             isolated_in = {r.project_id for r in attached_rows if r.isolated_since is not None}
         else:
             query = (
@@ -959,7 +961,7 @@ def list_projects(request: Request, caller: AnyCaller) -> JSONResponse:
             )
         rows = conn.execute(query.order_by(t.project.c.slug)).all()
         names = namespace.full_names(conn, [r.id for r in rows])
-        full = [r for r in rows if r.id not in isolated_in]
+        full = [r for r in rows if r.id not in isolated_in | outside_in]
         shown = images.views(conn, [r.id for r in full])
         aliases = namespace.aliases_by(conn, [r.id for r in full])
         confirmed = confirmed_by_of(conn, full)
@@ -977,6 +979,9 @@ def list_projects(request: Request, caller: AnyCaller) -> JSONResponse:
                         "isolated": True,
                     }
                 )
+                continue
+            if r.id in outside_in:
+                items.append({**_outside_view(conn, r, request), "isolated": False})
                 continue
             view = _serve_restricted(
                 conn,
@@ -1186,11 +1191,12 @@ def project_body(
 ) -> dict[str, Any]:
     """`GET /projects/{owner}/{slug}`'s answer (§6.1), also the `project` part of
     `GET /bootstrap` (§5.4), which passes no `mine`: the caller's membership is read here, so
-    an outsider reads no part of it (§2.3). An outsider's answer is `_outside_view`."""
+    an outsider reads no part of it (§2.3). An outsider's answer is `_outside_view`, and so is
+    an agent's with trust `outside` (`access.reads_from_outside`, §2.3 "Outside")."""
     if mine is None:
         mine = membership(conn, caller, slug)
     mine.require("project:read")
-    if isinstance(mine, access.OutsideReader):
+    if isinstance(mine, access.OutsideReader) or access.reads_from_outside(mine):
         return _outside_view(conn, mine.project, request)
     return _view(conn, mine.project, request, mine)
 

@@ -29,6 +29,7 @@ from maity_hub.chunks import chunks
 from maity_hub.config import Settings
 from maity_hub.cover import still_with as cover_still_with
 from maity_hub.cover import view as cover_view
+from maity_hub.errors import not_found
 from maity_hub.languages import known as known_language
 from maity_hub.seen import latest_call, presence_by_age
 
@@ -1110,9 +1111,13 @@ def _release(
 
 
 def task_view(conn: Connection, row: Any, fg: forge.Forge, viewer: Any = None) -> dict[str, Any]:
-    """The card as §6.4 shows it (the tasks slice adds its endpoints). Not for an outsider,
-    whose view may drop (`task_views`)."""
-    return task_views(conn, [row], fg, viewer)[0]
+    """The card as §6.4 shows it (the tasks slice adds its endpoints). For a reader from
+    outside (`access.reads_from_outside`), whose view may drop (`task_views`), a card it no
+    longer reads is `not_found`, as its read answers."""
+    views = task_views(conn, [row], fg, viewer)
+    if not views:
+        raise not_found()
+    return views[0]
 
 
 def task_views(
@@ -1120,15 +1125,15 @@ def task_views(
 ) -> list[dict[str, Any]]:
     """`task_view` for several cards: one query for the edges, one for the members. With
     `viewer` (the reader's membership) each card carries `watching`, the reader's own
-    watch or the one a dependency brings (§6.4), never anyone else's. A public project's
-    outsider (`access.OutsideReader`) reads no trace of a card it does not read (§2.3,
-    `public_cards.outside_views`)."""
+    watch or the one a dependency brings (§6.4), never anyone else's. A reader from outside
+    (`access.reads_from_outside`: a public project's outsider, an agent with trust `outside`)
+    reads no trace of a card it does not read (§2.3, `public_cards.outside_views`)."""
     if not rows:
         return []
     views = _task_views(conn, rows, fg)
     from maity_hub import access, public_cards  # they read views; imported here, not at the top
 
-    outside = isinstance(viewer, access.OutsideReader)
+    outside = access.reads_from_outside(viewer)
     if outside:
         # Decided on the rows its last statement returns: a view may drop (READ COMMITTED).
         views = public_cards.outside_views(conn, views)
@@ -1570,6 +1575,30 @@ def event_views(conn: Connection, rows: Sequence[Any], reader: Any = None) -> li
         found = held.get(f"{row.project_id}/{row.seq}") if row.kind == "message" else None
         if found is not None:  # only while a hold stands on the message (§16.8)
             view["moderation"] = found
+    from maity_hub import access, events, public_cards
+
+    if access.reads_from_outside(reader):
+        # Project the saved edges at read time, the same way as the card itself. A partial
+        # update keeps only fields present in that event; the event's stored body stays intact.
+        cards = [
+            {**view["payload"], "id": events.event_card(row), "_seq": row.seq}
+            for row, view in zip(rows, views, strict=True)
+            if row.kind in events.OUTSIDE_CARD_KINDS
+        ]
+        projected = {card["_seq"]: card for card in public_cards.outside_views(conn, cards)}
+        kept = []
+        for row, view in zip(rows, views, strict=True):
+            if row.kind in events.OUTSIDE_CARD_KINDS:
+                projected_card = projected.get(row.seq)
+                if projected_card is None:
+                    continue
+                payload = dict(view["payload"])
+                for key in (*public_cards.EDGE_FIELDS, "children", "release", "parent"):
+                    if key in payload:
+                        payload[key] = projected_card[key]
+                view["payload"] = payload
+            kept.append(view)
+        return kept
     return views
 
 

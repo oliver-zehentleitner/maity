@@ -135,10 +135,11 @@ def outside_views(conn: Connection, views: list[dict[str, Any]]) -> list[dict[st
     referenced: set[str] = set()
     for view in views:
         for name in EDGE_FIELDS:
-            referenced.update(view[name])
-        if view["parent"]:
+            if isinstance(view.get(name), list):
+                referenced.update(view[name])
+        if isinstance(view.get("parent"), str):
             referenced.add(view["parent"])
-        if view["release"]:
+        if isinstance(view.get("release"), dict) and not view["release"].get("redacted"):
             referenced |= _release_ids(view["release"])
     c = t.card.c
     seen = case((outside_clause(), 1), else_=0).label("seen")
@@ -148,7 +149,7 @@ def outside_views(conn: Connection, views: list[dict[str, Any]]) -> list[dict[st
         )
     ).all()
     kept = {row.id for row in rows if row.seen}
-    hidden = {row.id for row in rows if not row.seen and row.id in referenced}
+    hidden = referenced - kept
     children = {card: {"open": 0, "total": 0} for card in own}
     for row in rows:
         if row.seen and row.parent in children:
@@ -160,11 +161,13 @@ def outside_views(conn: Connection, views: list[dict[str, Any]]) -> list[dict[st
             continue
         view = dict(view)
         for name in EDGE_FIELDS:
-            view[name] = [card for card in view[name] if card not in hidden]
-        if view["parent"] in hidden:
+            if isinstance(view.get(name), list):
+                view[name] = [card for card in view[name] if card in kept]
+        if isinstance(view.get("parent"), str) and view["parent"] in hidden:
             view["parent"] = None
-        view["children"] = children[view["id"]]
-        if view["release"]:
+        if "children" in view:
+            view["children"] = children[view["id"]]
+        if isinstance(view.get("release"), dict) and not view["release"].get("redacted"):
             view["release"] = _release_without(view["release"], hidden)
         shaped.append(view)
     return shaped

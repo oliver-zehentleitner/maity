@@ -7,6 +7,7 @@ remove.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Any
 
 from fastapi import APIRouter, Query, Request
@@ -176,21 +177,21 @@ def observe_soon(request: Request, slug: str, response: JSONResponse) -> None:
         worker.links_added(project.id)
 
 
-def _reader(conn: Connection, project_id: str | None, request: Request) -> Membership | None:
-    """The caller's membership for a replay, which shows a redaction's reason only to whom
-    §8.5 gives it; none when the caller is no member (the replay's read check stops them
-    first)."""
-    slug = namespace.name_of(conn, project_id) if project_id else None
-    try:
-        return membership(conn, request.state.caller, slug) if slug else None
-    except ApiError:
-        return None
+def _reader(conn: Connection, card_id: str, request: Request) -> Membership:
+    """Resolve a replay against the card the caller can read now (§1.5, §2.3)."""
+    project_id = _card_project(conn, card_id)
+    if project_id is None:
+        raise not_found()
+    reader = membership(conn, request.state.caller, namespace.name_of(conn, project_id))
+    _project_card(conn, reader, card_id)
+    return reader
 
 
 def load_link(conn: Connection, link_id: str, request: Request) -> dict[str, Any]:
     """A replayed add: the link as it is, or once removed as its add entry holds it."""
     row = conn.execute(select(t.card_link).where(t.card_link.c.id == link_id)).first()
     if row is not None:
+        _reader(conn, row.card_id, request)
         return links.link_view(conn, row)
     entry = conn.execute(
         select(t.card_history).where(
@@ -199,12 +200,12 @@ def load_link(conn: Connection, link_id: str, request: Request) -> dict[str, Any
     ).first()
     if entry is None:
         raise not_found()
-    return history.link_shown(entry, _reader(conn, _card_project(conn, entry.card_id), request))
+    return history.link_shown(entry, _reader(conn, entry.card_id, request))
 
 
 def load_removed_link(conn: Connection, entry_id: str, request: Request) -> dict[str, Any]:
     row = conn.execute(select(t.card_history).where(t.card_history.c.id == entry_id)).one()
-    return history.link_shown(row, _reader(conn, _card_project(conn, row.card_id), request))
+    return history.link_shown(row, _reader(conn, row.card_id, request))
 
 
 def _card_project(conn: Connection, card_id: str | None) -> str | None:
@@ -351,22 +352,63 @@ def get_history(
         next_cursor = paging.cursor(page[-1].at, page[-1].id) if len(rows) > limit else None
         return JSONResponse(
             {
-                "items": shape_deleted(conn, [history.view(r, actors, mine) for r in page]),
+                "items": _history_views(conn, card.id, page, actors, mine),
                 "next_cursor": next_cursor,
             }
         )
 
 
+def _history_views(
+    conn: Connection,
+    card_id: str,
+    rows: Sequence[Any],
+    actors: dict[int, dict[str, Any]],
+    reader: Any,
+) -> list[dict[str, Any]]:
+    entries = [history.view(row, actors, reader) for row in rows]
+    if access.reads_from_outside(reader):
+        from maity_hub import public_cards
+
+        # Project both sides together using the card view's last visibility check. A
+        # redaction tombstone is already shaped by history.view for this reader.
+        parts = []
+        positions = []
+        for entry in entries:
+            if entry.get("redacted"):
+                continue
+            field = entry["field"]
+            for side in ("before", "after"):
+                value = entry[side]
+                if field == "created" and isinstance(value, dict):
+                    part = value
+                elif field in (*public_cards.EDGE_FIELDS, "parent"):
+                    part = {field: value}
+                else:
+                    continue
+                positions.append((entry, side, field))
+                parts.append({**part, "id": card_id})
+        projected = public_cards.outside_views(conn, parts)
+        if len(parts) != len(projected):
+            raise not_found()
+        for (entry, side, field), part in zip(positions, projected, strict=True):
+            if field == "created":
+                entry[side] = {key: part[key] for key in entry[side]}
+            else:
+                entry[side] = part[field]
+    return shape_deleted(conn, entries)
+
+
 def load_history(conn: Connection, entry_id: str, reader: Any = None) -> dict[str, Any]:
     row = conn.execute(select(t.card_history).where(t.card_history.c.id == entry_id)).one()
-    entry = history.view(row, history.members(conn, [row.actor_membership]), reader)
-    return dict(shape_deleted(conn, [entry])[0])
+    return _history_views(
+        conn, row.card_id, [row], history.members(conn, [row.actor_membership]), reader
+    )[0]
 
 
 def _load_history_for_caller(conn: Connection, entry_id: str, request: Request) -> dict[str, Any]:
     """A replay shows the entry as the caller sees it now (§8.5)."""
     row = conn.execute(select(t.card_history).where(t.card_history.c.id == entry_id)).one()
-    return load_history(conn, entry_id, _reader(conn, _card_project(conn, row.card_id), request))
+    return load_history(conn, entry_id, _reader(conn, row.card_id, request))
 
 
 idempotency.register("history", _load_history_for_caller, idempotency.in_project(_entry_project))
@@ -428,7 +470,7 @@ def _load_note_for_caller(conn: Connection, note_id: str, request: Request) -> d
     """A replay shows the note as the caller sees it: a redaction's reason only to whom
     §8.5 gives it."""
     row = conn.execute(select(t.card_note).where(t.card_note.c.id == note_id)).one()
-    return _note_view(conn, row, _reader(conn, _card_project(conn, row.card_id), request))
+    return _note_view(conn, row, _reader(conn, row.card_id, request))
 
 
 idempotency.register("note", _load_note_for_caller, idempotency.in_project(_note_project))
