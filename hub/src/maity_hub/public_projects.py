@@ -170,10 +170,13 @@ def team(
     neither named nor counted. Hidden members (a hold, an account not served) stay in
     `members` unnamed; `team` drops them. `who` is that read, when the caller has it already
     (`render_project`): `team` names exactly its shown members, even when a membership changed
-    since (a member removed, an agent isolated), so that the page stays one snapshot. The
-    handle order is the database's `ORDER BY handle`, as before `team` was built from
-    `members`: PostgreSQL compares by its locale, Python by code point, and the two disagree
-    on a hyphen (hub/context/public-pages.md)."""
+    since (a member removed, an agent isolated), so that who is named comes from one shared
+    membership selection. That is all the shared read fixes, not a snapshot of the whole page:
+    the profile order (`_in_handle_order`), the roles (`team_details`), the pictures, who is
+    online and the statistics are later reads, each at the time it runs. The handle order is
+    the database's `ORDER BY handle`, as before `team` was built from `members`: PostgreSQL
+    compares by its locale, Python by code point, and the two disagree on a hyphen
+    (hub/context/public-pages.md)."""
     from maity_hub import public_members
 
     if who is None:
@@ -190,8 +193,11 @@ def _in_handle_order(conn: Connection, persons: list[Any], *, human: bool) -> li
     changes. The order is read for these principals only, not for the project's memberships
     again: who is named is decided by `persons` alone, and a membership that changed since
     they were read can neither drop one nor fail the read. Every one of `persons` comes back
-    exactly once; one whose profile row is gone meanwhile has no handle to order by and
-    follows the others in the order given."""
+    exactly once, the persons of one principal together in their order in `persons`. Those
+    whose profile row is gone meanwhile have no handle to order by and follow the others,
+    grouped by principal: the principals in the order each first appears in `persons`, each
+    group's persons in their order there, not the whole of `persons` in its order (missing
+    principals A and B, `persons` A1, B1, A2: A1, A2, B1)."""
     if not persons:
         return []
     table = t.human if human else t.agent_profile
@@ -379,9 +385,10 @@ def render_project(conn: Connection, hub: Settings, project_id: str) -> list[pub
     )
     from maity_hub import public_members, public_snapshot
 
-    # The members are read once for the page: the Members figure, the pictures of everyone it
-    # names, who is online, and `team` (the people and agents it names) all come from this
-    # one read.
+    # The members are read once for the page: who the Members figure counts and who `team`
+    # names come from this one read, and the pictures and who is online take their members
+    # from it. Their own rows (avatars, presence, roles, profile order, statistics) are later
+    # reads, not one snapshot of the page.
     who = public_members.members(conn, project.id)
     pictures = public_members.shown_pictures(conn, who)
     humans, agents = team(conn, project.id, who)

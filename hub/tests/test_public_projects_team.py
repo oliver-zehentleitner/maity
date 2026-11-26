@@ -464,3 +464,22 @@ def test_in_handle_order_keeps_every_person_once_a_duplicate_and_a_profile_gone(
         ("maintainer", humans[0].id),
     ]
     assert agents == [bot]
+
+
+def test_in_handle_order_groups_missing_profiles_by_first_seen_principal(world: World) -> None:
+    """Persons whose profile row is gone follow the others grouped by principal: the
+    principals in the order each first appears, each group's persons in their order there,
+    not the input's person order (missing principals A and B, input A1, B1, A2: A1, A2, B1)."""
+    with world.migrated.connect() as conn:
+        who = public_members.members(conn, world.project_id)
+    anna = next(p for p in who.values() if p.human and p.handle == "anna")
+
+    def ghost(principal: str, pid: int) -> Any:
+        p = public_members.Person.__new__(public_members.Person)
+        p.__dict__.update(anna.__dict__, principal=principal, id=pid)
+        return p
+
+    a1, b1, a2 = ghost("gone-a", -1), ghost("gone-b", -2), ghost("gone-a", -3)
+    with world.migrated.connect() as conn:
+        ordered = public_projects._in_handle_order(conn, [a1, anna, b1, a2], human=True)
+    assert [p.id for p in ordered] == [anna.id, -1, -3, -2]
