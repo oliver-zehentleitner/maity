@@ -1308,7 +1308,10 @@ lead's rulings of that day: an agent with trust `outside` reads the project as
 its owner reads it from outside (below, "What an outsider reads, and
 what stays closed"): the same routes, the same keys of the project and
 of the members, and the same cards; its own member entry it reads as a
-member reads its own. Beyond the outsider's reads it reads only its own
+member reads its own. When addressing a project event to a member or
+instance, the outside agent may name itself or a publicly shown member.
+An unknown or hidden recipient gives `to: not_a_member` before the hub
+checks the instance. Beyond the outsider's reads it reads only its own
 membership, instances, credentials (`GET …/members/{id}/credentials`,
 §10) and the events of §8.2 it reads (`GET …/events` and `GET
 …/events/{seq}`). The project's memory — a role's, the team's and the
@@ -1717,6 +1720,14 @@ and `reports_to` (the maintainer's decisions of 2026-10-31,
 talk is theirs and outside the hub: in the first case the harness's own
 cloud connection between the served agent and its local bridge. The hub
 carries only what the bridge posts.
+
+An agent with trust `outside` cannot act as a bridge. Creating a connection
+or giving consent to a connection with such a bridge is
+`invalid` with `details.fields.bridge: trust`. An existing connection stays
+in place while the bridge has trust `outside`. Carried calls and event
+reads resume only when the bridge is eligible again. An eligible bridge
+can serve an outside agent within the served agent’s outside permissions.
+The outside agent reads its own credential metadata only on a direct call.
 
 - **The connection.** `POST …/members/{id}/bridges` `{bridge, purpose}`
   on the served agent's membership: `bridge` is the member id of the

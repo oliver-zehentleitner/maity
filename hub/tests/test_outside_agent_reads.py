@@ -812,3 +812,32 @@ def test_takeover_card_read_policy_applies_to_lookups_and_replay(
             mine = access.membership(conn, caller, "maintainer/maity")
             assert (takeovers._visible_takeover(conn, mine, takeover_id) is not None) == visible
             assert takeovers._may_replay(conn, mine, takeover_id) == visible
+
+
+@pytest.mark.parametrize("state", ["isolated", "held", "suspended_owner"])
+def test_outside_direct_recipients_follow_the_public_member_view(team: Team, state: str) -> None:
+    from tests.test_public_lists_cost import _hold as hold_profile
+
+    if state == "held":
+        hold_profile(team.engine, team.owner.id, "profile", team.member.id)
+    else:
+        with team.engine.begin() as conn:
+            if state == "isolated":
+                conn.execute(
+                    update(t.membership)
+                    .where(t.membership.c.agent_id == team.member.id)
+                    .values(isolated_since=clock.now())
+                )
+            else:
+                conn.execute(
+                    update(t.human)
+                    .where(t.human.c.id == team.owner.id)
+                    .values(suspended_at=clock.now())
+                )
+    message = {"kind": "message", "type": "notice", "body": "Policy fixture"}
+    for recipient in (team.member.id, "agt-000000000000"):
+        for suffix in ("", "#aaaa"):
+            sent = team.agent.post(f"{P}/events", {**message, "to": recipient + suffix})
+            assert sent.status_code == 400
+            assert sent.json()["error"]["details"]["fields"] == {"to": "not_a_member"}
+    assert team.agent.post(f"{P}/events", {**message, "to": team.agent.id}).status_code == 201

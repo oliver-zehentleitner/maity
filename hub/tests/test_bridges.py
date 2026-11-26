@@ -131,6 +131,21 @@ def test_the_rules_refuse_what_is_no_bridge(owner: flow.Human, migrated: Engine)
     assert too_long.status_code == 400
 
 
+def test_outside_trust_precludes_connecting_and_final_consent(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    friend, served, bridge = _cross(owner, make_client, migrated)
+    pending = connect(owner, served, bridge)
+    assert pending.status_code == 202
+    with migrated.begin() as conn:
+        conn.execute(
+            update(t.membership).where(t.membership.c.agent_id == bridge).values(trust="outside")
+        )
+    assert _fields(answer(friend, pending.json()["id"], "go")) == {"bridge": "trust"}
+    assert _fields(connect(owner, served, bridge)) == {"bridge": "trust"}
+    assert _bridges(migrated) == []
+
+
 def test_the_purpose_is_one_plain_line(owner: flow.Human, migrated: Engine) -> None:
     """§2.3: no line break, tab or other control, no format character (bidi controls,
     zero-width), no line or paragraph separator, no private-use character; on a POST and on

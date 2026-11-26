@@ -523,6 +523,7 @@ def _carried_windows(conn: Connection, reader: Caller) -> list[dict[str, int]] |
             t.bridge.c.live.is_(True),
             t.membership.c.active.is_(True),
             t.membership.c.isolated_since.is_(None),
+            t.membership.c.trust.not_in(("guest", "outside")),
         )
     ).first()
     return None if found is None else list(found.isolation_windows or [])
@@ -710,6 +711,14 @@ def post_message(
                 addressee = member_row(conn, mine.project.id, principal)
             except ApiError:
                 raise invalid({"to": "not_a_member"}) from None
+            if reads_from_outside(mine) and principal != me:
+                from maity_hub import public_project_views
+
+                person = public_project_views.members(
+                    conn, mine.project.id, only=[addressee.id]
+                ).get(addressee.id)
+                if person is None or not person.shown:
+                    raise invalid({"to": "not_a_member"})
             if addressee.isolated_since is not None:
                 raise invalid({"to": "isolated"}, "the agent is isolated")
             # One instance of a team: its token wakes only it, the team reads it; a replaced
