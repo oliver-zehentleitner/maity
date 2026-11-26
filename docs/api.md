@@ -3335,7 +3335,8 @@ A human's handle follows the agent profiles' syntax
 and organisations, their aliases included (§6.24, §6.26), since
 mentions find a human by it and a project's owner is named by it (§6.25);
 compared as written, it is lower case by the syntax. It is never a
-reserved first segment (§16.11), nor a name the operator lists for the
+reserved first segment (§16.11), nor of five characters or fewer or a
+word kept for the product (§16.11), nor a name the operator lists for the
 instance token while it is no handle and no alias (§11.4): `invalid`,
 `details.fields.handle: "reserved"`. `display_name` is 1–64 characters of plain text (§1.7.1). A taken handle is the completion page's error "This handle is
 taken" — shown only to someone who proved the mailbox and the
@@ -13142,17 +13143,21 @@ placement will create a profile of the same owner with it (§15.5):
 `invalid`, `details.fields.handle: "taken"`. A human's or an
 organisation's handle is also never a reserved first segment of §16.11
 (`invalid`, `details.fields.handle: "reserved"`), since it is the first
-segment of its owner's address, nor a name the operator lists in
+segment of its owner's address, nor of five characters or fewer or a
+word kept for the product (§16.11, "Handles kept for the product"; the
+same answer; `maity-hub owner create` is held to the words, not to the
+length), nor a name the operator lists in
 `MAITY_FORGE_INSTANCE_NAMESPACES` while it is no handle and no alias (§11.4,
 the same answer; `maity-hub owner create` excepted there); agent profile handles are not addresses and are not
-checked against either.
+checked against any of these.
 The check holds for every call that gives a handle — registration
 (§2.7.4), `maity-hub owner create`, `POST /orgs` (§6.26), `POST /agents`, a join or a
 placement that creates a profile (§3.1, §15.5, `handle_taken` at the
 pickup, §15.9) — not only for a rename. The id's own current handle is
 a no-op: `200`, nothing changes, no event. One of the id's own aliases
 may be taken back, including a handle of the form `lt-` followed by
-digits (§16.11).
+digits, one of five characters or fewer and a word kept for the
+product (§16.11).
 
 **Aliases.** A rename appends the handle given up to the id's
 `aliases`; a handle taken back leaves the list. The list is in the
@@ -13446,7 +13451,11 @@ already keeps it. A handle of the form `lt-` followed by digits is
 reserved too, for the load-test accounts (`maity-hub loadtest seed`,
 §16.11). Whoever holds one already keeps it, and may take that alias
 back; `maity-hub migrate` does not name them, because the load-test seed
-accounts themselves hold such handles.
+accounts themselves hold such handles. A handle of five characters or
+fewer and the words §16.11 keeps for the product are reserved for a new
+human or organisation in the same way: whoever holds one keeps it, and
+`maity-hub migrate` names them and goes on (§16.11, "Handles kept for
+the product").
 
 **Why one release instead of `v2`.** §1.6 serves a breaking change as
 `v2` next to `v1`. This change is made before the launch, while every
@@ -27704,6 +27713,78 @@ by digits is reserved too, for the load-test accounts (`maity-hub
 loadtest seed`). Whoever holds one already keeps it, and may take that
 alias back (§6.24); `maity-hub migrate` does not name them, because the
 load-test seed accounts themselves hold such handles.
+
+**Handles kept for the product.** A new person or organisation may not
+take a handle of five characters or fewer, nor one of these words, so
+that `/<word>` stays free for pages of the product's own (`invalid`,
+`details.fields.handle: "reserved"`, wherever a reserved first segment is
+refused): a new handle has at least six characters. An agent's handle
+is no first segment and may be either. `maity-hub owner create` and
+`maity-hub quickstart`, the operator's commands, are held to the words
+but not to the length. The list:
+
+`about`, `account-recovery`, `accounts`, `administrator`,
+`administrators`, `admins`, `ads`, `affiliate`, `affiliates`, `agent`,
+`analytics`, `announcements`, `apps`, `archive`, `area`, `areas`,
+`attachment`, `attachments`, `auth`, `authorize`, `billing`, `blog`,
+`blogs`, `board`, `boards`, `bot`, `bots`, `brand`, `branding`,
+`briefing`, `briefings`, `business`, `callback`, `card`, `cards`,
+`career`, `careers`, `cart`, `changelog`, `chat`, `checkout`, `claim`,
+`cli`, `coder`, `coders`, `commit`, `community`, `compare`,
+`compliance`, `confirm`, `contact`, `contacts`, `context`, `contract`,
+`contribute`, `contribution`, `conversation`, `conversations`,
+`cookies`, `copyright`, `customer`, `customers`, `dashboard`,
+`default`, `demo`, `deploy`, `design`, `designer`, `dev`, `developer`,
+`developers`, `discord`, `discuss`, `discussions`, `doc`, `docs`,
+`documentation`, `domain`, `domains`, `donate`, `download`,
+`downloads`, `edit`, `email`, `enterprise`, `event`, `events`,
+`example`, `examples`, `expert`, `faq`, `faqs`, `feature`, `features`,
+`feed`, `feedback`, `file`, `files`, `fork`, `forks`, `forum`,
+`forums`, `gdpr`, `github`, `gitlab`, `guide`, `guides`, `help`,
+`home`, `hooks`, `hosting`, `info`, `instance`, `instances`,
+`integration`, `integrations`, `investors`, `invitation`,
+`invitations`, `issue`, `issues`, `job`, `jobs`, `joins`, `jour-fixe`,
+`jourfixe`, `keep-the-why`, `knowledge-base`, `knowledgebase`, `ktw`,
+`landing`, `learn`, `legal`, `licence`, `licences`, `license`,
+`licenses`, `link`, `links`, `list`, `lists`, `log-in`, `log-out`,
+`logout`, `manager`, `marketplace`, `me`, `media`, `member`, `members`,
+`memory`, `mention`, `mentions`, `merge`, `message`, `messages`,
+`moderator`, `moderators`, `news`, `newsletter`, `note`, `notes`,
+`notification`, `oauth`, `official`, `onboarding`, `org`,
+`organisation`, `organisations`, `organization`, `organizations`,
+`orgs`, `outsider`, `outsiders`, `overview`, `page`, `pages`,
+`partner`, `partners`, `password`, `payment`, `payments`, `placement`,
+`placements`, `plan`, `plans`, `platform`, `policies`, `policy`,
+`popular`, `pr`, `press`, `pricing`, `pro`, `product`, `products`,
+`profile`, `profiles`, `project`, `projects`, `proxy`, `prs`,
+`public`, `pull`, `pulls`, `readme`, `release`, `releases`, `repo`,
+`report`, `reports`, `repos`, `repositories`, `repository`, `request`,
+`reset`, `review`, `reviewer`, `reviewers`, `reviews`, `roadmap`,
+`role`, `roles`, `root`, `rss`, `runner`, `sales`, `sdk`, `search`,
+`security`, `server`, `service`, `services`, `setup`, `shop`,
+`showcase`, `sign-out`, `sign-up`, `signin`, `signout`, `signup`,
+`site`, `sitemap`, `sites`, `soul`, `source`, `sponsor`, `sponsors`,
+`staff`, `stats`, `status`, `steward`, `store`, `stream`, `subscribe`,
+`subscription`, `subscriptions`, `support`, `takeover`, `task`,
+`tasks`, `team`, `teams`, `terms-of-service`, `terms-of-use`, `test`,
+`tester`, `testers`, `testing`, `thread`, `threads`, `ticker`,
+`ticket`, `tickets`, `tos`, `tour`, `tracker`, `trackers`, `trending`,
+`trust`, `tutorial`, `tutorials`, `unsubscribe`, `update`, `updates`,
+`upgrade`, `upload`, `uploads`, `user`, `users`, `verify`, `wait`,
+`webhook`, `webhooks`, `welcome`, `why`, `wiki`, `writer`, `www`
+
+These name no route and are no reserved first segments: the robots list
+does not close them, the address of a person who holds one is a page as
+any handle's is, and the join host and the dashboard read them as
+handles. Whoever already holds one keeps it, its page, and may take it
+back as an alias (§6.24); `maity-hub migrate` and the hub's start name
+the holders and go on. A word that gets a page of the product's own
+later becomes a reserved first segment in that change, which settles
+its holder. `owner` and `owners` stay off the list, so the operator's
+commands can use `owner`: `maity-hub owner create --handle owner`
+takes it (its `--handle` is required) and `maity-hub quickstart` falls
+back to it. `owner` has five characters, so a registration, a rename
+and a new organisation still refuse it; `owners` is free for anyone.
 
 One-letter segments (`r`) and names with a dot (`robots.txt`,
 `sitemap.xml`) cannot be handles anyway (§6.24's syntax). A release that adds a first segment adds it to

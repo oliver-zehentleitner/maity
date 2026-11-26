@@ -214,6 +214,13 @@ def check_startup(engine: Engine, settings: Settings) -> None:
         holders = namespace.reserved_holders(conn)
         if holders:  # `maity-hub migrate` refuses these; a hub started past it says so
             log.error("words that docs/api.md §16.11 reserves are held: %s", ", ".join(holders))
+        kept = namespace.kept_holders(conn)
+        if kept:  # reserved for new claims only: the holders keep them
+            log.info(
+                "handles new accounts may not take are kept by their holders (docs/api.md "
+                "§16.11): %s",
+                ", ".join(kept),
+            )
         held, aliases = handles.unserved_instance_names(conn, settings.forge_instance_namespaces)
         for name in held:
             log.warning(

@@ -259,8 +259,8 @@ def test_a_rename_renders_the_page_again_under_the_new_handle(
     anyone = visitor(make_client)
     who.patch("/me", {"public_profile": True, "public_bio": "hello"})
     assert shown(anyone, "maintainer") is not None
-    assert who.patch("/me", {"handle": "boss"}).status_code == 200
-    page = shown(anyone, "boss")
-    assert page is not None and "hello" in page and "boss" in page  # §6.24, §16.9
+    assert who.patch("/me", {"handle": "big-boss"}).status_code == 200
+    page = shown(anyone, "big-boss")
+    assert page is not None and "hello" in page and "big-boss" in page  # §6.24, §16.9
     # The old address shows no page any more: an alias is no address of its own.
     assert shown(anyone, "maintainer") is None
