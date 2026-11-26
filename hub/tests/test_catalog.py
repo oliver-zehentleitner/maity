@@ -69,6 +69,24 @@ def test_a_tag_outside_the_portal_reads_in_english(tag: object) -> None:
     assert catalog.section("frame", tag) == catalog.section("frame", "en")
 
 
+def test_the_loader_only_opens_interface_catalogs() -> None:
+    for tag in languages.INTERFACE:
+        assert catalog._file(tag) == _file(tag)
+    assert catalog._file("./en") == {}
+
+
+def test_a_missing_file_uses_english(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setitem(catalog._FILES, "fr", tmp_path / "missing.json")
+    catalog._file.cache_clear()
+    catalog._section.cache_clear()
+    try:
+        assert catalog.section("frame", "fr") == catalog.section("frame", "en")
+        assert not catalog.speaks("frame", "fr")
+    finally:
+        catalog._file.cache_clear()
+        catalog._section.cache_clear()
+
+
 def test_speaks_says_whether_a_section_has_its_own_words() -> None:
     assert catalog.speaks("frame", "ja")
     assert catalog.speaks("factor", "de")
