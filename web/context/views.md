@@ -3538,11 +3538,12 @@ route would add a read without adding anything to see.
 **Status:** active
 **Evidence:** confirmed
 **Source:** card tsk-4hh2y1na7mjx (the maintainer saw a project as its stored page while signed in as a non-member, 2026-11-25); PR #2223 and its review; the outsider tab of #1996
-**Revisit when:** a signed-in /explore exists (tsk-r6bk2py3ezwg), or the stored page starts handing a signed-in reader over to the dashboard
+**Revisit when:** the stored page starts handing a signed-in reader over to the dashboard
 
 On a person's or an organisation's page (`js/person.js`), a listed project the reader is no
 member of links to `/<owner>/<slug>` in the same tab. Signed in, the dashboard draws the dashed
-outsider tab there; signed out, the hub serves the stored page at that address as before.
+outsider tab there; signed out, the hub serves the stored page at that address as before. The signed-in Explore tab
+(621d3034) now opens the same outsider tab, so project links on person and organisation pages still use this address.
 
 **Reason:** `?as=public` answers the stored page even to a signed-in reader, and every link
 inside it keeps the query, so the old link (`?as=public` in a new tab) never reached the
