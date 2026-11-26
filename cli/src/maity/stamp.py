@@ -21,7 +21,7 @@ def stamp(moment: float | datetime | None = None) -> str:
         at = moment.astimezone(UTC)
     else:
         at = datetime.fromtimestamp(moment, tz=UTC)
-    return at.strftime(FORMAT)
+    return at.replace(tzinfo=None).isoformat(timespec="seconds") + "Z"
 
 
 def parse_stamp(value: object, *, strict: bool = False) -> datetime | None:

@@ -1,12 +1,9 @@
 ### Changed
 
-- cli: one shared `stamp` formatter and `parse_stamp` parser in `maity.stamp` replace the
-  copies in `cli.py` (`_utc`, `_parse_utc`, `cli_time`), `hub.py` (`_parse_server_time`), and
-  the runner (`keeper`, `scratch`, `supervisor`, `serve`, `install`, and `watch`, the last
-  found on current main and not in the audit's list). Format is still whole seconds with a
-  trailing `Z`. `parse_stamp` uses `fromisoformat` directly (Python 3.11 accepts `Z`; the
-  `.replace("Z", "+00:00")` workaround is gone). `parse_stamp(..., strict=True)` keeps the
-  wire form only, as `watch.parse_stamp` and `keeper._age` already required. `stamp(None)` is
-  now; `supervisor.stamp(None)` is still None. Behaviour stays the same, except: `hub`'s
-  `server_time` parser now returns None for a timestamp with no offset (it used to treat a
-  naive `fromisoformat` result as local time).
+- The CLI and runner share UTC timestamp formatting and parsing. Output uses a four-digit
+  year, whole seconds and a trailing `Z`, including for years below 1000. Watch still
+  requires the exact wire format. The keeper now also requires it when reading a saved
+  `checked_at`. Lowercase `t` or `z` and single-digit fields in older noncanonical
+  values give an unknown age and can trigger an immediate daily tool check. The keeper
+  writes canonical timestamps. The hub client's server-time parser now requires an
+  explicit time zone for clock-skew correction.

@@ -37,6 +37,15 @@ def test_parse_stamp_accepts_z_without_rewriting_it() -> None:
     assert stamp.parse_stamp("2026-11-20 20:26:00Z") == at
 
 
+def test_low_year_stamp_round_trips_through_strict_parser_and_cli() -> None:
+    at = datetime(1, 1, 2, 3, 4, 5, tzinfo=UTC)
+    expected = "0001-01-02T03:04:05Z"
+    written = stamp.stamp(at)
+    assert written == expected
+    assert stamp.parse_stamp(written, strict=True) == at
+    assert cli.limit_until(expected, now=0) == expected
+
+
 def test_parse_stamp_rejects_a_non_string_a_naive_value_and_junk() -> None:
     for value in (
         None,
@@ -99,11 +108,19 @@ def test_supervisor_stamp_none_is_missing_not_now() -> None:
     assert written in {stamp.stamp(float(t)) for t in range(before, after + 1)}
 
 
-def test_keeper_age_stays_strict() -> None:
+def test_keeper_age_requires_canonical_persisted_stamps() -> None:
     assert keeper._age("1970-01-01T00:00:00Z", 10.0) == 10.0
     assert keeper._age(WIRE, T0 + 30) == 30.0
     assert keeper.stamp(T0) == WIRE
-    for text in (None, "", "2026-11-20T20:26:00+00:00", "2026-11-20T20:26:00.5Z", "soon"):
+    for text in (
+        None,
+        "",
+        "2026-11-20T20:26:00+00:00",
+        "2026-11-20T20:26:00.5Z",
+        "2026-11-20t20:26:00z",
+        "2026-1-2T3:4:5Z",
+        "soon",
+    ):
         assert keeper._age(text, T0) is None
 
 
