@@ -1565,3 +1565,84 @@ digest hashes, so each would be rewritten and dated again; the second needs five
 
 A mechanical change: the stored pages, their `data` and the public routes' answers on one world (people, agents, an
 organisation, a second project, cards, an online agent, a profile switched off) are the same before and after.
+
+## Who a public page names lives in one module; `team` is the shown members of that read
+
+**Id:** cc4685d4-6489-4858-bd5e-cb0f490e853f
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the clean-up audit of the rendering and stored public pages (card tsk-hgnbapyw7hnh, items 7, 9 and 11) and the card tsk-mtyyaqj39c22 that carries it out; the lead's scope on that card; the diff of every stored page, its `data` and the answers of the public routes on one world before and after; reviews A2755 and A2756 of PR #2246 (the handle order under a PostgreSQL locale), and a run of the team tests on a PostgreSQL database with a locale that weighs the hyphen last; reviews A2757 and A2758 (a membership change between the members read and the order read), and regression tests that fail with the earlier form; reviews A2770 and A2771 (what the shared read does and does not fix, the order of missing profiles)
+**See:** public-pages.md#the-public-pages-name-their-members-by-one-rule-pictures-one-read-of-the-members-per-render-one-link-one-card-one-monogram-one-figure-list — 5fc710f7-f9c3-4622-91bb-146baab12f57 — as of 2026-11-25
+
+Who a page names, and how it writes their name, lives in `public_members`: `Person`, `members`,
+`person_data`, `shown_data`, `holder_data`, `pictured` and `shown_pictures`, under the public
+names they already had. The snapshot, the card pages, the outsider's members view and the
+project page import them from there. A module for them was left out of the earlier clean-up
+because `Person` stayed in `public_project_views`; they move together now.
+
+`team` is those `members` shows, split by human, each list in the order the database's
+`ORDER BY handle` gives their own rows, read as ids for exactly those principals. Hidden
+members (a hold, an account not served) stay in `members` unnamed; `team` drops them. An
+isolated agent is in neither. `render_project` reads the members once and hands that read to
+`team`, to the pictures and to who is online, so who the page names, who the Members figure
+counts and whose pictures and presence are looked up cannot come from two membership reads.
+The shared read is a shared membership selection, not a snapshot of the page: the roles
+(`team_details`), the profile order, the pictures, the online state and the statistics are
+later reads, each as the database has it when it runs (`public_snapshot.online` reads the
+memberships again by the shared ids).
+
+The order read does not filter the memberships again. Under READ COMMITTED (and on MariaDB,
+where the render's `xact_lock` is no lock) a member can leave, or an agent be isolated,
+between `members` and `team`; a second membership read then lacked a principal the first one
+named, and `team` failed with a `KeyError`, taking the project's page offline (reviews A2757,
+A2758 of PR #2246). Now `team` names exactly the shown members of the read it is given, even
+one that changed since: who is named stays the shared selection, and the member change
+renders the page again (its own `touch`). Every member of the read comes back once, two
+memberships of one principal together at its handle; those whose profile row is gone
+meanwhile have no handle and follow the others, grouped by principal in the order each
+principal first appears, each group in its own order (missing principals A and B, input A1,
+B1, A2: A1, A2, B1), not the input's person order. `agent_statistics` still reads which
+agents count itself, so an agent isolated after the read is named but has no counters on
+that render: the statistics rightly leave it out.
+
+The audit's item 7, a set-based `served` over lists, is already on `main` as `served_of` /
+`served_among` / `standing_of` (since #2077). The landing page's count, the organisation
+page, a person's listed projects and an agent's memberships already pass their rows to
+`served_of`. The landing page only counts the served projects; `memberships` returns the
+rows and their membership ids and reads no names. The full names are read once, with
+`namespace.full_names`, by the callers that show them: the organisation page, a person's
+listed projects and an agent's page. `/explore` is left as it is, because #2227 and #2233
+rewrite it, and a follow-up after they merge is smaller.
+
+**Reason:** the rule for who is named changes in one place, and `team` cannot drift from the
+members the views use. The set-based served rule already had one function; renaming it would
+add a second name for the same thing. The order stays the database's because the change is
+mechanical: PostgreSQL compares text by its locale (persistence.md), and a locale such as
+`en_US.utf8` weighs a hyphen last (`aaaa-a`, `aaaaaa`, `aaaa-b`), where Python, SQLite and
+MySQL's binary tables compare code points (`aaaa-a`, `aaaa-b`, `aaaaaa`). A handle may hold a
+hyphen, so a Python sort would reorder `people` and `agents` on such a database and render
+every affected project page with a new digest.
+
+For the order of an earlier read, two other forms were in contention. The ordered
+intersection of a second membership read with the members shown would not fail, but drops
+from the names whoever changed in between, while the Members figure and who is online of the
+same render still come from the first read: one page from two reads. Reading visibility and
+order in one statement, by ordering `members` itself by handle, changes the order of the read
+its other users (the Team tab, the snapshot) iterate. Catching the `KeyError` would only move
+the failure to a silent guess.
+
+**Rejected alternative:** rewrite `/explore` in the same change, or introduce `served_projects`
+beside `served_of`. The first collides with #2227 and #2233; the second is a new name for a
+function that already exists. Reintroducing the old private names (`_shown`, `_holder`) when
+moving the helpers was left out: they are already public, and a move should not rename them
+back. Sorting `team` in Python by code point, as the Team tab's `members_data` does, was left
+out too: it is the cross-engine order, but it changes the pages on a PostgreSQL database with
+a locale, which this change was not to do; making the project page's order bytewise is a
+decision of its own.
+
+A mechanical change: the stored pages, their `data` and the public routes' answers on one
+world (people, agents, an organisation, a second project, cards, an online agent, a profile
+switched off) are the same before and after. A test compares `team` with the row-wise form
+on hyphenated handles of people and of several agents; on a PostgreSQL database with such a
+locale it fails for a Python sort and passes for the database's order.
