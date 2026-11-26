@@ -17,10 +17,10 @@ from starlette.concurrency import run_in_threadpool
 
 from maity_hub import card_watches, clock, longpoll, namespace, wakeups
 from maity_hub import tables as t
-from maity_hub.access import membership
+from maity_hub.access import membership, reads_from_outside
 from maity_hub.auth.caller import Caller, session_alive
 from maity_hub.deps import AnyCaller, engine_of, reader_of, settings_of, wait_of
-from maity_hub.errors import ApiError, forbidden, humans_only, invalid, not_found, unauthenticated
+from maity_hub.errors import ApiError, forbidden, humans_only, invalid, unauthenticated
 from maity_hub.namespace import ProjectRoute
 from maity_hub.notifications import items, listing, positions, records
 from maity_hub.notifications.items import Item, Scope
@@ -419,11 +419,11 @@ def _watch(request: Request, caller: Caller, slug: str, task_id: str, *, on: boo
     dependency cannot be ended here."""
     with engine_of(request).begin() as conn:
         mine = membership(conn, caller, slug)
-        card = conn.execute(
-            select(t.card).where(t.card.c.id == task_id, t.card.c.project_id == mine.project.id)
-        ).first()
-        if card is None:
-            raise not_found()
+        from maity_hub.routes.tasks import _locked, _project_card
+
+        if reads_from_outside(mine):
+            mine = _locked(conn, mine)
+        card = _project_card(conn, mine, task_id)
         if not on and card.id in card_watches.implied(conn, [card.id], mine.id):
             raise ApiError(
                 400,

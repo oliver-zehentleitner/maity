@@ -556,6 +556,25 @@ def _shared_agent_pages(conn: Connection, project_id: str) -> list[tuple[str, st
     return [(KIND, other_id) for other_id in ids]
 
 
+def explore_rows(conn: Connection) -> list[tuple[str, str]]:
+    """What `/explore` and `GET /public/explore` list (§16.9): every project that has a page
+    now, as `(full_name, name)`, by its name without regard to case, then its full name. The
+    one listing of both, so the page and the dashboard's Explore cannot list different
+    projects."""
+    p = t.project.c
+    candidates = conn.execute(
+        select(p.id, p.name, p.public_page, p.state, p.owner_org_id, p.owner_human_id).where(
+            p.public_page == "on", p.state != "archived"
+        )
+    ).all()
+    public = served_of(conn, candidates)
+    names = namespace.full_names(conn, public)
+    return sorted(
+        ((names[row.id], row.name) for row in candidates if row.id in public),
+        key=lambda item: (item[1].casefold(), item[0]),
+    )
+
+
 def explore_html(
     conn: Connection,
     hub: Settings,
@@ -570,18 +589,7 @@ def explore_html(
     frame of §16.7.5 (`setting`, `legal`, `stats` and `accept_language` are the frame's). It
     shows only what those pages already show, and is rendered per request, behind the public
     cache."""
-    p = t.project.c
-    candidates = conn.execute(
-        select(p.id, p.name, p.public_page, p.state, p.owner_org_id, p.owner_human_id).where(
-            p.public_page == "on", p.state != "archived"
-        )
-    ).all()
-    public = served_of(conn, candidates)
-    names = namespace.full_names(conn, public)
-    shown = sorted(
-        ((names[row.id], row.name) for row in candidates if row.id in public),
-        key=lambda item: (item[1].casefold(), item[0]),
-    )
+    shown = explore_rows(conn)
 
     def monogram_of(full: str, name: str) -> str:
         return public_design.monogram(name, full.rsplit("/", 1)[-1])

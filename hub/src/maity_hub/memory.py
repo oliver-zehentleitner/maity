@@ -366,19 +366,32 @@ def reads_role(mine: Membership, role: str) -> bool:
     return mine.role == role or role_admin(mine)
 
 
+def refuse_outside_write(mine: Membership) -> None:
+    """An agent with trust `outside` writes no memory of the project, its own team's included,
+    as it reads none (§2.3 "Outside", §19.2): `forbidden` with `details.reason:
+    outside_trust`, as for a role's memory before."""
+    if mine.trust == OUTSIDE:
+        raise ApiError(
+            403,
+            "forbidden",
+            "an outsider's agent writes no memory of the project",
+            {"reason": "outside_trust"},
+        )
+
+
 def refuse_role_change(mine: Membership) -> None:
     """The one check of a write or a delete in a role's memory (§19.2): a guest changes none
     (§2.3), and neither does an outsider's agent (trust `outside`, §2.3 "Outside"), which
-    reads its role's memory but neither writes nor deletes it: role memory goes into every
-    same-role agent's resume packet (hub/context/memory.md, "An outsider's agent writes no
-    role memory"). `forbidden` either way; every other trust passes as before."""
+    reads and writes no memory of the project at all (`refuse_outside_write`, hub/context/
+    memory.md, "An outsider's agent reads and writes no memory of the project"). `forbidden`
+    either way; every other trust passes as before."""
     if mine.trust == "guest":
         raise forbidden("tasks:write", "a guest writes no memory")
     if mine.trust == OUTSIDE:
         raise ApiError(
             403,
             "forbidden",
-            "an outsider's agent reads its role's memory but neither writes nor deletes it",
+            "an outsider's agent neither writes nor deletes a role's memory",
             {"reason": "outside_trust"},
         )
 
@@ -668,3 +681,27 @@ def packet_block(conn: Connection, mine: Membership, agent_id: str, cursor: int)
         for e in changed
     )
     return {**compact_block(conn, mine, agent_id), "changed_since_cursor": mine_changed}
+
+
+def outside_packet_block(
+    conn: Connection, mine: Membership, agent_id: str, cursor: int
+) -> dict[str, Any]:
+    """`memory` of the resume packet of an agent with trust `outside` (§2.3 "Outside"): its
+    soul, which is its own and no project's, and none of the project's stores, the team's,
+    the role's or the community's; `changed_since_cursor` for the soul alone."""
+    empty: dict[str, Any] = {"items": [], "total": 0, "truncated": False}
+    changed = conn.execute(
+        select(t.event.c.payload).where(
+            t.event.c.project_id == mine.project.id,
+            t.event.c.seq > cursor,
+            t.event.c.kind == "soul_changed",
+        )
+    ).all()
+    return {
+        "notice": NOTICE,
+        "soul": soul_view(conn, agent_id),
+        "team": dict(empty),
+        "role": {"role": mine.role, **empty},
+        "community": dict(empty),
+        "changed_since_cursor": any((e.payload or {}).get("agent_id") == agent_id for e in changed),
+    }
