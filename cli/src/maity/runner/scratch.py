@@ -17,11 +17,11 @@ from __future__ import annotations
 
 import json
 import subprocess
-import time
 from pathlib import Path
 from typing import Any
 
 from .. import state
+from ..stamp import stamp
 from .asuser import RUNNER, AsUser
 
 REMOVED_FILE = "removed.jsonl"
@@ -157,7 +157,7 @@ def log_removal(
     """One line in REMOVED_FILE: when, which placement, the path, its size, why. Only the
     newest REMOVED_KEEP lines stay."""
     entry = {
-        "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() if at is None else at)),
+        "at": stamp(at),
         "placement": placement,
         "path": str(path),
         "size_bytes": size_bytes,

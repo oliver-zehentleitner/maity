@@ -15,12 +15,13 @@ import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
 from typing import Any
 
 from maity import __version__, hub
 from maity.runner import capabilities, config, tools
 from maity.runner.asuser import AsUser
+from maity.stamp import parse_stamp
+from maity.stamp import stamp as stamp
 
 CHECK_EVERY = 24 * 3600.0
 READ_EVERY = 60.0
@@ -37,16 +38,9 @@ def cap(harness: config.Harness) -> str | None:
     return capabilities.CHECKED.get(harness.id) if harness.track == "checked" else None
 
 
-def stamp(at: float) -> str:
-    return datetime.fromtimestamp(at, UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
-
-
 def _age(text: str | None, now: float) -> float | None:
-    try:
-        then = datetime.strptime(text or "", "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=UTC)
-    except ValueError:
-        return None
-    return now - then.timestamp()
+    then = parse_stamp(text, strict=True)
+    return None if then is None else now - then.timestamp()
 
 
 def managed(harness: config.Harness) -> bool:

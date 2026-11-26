@@ -30,11 +30,11 @@ import tomllib
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
-from datetime import UTC, datetime
 from importlib import resources
 from pathlib import Path
 
 from .. import hub, state
+from ..stamp import stamp
 from . import config
 
 SERVICE = "maity-runner"
@@ -403,7 +403,7 @@ def _make_user(host: Host) -> User:
         "user": USER,
         "uid": user.uid,
         "home": str(HOME),
-        "created_at": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "created_at": stamp(),
     }
     _write(host, RECORD, json.dumps(record) + "\n", force=True)
     _say(f"made   user {USER}")
