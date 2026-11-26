@@ -1829,7 +1829,7 @@ def list_credentials(
     with engine_of(request).begin() as conn:
         mine = membership(conn, caller, slug)
         if access.reads_from_outside(mine):
-            if member_id != mine.principal_id:
+            if mine.bridged or member_id != mine.principal_id:
                 raise not_found()
             target = mine.row
         else:

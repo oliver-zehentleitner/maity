@@ -7,6 +7,7 @@ remove.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Any
 
 from fastapi import APIRouter, Query, Request
@@ -351,16 +352,57 @@ def get_history(
         next_cursor = paging.cursor(page[-1].at, page[-1].id) if len(rows) > limit else None
         return JSONResponse(
             {
-                "items": shape_deleted(conn, [history.view(r, actors, mine) for r in page]),
+                "items": _history_views(conn, card.id, page, actors, mine),
                 "next_cursor": next_cursor,
             }
         )
 
 
+def _history_views(
+    conn: Connection,
+    card_id: str,
+    rows: Sequence[Any],
+    actors: dict[int, dict[str, Any]],
+    reader: Any,
+) -> list[dict[str, Any]]:
+    entries = [history.view(row, actors, reader) for row in rows]
+    if access.reads_from_outside(reader):
+        from maity_hub import public_cards
+
+        # Project both sides together using the card view's last visibility check. A
+        # redaction tombstone is already shaped by history.view for this reader.
+        parts = []
+        positions = []
+        for entry in entries:
+            if entry.get("redacted"):
+                continue
+            field = entry["field"]
+            for side in ("before", "after"):
+                value = entry[side]
+                if field == "created" and isinstance(value, dict):
+                    part = value
+                elif field in (*public_cards.EDGE_FIELDS, "parent"):
+                    part = {field: value}
+                else:
+                    continue
+                positions.append((entry, side, field))
+                parts.append({**part, "id": card_id})
+        projected = public_cards.outside_views(conn, parts)
+        if len(parts) != len(projected):
+            raise not_found()
+        for (entry, side, field), part in zip(positions, projected, strict=True):
+            if field == "created":
+                entry[side] = {key: part[key] for key in entry[side]}
+            else:
+                entry[side] = part[field]
+    return shape_deleted(conn, entries)
+
+
 def load_history(conn: Connection, entry_id: str, reader: Any = None) -> dict[str, Any]:
     row = conn.execute(select(t.card_history).where(t.card_history.c.id == entry_id)).one()
-    entry = history.view(row, history.members(conn, [row.actor_membership]), reader)
-    return dict(shape_deleted(conn, [entry])[0])
+    return _history_views(
+        conn, row.card_id, [row], history.members(conn, [row.actor_membership]), reader
+    )[0]
 
 
 def _load_history_for_caller(conn: Connection, entry_id: str, request: Request) -> dict[str, Any]:

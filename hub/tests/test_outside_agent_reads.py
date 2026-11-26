@@ -720,3 +720,95 @@ def test_visible_edge_edit_preserves_other_relations(team: Team) -> None:
     assert updated.status_code == 200
     assert updated.json()["related"] == [team.open]
     assert set(team.owner.get(f"{P}/tasks/{card_id}").json()["related"]) == {team.secret, team.open}
+
+
+def test_history_fields_follow_the_same_view_as_the_card(team: Team) -> None:
+    card_id = team.card("Milestone", parent=team.secret, related=[team.open, team.held])
+    assert team.owner.patch(f"{P}/tasks/{card_id}", {"related": [team.fixed]}).status_code == 200
+
+    def entries(reader: Any) -> dict[str, Any]:
+        result = reader.get(f"{P}/tasks/{card_id}/history")
+        assert result.status_code == 200
+        return {item["field"]: item for item in result.json()["items"]}
+
+    outside, ordinary = entries(team.agent), entries(team.member)
+    assert outside["created"]["after"]["parent"] is None
+    assert outside["created"]["after"]["related"] == [team.open]
+    assert outside["related"]["before"] == [team.open]
+    assert outside["related"]["after"] == [team.fixed]
+    assert ordinary["created"]["after"]["parent"] == team.secret
+    assert set(ordinary["related"]["before"]) == {team.open, team.held}
+
+
+def test_watches_follow_card_visibility(team: Team) -> None:
+    watched = team.agent.client.put(f"/api/v1{P}/tasks/{team.open}/watch", headers=team.agent.auth)
+    assert watched.status_code == 200
+    assert team.agent.delete(f"{P}/tasks/{team.open}/watch").status_code == 200
+    for card_id in team.hidden:
+        _gone(team.agent.delete(f"{P}/tasks/{card_id}/watch"))
+        assert team.member.delete(f"{P}/tasks/{card_id}/watch").status_code == 200
+
+
+def test_dependency_errors_include_only_visible_card_ids(team: Team) -> None:
+    from maity_hub.auth.caller import Caller
+    from maity_hub.errors import ApiError
+
+    card_id = team.card("Milestone", depends_on=[team.open, team.secret])
+    for who, expected in (
+        (team.agent, [team.open]),
+        (team.member, sorted([team.open, team.secret])),
+    ):
+        caller = Caller("agent", "bearer", agent_id=who.id, credential_id=who.credential_id)
+        with team.engine.connect() as conn, pytest.raises(ApiError) as refusal:
+            mine = access.membership(conn, caller, "maintainer/maity")
+            cards.refuse_open_dependencies(conn, card_id, mine)
+        assert refusal.value.code == "dependencies_open"
+        assert refusal.value.details == {"open": expected}
+
+
+def test_report_reopening_a_card_uses_the_post_write_visibility(team: Team) -> None:
+    from tests.test_own_approvals_gate import OTHER, _done, _policy
+    from tests.test_probe import _report
+
+    _policy(team.owner, done_authority="admin")
+    card_id = _given(team, team.agent, "Reported work")
+    path = f"{P}/tasks/{card_id}"
+    assert team.agent.post(path + "/report", _report()).status_code == 200
+    assert _done(team.owner, card_id).status_code == 200
+    assert team.owner.patch(path, {"label": "security"}).status_code == 200
+    body = _report(
+        head=OTHER,
+        remote_head=OTHER,
+        pr={
+            "number": 7,
+            "url": "https://github.com/acme/maity/pull/7",
+            "head": OTHER,
+            "state": "open",
+        },
+    )
+    answer = team.agent.post(path + "/report", body)
+    assert answer.status_code == 204 and answer.content == b""
+    after = team.owner.get(path).json()
+    assert after["claim"] is None and after["assigned_to"] is None
+    assert after["report"]["head"] == OTHER
+
+
+def test_takeover_card_read_policy_applies_to_lookups_and_replay(
+    team: Team, make_client: ClientFactory
+) -> None:
+    from maity_hub.auth.caller import Caller
+    from maity_hub.routes import takeovers
+    from tests.test_takeovers import _held, _open
+
+    card_id = _held(team.owner, team.member)
+    other = flow.agent(make_client, team.owner)
+    created = _open(other, card_id)
+    assert created.status_code == 201
+    takeover_id = created.json()["id"]
+    _hold(team.engine, team.owner.id, card_id)
+    with team.engine.begin() as conn:
+        for who, visible in ((team.agent, False), (team.member, True)):
+            caller = Caller("agent", "bearer", agent_id=who.id, credential_id=who.credential_id)
+            mine = access.membership(conn, caller, "maintainer/maity")
+            assert (takeovers._visible_takeover(conn, mine, takeover_id) is not None) == visible
+            assert takeovers._may_replay(conn, mine, takeover_id) == visible

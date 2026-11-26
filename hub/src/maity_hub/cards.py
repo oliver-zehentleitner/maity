@@ -375,7 +375,7 @@ def open_dependencies(conn: Connection, card_id: str) -> list[str]:
     return sorted(r.id for r in rows if r.status not in CLOSED)
 
 
-def refuse_open_dependencies(conn: Connection, card_id: str) -> None:
+def refuse_open_dependencies(conn: Connection, card_id: str, reader: Membership) -> None:
     children = list(
         conn.execute(
             select(t.card.c.id).where(t.card.c.parent == card_id, t.card.c.status.not_in(CLOSED))
@@ -383,6 +383,18 @@ def refuse_open_dependencies(conn: Connection, card_id: str) -> None:
     )
     pending = sorted(set(open_dependencies(conn, card_id)) | set(children))
     if pending:
+        from maity_hub import access, public_cards
+
+        if access.reads_from_outside(reader):
+            visible = set(
+                conn.scalars(
+                    select(t.card.c.id).where(
+                        t.card.c.id.in_(pending), public_cards.outside_clause()
+                    )
+                )
+            )
+            pending = [item for item in pending if item in visible]
+            children = [item for item in children if item in visible]
         raise ApiError(
             409,
             "dependencies_open",

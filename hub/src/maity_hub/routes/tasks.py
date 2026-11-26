@@ -1477,7 +1477,7 @@ def patch_task(
                 moderation.refuse_held(conn, "card", card.id, "remove")
             cards.check_transition(conn, mine, card, body.status)
             if body.status == "done":
-                cards.refuse_open_dependencies(conn, card.id)
+                cards.refuse_open_dependencies(conn, card.id, mine)
                 _refuse_unready(conn, card, fg, values.get("release_data"))
             signed = _signatures(conn, mine, card, body)
             if signed is not None:
@@ -1607,12 +1607,19 @@ def patch_task(
         # `outside` that holds it or is assigned it ends both (§2.3 "Outside").
         release_from_outside(conn, card.id, caller.actor(mine.id))
         releases.recheck(conn, mine.project.id, fg)
-        visible = task_views(conn, [_card(conn, card.id)], fg, mine)
-        if not visible:
-            return idempotency.Outcome(204, None, None, {})
-        return idempotency.Outcome(200, "task", card.id, visible[0])
+        return _edited_outcome(conn, card.id, fg, mine)
 
     return idempotency.run(engine_of(request), request, caller, action)
+
+
+def _edited_outcome(
+    conn: Connection, card_id: str, fg: Forge, mine: Membership
+) -> idempotency.Outcome:
+    """A committed change can move the resulting card outside the writer's view (§6.4)."""
+    visible = task_views(conn, [_card(conn, card_id)], fg, mine)
+    if not visible:
+        return idempotency.Outcome(204, None, None, {})
+    return idempotency.Outcome(200, "task", card_id, visible[0])
 
 
 def release_from_outside(conn: Connection, card_id: str, actor: Actor) -> bool:
@@ -2473,7 +2480,7 @@ def report(
                 )
             # Closing by report is a review too: not of another instance's work (§6.18).
             cards.refuse_same_team_review(mine, card)
-            cards.refuse_open_dependencies(conn, card.id)
+            cards.refuse_open_dependencies(conn, card.id, mine)
             _refuse_unready(conn, card, fg)
         # Every report clears the signatures; under `reviewer_and_tester` a `done` fills at
         # most the caller's own on the new revision and never closes (§6.4, §6.6). A caller
@@ -2609,13 +2616,13 @@ def report(
             ticker.on_release_done(
                 conn, mine.project, card, caller.actor(mine.id), mine.principal_id
             )
+        if card.status != status_before:
+            release_from_outside(conn, card.id, caller.actor(mine.id))
         releases.recheck(conn, mine.project.id, fg)
-        return idempotency.Outcome(
-            200, "task", card.id, task_view(conn, _card(conn, card.id), fg, mine)
-        )
+        return _edited_outcome(conn, card.id, fg, mine)
 
     response = idempotency.run(engine_of(request), request, caller, action)
-    if response.status_code == 200 and request.app.state.probe is not None:
+    if response.status_code in (200, 204) and request.app.state.probe is not None:
         request.app.state.probe.report_stored(card_id)  # after the commit, never awaited
     return response
 
