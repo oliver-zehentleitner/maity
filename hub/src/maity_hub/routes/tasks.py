@@ -20,6 +20,7 @@ from maity_hub import (
     access,
     availability,
     card_search,
+    card_watches,
     cards,
     clock,
     contract_text,
