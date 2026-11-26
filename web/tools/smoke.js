@@ -12848,6 +12848,11 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(win.location.hash === "#/all", "no project: the empty hash lands on #/all");
   await tick();
   expect(text(main).includes("No projects yet") && !main.querySelector(".error"), "no project: empty state, no error");
+  const emptyTabsMenu = header.querySelector(".tabs-menu-box");
+  emptyTabsMenu.querySelector("button").click();
+  expect(emptyTabsMenu.querySelectorAll(".menu-item").map((i) => text(i)).join("|") === "New project|Explore",
+    "no project: the tabs menu offers New project and Explore, without Keep these tabs at start");
+  emptyTabsMenu.querySelector("button").click();
   // A personal request reaches its human without a membership (§7): it comes first, the empty state after it.
   expect(main.querySelectorAll(".project-label.personal").length === 4
     && text(main).indexOf("proposes a change to its soul") < text(main).indexOf("No projects yet"),
@@ -18915,7 +18920,10 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       }
       // The × beside the tab, away from it: the tab goes for the session, nothing is sent, the page stays.
       otPatches.length = 0;
+      let focusedExploreLink = false;
+      exLink().focus = () => { focusedExploreLink = true; };
       exClose().click(); for (let k = 0; k < 3; k++) await tick();
+      expect(focusedExploreLink, "explore: closing its tab elsewhere focuses the Explore link");
       expect(!exTab() && !(EXPLORE in ssStore) && exPath() === "/maintainer/maity/inbox" && !otPatches.length && otSaid() === "Explore is no longer a tab",
         "explore: its × closes the tab elsewhere, nothing sent, the page stays, and says so");
       // The menu's Explore opens it again; its × on its own page leads to All projects.

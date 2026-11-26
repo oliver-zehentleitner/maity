@@ -1733,6 +1733,7 @@ window.Maity = window.Maity || {};
     M.tabs.setExplore(ctx, false);
     if (ctx.scope === "explore") { M.route.go("/all"); return; }
     renderSwitcher(ctx);
+    document.getElementById("header").querySelector("a.explore-link")?.focus();
     tabsSaid(M.t("tabs.closed", { name: M.t("tabs.explore") }));
   }
   // The way to Explore at the right end of the tab row, after the tabs menu: it opens the Explore

@@ -5927,6 +5927,7 @@ def explore_tab_round(run: Run, browser) -> None:
     expect(menu.get_by_role("menuitem", name="New project", exact=True)).to_be_visible()
     expect(menu.get_by_role("menuitem", name="Explore", exact=True)).to_be_visible()
     expect(menu.get_by_role("menuitemcheckbox")).to_have_count(0)
+    expect(menu.get_by_role("menuitem", name="Keep these tabs at start", exact=True)).to_have_count(0)
     page.keyboard.press("Escape")
     # The link: a route change to /explore (no page load), the list from the public read.
     with page.expect_response(lambda r: r.url == f"{run.base}/api/v1/public/explore") as listed:
@@ -5953,7 +5954,8 @@ def explore_tab_round(run: Run, browser) -> None:
             # The menu stays on the tabs' line, the link at the row's end inside the window.
             got = page.evaluate("(() => { const r = (s) => document.querySelector(s).getBoundingClientRect();"
                                 " const m = r('.tabs-menu-box .menu-button'), l = r('.switcher-row > a.explore-link');"
-                                " return { menuTop: m.top, linkRight: l.right, menuRight: m.right, linkLeft: l.left, vw: innerWidth }; })()")
+                                " return { menuTop: m.top, linkTop: l.top, linkRight: l.right, menuRight: m.right, linkLeft: l.left, vw: innerWidth }; })()")
+            assert abs(got["menuTop"] - got["linkTop"]) <= 1, f"{where}: {got}"
             assert got["linkRight"] <= got["vw"] and got["menuRight"] <= got["linkLeft"], f"{where}: {got}"
             run.shot(page, f"explore-tab-{width}-{scheme}")
             if (width, scheme) == (1280, "light"):
@@ -9220,20 +9222,25 @@ def project_tabs_step(run: Run, page: Page) -> None:
 def tabs_menu_scroll_step(run: Run, page: Page) -> None:
     """A long tabs menu on a phone (tsk-hhyccgssr2pr): the header is sticky, so the menu never
     scrolls away with the page. It ends at the screen's bottom edge, its list scrolls inside it, the
-    page behind stays where it is, and the last item can still be reached and opened. Twenty copies
-    of a project's switch, put before the real items, stand in for twenty more projects, so the
-    last item is still the real New project."""
+    page behind stays where it is, and the last project switch can still be reached and used.
+    On All projects there are no move actions. Twenty copies placed before the final switch
+    stand in for extra projects while the real bottom switch keeps its click handler."""
     run.step("tabs menu: a long list on a phone scrolls inside the menu, the page stays put")
     size = page.viewport_size
     try:
         page.set_viewport_size({"width": 360, "height": 640})
-        page.goto(f"{run.base}/owner/e2e-alpha/inbox")
+        page.goto(f"{run.base}/all")
         box = page.locator(".tabs-menu-box")
         box.get_by_role("button", name="Project tabs", exact=True).click()
         menu = box.locator("ul.menu")
         expect(menu).to_be_visible()
-        menu.evaluate("(ul) => { const li = ul.querySelector('li'); for (let i = 0; i < 20; i++) {"
-                      " const c = li.cloneNode(true); c.classList.add('e2e-extra-item'); ul.insertBefore(c, ul.firstChild); } }")
+        last = menu.locator("li:last-child > [role=menuitemcheckbox]")
+        expect(last).to_have_attribute("aria-checked", "true")
+        project = last.inner_text()
+        last.evaluate("""el => {
+            const item = el.parentElement;
+            for (let i = 0; i < 20; i++) item.before(item.cloneNode(true));
+        }""")
         before = page.evaluate("scrollY")
         got = menu.evaluate("(ul) => { const r = ul.getBoundingClientRect();"
                             " return { top: r.top, bottom: r.bottom, vh: innerHeight, scrolls: ul.scrollHeight > ul.clientHeight }; }")
@@ -9246,13 +9253,16 @@ def tabs_menu_scroll_step(run: Run, page: Page) -> None:
         for _ in range(15):
             page.mouse.wheel(0, 400)
         page.wait_for_function("(ul) => ul.scrollTop + ul.clientHeight >= ul.scrollHeight - 1", arg=menu.element_handle())
-        last = box.get_by_role("menuitem", name="New project", exact=True)
         seen = last.evaluate("(el) => { const r = el.getBoundingClientRect(); const m = el.closest('ul').getBoundingClientRect();"
                              " return { inMenu: r.top >= m.top && r.bottom <= m.bottom + 1, inView: r.bottom <= innerHeight, scrollY }; }")
         assert seen["inMenu"] and seen["inView"], f"the last item is not in view after scrolling the menu: {seen}"
         assert seen["scrollY"] == before, f"the page scrolled with the menu: {before} -> {seen['scrollY']}"
         last.click()
-        expect(page).to_have_url(re.compile(r"/new$"))
+        switch = menu.get_by_role("menuitemcheckbox", name=project)
+        expect(switch).to_have_attribute("aria-checked", "false")
+        switch.click()
+        expect(switch).to_have_attribute("aria-checked", "true")
+        page.keyboard.press("Escape")
     finally:
         if size:
             page.set_viewport_size(size)

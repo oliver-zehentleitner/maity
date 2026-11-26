@@ -415,7 +415,7 @@ nav.views a:focus-visible { outline-offset: -2px; }
 /* The tabs menu is drawn as the row's last tab (the owner, 2026-11-10, tsk-qa2r972wjsws): the tabs'
    pill, padding, size, colour and gap, on the tabs' line. It stays a menu button (no role=tab, no view
    behind it) and stands outside nav.switcher, so a drag or Alt+Shift+Arrow never moves it and on a phone
-   it keeps the row's right end while the tabs scroll. Its gap to the last tab is the tabs' own: the
+   it stays after the scrolling tabs, before the Explore link where present. Its gap to the last tab is the tabs' own: the
    negative margin cancels the row's column gap, and nav.switcher's end padding (the drop line's room) remains. */
 .switcher-row .tabs-menu-box { align-self: flex-start; margin-top: 8px; padding-bottom: 2px; margin-inline-start: calc(-1 * var(--switcher-row-gap)); }
 .tabs-menu-box .menu-button.tabs-menu { min-width: 0; min-height: 0; padding: 8px 10px; border: 1px solid var(--border);
