@@ -1828,8 +1828,13 @@ def list_credentials(
 ) -> JSONResponse:
     with engine_of(request).begin() as conn:
         mine = membership(conn, caller, slug)
-        target = member_row_or_removed(conn, mine.project.id, member_id)
-        _may_manage_credentials(conn, mine, target)
+        if access.reads_from_outside(mine):
+            if member_id != mine.principal_id:
+                raise not_found()
+            target = mine.row
+        else:
+            target = member_row_or_removed(conn, mine.project.id, member_id)
+            _may_manage_credentials(conn, mine, target)
         since = clock.now() - REVOKED_LISTED
         a = t.instance_attachment
         rows = conn.execute(

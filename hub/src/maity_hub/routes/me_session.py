@@ -707,7 +707,7 @@ def _packet(
         ),
         **(
             {"onboarding": check_in}
-            if (check_in := onboarding.hint(conn, project, mine.row))
+            if not outside and (check_in := onboarding.hint(conn, project, mine.row))
             else {}
         ),
         "session": session,
@@ -757,7 +757,11 @@ def _packet(
                 bridging=bool(bridging_for),
                 restricted=mine.id in restricted.resolve(conn, project),
             ),
-            **briefing_view.briefing_block(conn, project, mine.row),
+            **(
+                briefing_view.briefing_block(conn, project, mine.row)
+                if not outside or mine.row.briefing is not None
+                else {"briefing": None, "briefing_source": None}
+            ),
             # The owner's instruction to work in subagents, beside the briefing (§5.2).
             "subagents": subagents.block(conn, mine.row),
             # The dashboard address of its direct conversation with its owner, on the public
@@ -862,7 +866,7 @@ def _from_outside(conn: Connection, packet: dict[str, Any], mine: Membership) ->
     shown = _principals(conn, outside_shown(conn, mine.project.id))
     project = packet["project"]
     preferences_block = packet["preferences"]
-    packet = {k: v for k, v in packet.items() if k != "setup"}
+    packet = {k: v for k, v in packet.items() if k not in {"setup", "keep_the_why"}}
     packet["project"] = {k: project[k] for k in OUTSIDE_PROJECT_KEYS}
     packet["peers"] = [
         {k: peer[k] for k in OUTSIDE_PEER_KEYS if k in peer}

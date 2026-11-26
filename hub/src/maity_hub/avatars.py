@@ -39,7 +39,7 @@ from maity_hub.avatar_decode import REFUSED
 from maity_hub.config import Settings
 from maity_hub.errors import invalid, rate_limited
 from maity_hub.ratelimit import Limiter
-from maity_hub.scopes import has_scope
+from maity_hub.scopes import OUTSIDE, has_scope
 
 log = logging.getLogger(__name__)
 
@@ -620,7 +620,9 @@ def may_read(conn: Connection, caller: Any, owner_id: str) -> bool:
             memberships = attached.free_memberships(caller)
         mine = set(
             conn.execute(
-                select(t.membership.c.project_id).where(t.membership.c.id.in_(memberships))
+                select(t.membership.c.project_id).where(
+                    t.membership.c.id.in_(memberships), t.membership.c.trust != OUTSIDE
+                )
             ).scalars()
         )
         return bool(mine & _projects_of(conn, owner_id))
