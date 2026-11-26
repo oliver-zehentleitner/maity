@@ -169,15 +169,41 @@ def team(
     hold of moderation (§16.8), a suspended owner's agent and an isolated agent (§6.28) are
     neither named nor counted. Hidden members (a hold, an account not served) stay in
     `members` unnamed; `team` drops them. `who` is that read, when the caller has it already
-    (`render_project`)."""
+    (`render_project`). The handle order is the database's `ORDER BY handle`, as before
+    `team` was built from `members`: PostgreSQL compares by its locale, Python by code point,
+    and the two disagree on a hyphen (hub/context/public-pages.md)."""
     from maity_hub import public_members
 
     if who is None:
         who = public_members.members(conn, project_id)
     shown = [p for p in who.values() if p.shown]
-    humans = sorted((p for p in shown if p.human), key=lambda p: p.handle or "")
-    agents = sorted((p for p in shown if not p.human), key=lambda p: p.handle or "")
+    humans = _in_handle_order(conn, project_id, [p for p in shown if p.human], human=True)
+    agents = _in_handle_order(conn, project_id, [p for p in shown if not p.human], human=False)
     return humans, agents
+
+
+def _in_handle_order(
+    conn: Connection, project_id: str, persons: list[Any], *, human: bool
+) -> list[Any]:
+    """`persons` in the order the database gives the project's active members by handle: the
+    query `team` ran before it was built from `members`, its ids only. Its order decides, not
+    Python's, so that no stored page and no page digest changes."""
+    if not persons:
+        return []
+    m = t.membership.c
+    table = t.human if human else t.agent_profile
+    joined = m.human_id if human else m.agent_id
+    where = [m.project_id == project_id, m.active.is_(True)]
+    if not human:
+        where.append(m.isolated_since.is_(None))
+    ids = conn.execute(
+        select(table.c.id)
+        .join(t.membership, joined == table.c.id)
+        .where(*where)
+        .order_by(table.c.handle)
+    ).scalars()
+    rank = {principal: n for n, principal in enumerate(ids)}
+    return sorted(persons, key=lambda p: rank[p.principal])
 
 
 def member_pictures(

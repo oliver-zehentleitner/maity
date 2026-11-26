@@ -255,14 +255,8 @@ def _compare_team(conn: Connection, project_id: str) -> None:
     new = _from_persons(*public_projects.team(conn, project_id))
     who = public_members.members(conn, project_id)
     from_who = _from_persons(*public_projects.team(conn, project_id, who))
-    shown = [p for p in who.values() if p.shown]
-    split = (
-        sorted((p for p in shown if p.human), key=lambda p: p.handle or ""),
-        sorted((p for p in shown if not p.human), key=lambda p: p.handle or ""),
-    )
     assert new == old
     assert from_who == old
-    assert _from_persons(*split) == old
 
 
 def test_team_is_the_shown_members_in_handle_order(world: World) -> None:
@@ -317,3 +311,50 @@ def test_team_is_the_shown_members_in_handle_order(world: World) -> None:
         who = public_members.members(conn, world.project_id)
     assert agents == []
     assert all(p.principal != agent["id"] for p in who.values())
+
+
+# Handles a hyphen orders differently: by code point (Python, SQLite, MySQL's binary tables,
+# PostgreSQL's "C") aaaa-a, aaaa-b, aaaaaa, aaaaba; by a PostgreSQL locale such as en_US.utf8,
+# which weighs the hyphen last, aaaa-a, aaaaaa, aaaa-b, aaaaba.
+HYPHENATED = ("aaaa-a", "aaaaaa", "aaaa-b", "aaaaba")
+
+
+def test_team_keeps_the_database_s_handle_order_for_hyphens_and_several_agents(
+    world: World,
+) -> None:
+    """`team` keeps the order the database's `ORDER BY handle` gives, whatever the engine's
+    collation, for humans and for several agents with hyphenated handles: the row-wise form's
+    order, so that no stored page and no page digest changes (tsk-mtyyaqj39c22, A2755, A2756).
+    On PostgreSQL CI the database's locale decides, on SQLite the bytes."""
+    for handle in reversed(HYPHENATED):  # created against either order
+        human_id = factory.human(world.migrated, handle)
+        factory.membership(world.migrated, world.project_id, "member", human_id=human_id)
+    for handle in reversed(HYPHENATED):
+        made = factory.agent(world.migrated, world.project_id, world.owner.id)
+        with world.migrated.begin() as conn:
+            conn.execute(
+                t.agent_profile.update()
+                .where(t.agent_profile.c.id == made.agent_id)
+                .values(handle=f"bot-{handle}")
+            )
+    with world.migrated.connect() as conn:
+        _compare_team(conn, world.project_id)
+        humans, agents = public_projects.team(conn, world.project_id)
+        database = (
+            conn.execute(
+                select(t.human.c.handle)
+                .where(t.human.c.handle.in_(HYPHENATED))
+                .order_by(t.human.c.handle)
+            )
+            .scalars()
+            .all()
+        )
+    named = [h.handle for h in humans if h.handle in HYPHENATED]
+    assert named == database
+    assert named in (
+        ["aaaa-a", "aaaa-b", "aaaaaa", "aaaaba"],
+        ["aaaa-a", "aaaaaa", "aaaa-b", "aaaaba"],
+    )
+    bots = [a.handle for a in agents if a.handle and a.handle.startswith("bot-")]
+    assert bots == [f"bot-{h}" for h in database]
+    assert len(agents) == 1 + len(HYPHENATED)
