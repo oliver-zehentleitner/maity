@@ -61,7 +61,7 @@ def test_the_environment_sets_it_and_wins(make_client: ClientFactory, migrated: 
             Settings.from_env({"MAITY_MAX_ALIASES": bad})
     who = flow.human(lambda **kw: make_client(max_aliases=1, **kw), migrated)
     assert who.get(PATH).json()["max_aliases"] == {"value": 1, "source": "env"}
-    assert _rename(who, migrated, "first").status_code == 200
+    assert _rename(who, migrated, "first-name").status_code == 200
     assert _error(_rename(who, migrated, "second"))[:2] == (409, "alias_limit")
     refused = who.patch(PATH, {"max_aliases": 8})
     assert refused.json()["error"]["details"]["fields"] == {"max_aliases": "set_by_environment"}

@@ -3003,7 +3003,7 @@ def reset_by_mail(run: Run, browser, catcher: MailCatcher, owner: Page) -> None:
     """Admin → Users (§2.8.3, §2.8.7): the admin's press only sends a mail; the person's press on
     the mail's page resets, ends their sessions, and the next sign-in starts with the setup."""
     run.step("second hub: an admin resets a person's two-factor sign-in, which that person confirms by mail")
-    address, handle, password = "ada@e2e.example", "ada", "ada-e2e-password-1"
+    address, handle, password = "ada@e2e.example", "ada-e2e", "ada-e2e-password-1"
     owner.evaluate("""() => window.Maity.api.patch("/admin/settings/registration", { mode: "open", approval: "automatic" })""")
     context, page = new_page(run, browser)
     page.goto(run.base + "/")
@@ -3026,12 +3026,17 @@ def reset_by_mail(run: Run, browser, catcher: MailCatcher, owner: Page) -> None:
     register_again(run, page, link, address, handle)
     # A refused answer: each field's error under it, legible in light and dark (#1721's review).
     # The field's own pattern stops a handle that breaks the rule before it is sent, so the hub's
-    # refusal is shown with a taken one.
+    # refusal is shown with a taken one: an account of six characters or more made here, since
+    # `owner` is shorter and a new person's handle of five or fewer is refused as reserved first
+    # (docs/api.md §16.11), which is checked after it.
+    taken = "e2e-taken-handle"
+    hub_command(run, ["owner", "create", "--handle", taken, "--display-name", "Taken", "--email", "taken@e2e.example"], "e2e taken password\n")
     page.locator("#password").fill(password)
-    page.locator("#handle").fill(OWNER)
+    page.locator("#handle").fill(taken)
     page.locator("#display_name").fill("Ada")
     page.locator("form button[type=submit]").click()
     expect(page.locator("#handle-error")).to_be_visible()
+    expect(page.locator("#handle-error")).to_contain_text("This handle is taken.")
     expect(page.locator("#handle")).to_have_attribute("aria-invalid", "true")
     run.problems = [p for p in run.problems if not ("/mail/register/" in p and "answered 400" in p)]
     run.shot(page, "registration-link-error")
@@ -3039,6 +3044,13 @@ def reset_by_mail(run: Run, browser, catcher: MailCatcher, owner: Page) -> None:
     page.emulate_media(color_scheme="dark")
     run.shot(page, "registration-link-error-dark")
     page.emulate_media(color_scheme="light")
+    # Five characters keep the syntax but are kept from a new person (§16.11): the error says why.
+    page.locator("#password").fill(password)
+    page.locator("#handle").fill("adaxx")
+    page.locator("#display_name").fill("Ada")
+    page.locator("form button[type=submit]").click()
+    expect(page.locator("#handle-error")).to_contain_text("at least six characters")
+    run.problems = [p for p in run.problems if not ("/mail/register/" in p and "answered 400" in p)]
     page.locator("#password").fill(password)
     page.locator("#handle").fill(handle)
     page.locator("#display_name").fill("Ada")

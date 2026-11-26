@@ -331,7 +331,7 @@ def _owner_create(
         return _fail(
             "--handle: lower-case letters, digits and '-', 2 to 31 characters", EXIT_CONFIG
         )
-    if paths.handle_reserved(handle):  # a first segment of the hub (§16.11), the first account too
+    if paths.handle_reserved(handle, by_operator=True):  # §16.11, the words; not the length
         return _fail(f"the handle {handle!r} is reserved", EXIT_CONFIG)
     if not display_name.strip() or len(display_name) > 200:
         return _fail("--display-name: 1 to 200 characters", EXIT_CONFIG)
@@ -508,11 +508,18 @@ def _migrate(settings: Settings) -> int:
     try:
         with engine.connect() as conn:
             holders = namespace.reserved_holders(conn)
+            kept = namespace.kept_holders(conn)
         if holders:  # a release that reserves a held word does not go on (docs/api.md §16.11)
             return _fail(
                 "a word that docs/api.md §16.11 reserves is already held, rename it first: "
                 + ", ".join(holders),
                 EXIT_FAILURE,
+            )
+        if kept:  # reserved for new claims only: the holders keep them (docs/api.md §16.11)
+            print(
+                "maity-hub: held, and kept by their holders, though new accounts may not take "
+                "them (docs/api.md §16.11): " + ", ".join(kept),
+                file=sys.stderr,
             )
         before = current_revision(engine)
         try:
@@ -585,15 +592,14 @@ def _seal_verifiers(settings: Settings, dry_run: bool = False) -> int:
 
 
 def _default_handle() -> str:
-    """The login name when it is a valid handle that no route of the hub uses (`admin` is
-    one, §16.11), else `owner`."""
+    """The login name when `owner create` takes it as a handle (not `admin`, nor a product word,
+    §16.11; any length from 2), else `owner`, which stays free for this."""
     try:
         login = getpass.getuser().lower()
     except (KeyError, OSError):  # no passwd entry, no LOGNAME
         return "owner"
-    return (
-        login if handles.FORMAT.fullmatch(login) and not paths.handle_reserved(login) else "owner"
-    )
+    usable = handles.FORMAT.fullmatch(login) and not paths.handle_reserved(login, by_operator=True)
+    return login if usable else "owner"
 
 
 def _read_email() -> str | None:
