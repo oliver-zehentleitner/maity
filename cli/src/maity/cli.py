@@ -44,6 +44,8 @@ from maity import (
 )
 from maity.runner import commands as runner_commands
 from maity.runner import config
+from maity.stamp import parse_stamp
+from maity.stamp import stamp as format_stamp
 
 EXIT_OK = 0
 EXIT_ERROR = 1
@@ -1071,17 +1073,11 @@ def _utc_now() -> datetime:
 
 def _utc(at: datetime) -> str:
     """A UTC time to the second, as the hub's and the proxy's logs are searched."""
-    return at.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return format_stamp(at)
 
 
 def _parse_utc(value: object) -> datetime | None:
-    if not isinstance(value, str):
-        return None
-    try:
-        at = datetime.fromisoformat(value.replace("Z", "+00:00"))
-    except ValueError:
-        return None
-    return at if at.tzinfo is not None else None
+    return parse_stamp(value)
 
 
 class _Outage:
@@ -4131,7 +4127,7 @@ def cli_time(flag: str, value: str, direction: int, now: float | None = None,
             moment = datetime.fromtimestamp(base + direction * seconds, tz=UTC)
         except (ValueError, OverflowError, OSError):
             raise UsageError(f"{flag} {value!r}: not a time this CLI can send") from None
-        return moment.replace(microsecond=0).strftime("%Y-%m-%dT%H:%M:%SZ")
+        return _utc(moment)
     if _NO_OFFSET.fullmatch(value):
         raise UsageError(
             f"{flag} {value!r} has no offset; add Z or ±hh:mm (it is never read as local time)"
@@ -4141,11 +4137,10 @@ def cli_time(flag: str, value: str, direction: int, now: float | None = None,
             f"{flag} {value!r}: an RFC 3339 time with an offset "
             "(2026-10-22T17:00:00Z, …+02:00) or a duration (90m, 3h, 1h30m, 2d12h)"
         )
-    try:
-        moment = datetime.fromisoformat(value.upper().replace("Z", "+00:00")).astimezone(UTC)
-    except (ValueError, OverflowError):
-        raise UsageError(f"{flag} {value!r}: not a time this CLI can send") from None
-    return moment.replace(microsecond=0).strftime("%Y-%m-%dT%H:%M:%SZ")
+    parsed = _parse_utc(value.upper())
+    if parsed is None:
+        raise UsageError(f"{flag} {value!r}: not a time this CLI can send")
+    return _utc(parsed)
 
 
 def limit_until(value: str, now: float | None = None) -> str:

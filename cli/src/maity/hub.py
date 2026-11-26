@@ -13,11 +13,11 @@ import urllib.request
 import uuid
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
-from datetime import datetime
 from email.message import Message
 from typing import Any
 
 from maity import __version__, onboarding, sign
+from maity.stamp import parse_stamp
 from maity.state import Secret
 
 API = "/api/v1"
@@ -568,12 +568,8 @@ def pair_exchange(base: str, token: str, code: str, timeout: float = 30.0) -> Pa
 
 
 def _parse_server_time(value: object) -> float | None:
-    if not isinstance(value, str):
-        return None
-    try:
-        return datetime.fromisoformat(value.replace("Z", "+00:00")).timestamp()
-    except ValueError:
-        return None
+    at = parse_stamp(value)
+    return None if at is None else at.timestamp()
 
 
 @dataclass
