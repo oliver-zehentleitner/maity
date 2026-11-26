@@ -70,6 +70,8 @@ from playwright.sync_api import Page, expect, sync_playwright
 WEB = Path(__file__).resolve().parent.parent
 OWNER = "owner"
 OWNER_PASSWORD = "e2e owner password"
+# The scenario's change_password sets this; on the main hub, a round after the scenario signs the owner in with it.
+OWNER_CHANGED_PASSWORD = "e2e changed password, long enough"
 OWNER_EMAIL = "owner@e2e.example"  # `owner create --email` stores it as verified (§2.1)
 TIMEOUT_MS = 25_000  # one step in the browser; the feed reads every 15 s
 COUNTS_MS = 70_000  # counts of other projects: /me is re-read every 60 s
@@ -993,6 +995,7 @@ def main() -> int:
                     switch_busy_layout(run, browser)
                     report_pages_round(run, browser)
                     outsider_tab_round(run, browser)
+                    explore_tab_round(run, browser)
                     public_first_paint_round(run, browser)
                     stored_pages_policy_round(run, browser)
                     second_hub_round(run, browser, work, artifacts)
@@ -4197,7 +4200,10 @@ def chat_phone_head(run: Run, browser) -> None:
                     assert menu[2] <= width, f"{where}: tabs menu past the window {menu}"
                     if phone:
                         assert tabs.evaluate("(el) => el.scrollWidth > el.clientWidth"), f"{where}: the tabs do not overflow, nothing tested"
-                        assert menu[2] >= width - 24, f"{where}: the tabs menu is not at the row's right end {menu}"
+                        # The Explore link holds the row's right end (views.md dd8eaa01); the menu stays just before it.
+                        link = page.locator(".switcher-row > a.explore-link").evaluate(box)
+                        assert menu[2] <= link[0], f"{where}: the tabs menu does not end before the Explore link {menu} {link}"
+                        assert width - 24 <= link[2] <= width, f"{where}: the Explore link is not at the row's right end {link}"
                     # Tab from the heading reaches the button next, past the heading's own links, wherever it is drawn.
                     heading.focus()
                     for _ in range(4):
@@ -5889,6 +5895,139 @@ def outsider_tab_round(run: Run, browser) -> None:
     # (§2.3, #2078), as on this hub: asked for, and said in the view's one sentence; no problem.
     run.problems[:] = [p for p in run.problems if p != "GET /api/v1/projects/owner/e2e-alpha/keep-the-why/export answered 404"]
     no_problems(run, "outsider tab")
+    context.close()
+
+
+EXPLORE_TAB = "header nav.switcher a.explore-tab"
+EXPLORE_LINK = "header .switcher-row > a.explore-link"
+
+
+def explore_tab_round(run: Run, browser) -> None:
+    """Explore inside the dashboard (docs/api.md §16.9, "Explore, signed in"; tsk-r6bk2py3ezwg;
+    web/context/views.md), on the hub. For REPORTER, who has no project of their own and is no member
+    of e2e-alpha: the tabs menu is there all the same; the row's Explore link opens the Explore tab
+    at `/explore`, current, with no project views, listing e2e-alpha from `GET /public/explore`; its
+    card opens the dashed tab, whose star sends `PATCH /me` with the id the view read from `GET
+    /projects/owner/e2e-alpha`; a reload of `/explore` keeps the tab, `?as=public` is the hub's page;
+    the menu's Explore goes to the tab, and its × closes it. For the owner, a member, the card opens
+    e2e-alpha as its own tab. Screenshots of the tab at 1280 and 390 px, light and dark, axe clean."""
+    run.step("explore: a tab of its own in the dashboard; a project opens dashed or as one's own tab; the star works; × closes it")
+    handle, name, address, password = REPORTER
+    context, page = new_page(run, browser)
+    page.goto(run.base + "/login")
+    fill_sign_in(page, address, password)
+    expect(page.locator("header .me")).to_contain_text(name)
+    tab = page.locator(EXPLORE_TAB)
+    link = page.locator(EXPLORE_LINK)
+    expect(link).to_have_attribute("href", "/explore")
+    expect(tab).to_have_count(0)
+    # The tabs menu for a human without projects too: New project and Explore, no project switch.
+    menu = page.locator(".tabs-menu-box")
+    menu.get_by_role("button", name="Project tabs", exact=True).click()
+    expect(menu.get_by_role("menuitem", name="New project", exact=True)).to_be_visible()
+    expect(menu.get_by_role("menuitem", name="Explore", exact=True)).to_be_visible()
+    expect(menu.get_by_role("menuitemcheckbox")).to_have_count(0)
+    page.keyboard.press("Escape")
+    # The link: a route change to /explore (no page load), the list from the public read.
+    with page.expect_response(lambda r: r.url == f"{run.base}/api/v1/public/explore") as listed:
+        link.click()
+    assert listed.value.status == 200, listed.value.status
+    assert {"full_name": "owner/e2e-alpha", "name": "E2E Alpha"} in listed.value.json()["projects"], listed.value.text()
+    expect(page).to_have_url(f"{run.base}/explore")
+    expect(page.locator("#main section.view-explore")).to_have_count(1)
+    expect(tab).to_have_attribute("aria-current", "page")
+    expect(page.locator("header nav.views")).to_have_count(0)
+    card = page.locator("#main a.explore-card[data-full-name='owner/e2e-alpha']")
+    expect(card).to_have_attribute("href", "/owner/e2e-alpha/overview")
+    expect(page.locator("#main .tab-star")).to_have_count(0)
+    for width, height in ((1280, 900), (390, 844)):
+        page.set_viewport_size({"width": width, "height": height})
+        for scheme in ("light", "dark"):
+            page.emulate_media(color_scheme=scheme)
+            where = f"the Explore tab at {width}x{height} {scheme}"
+            expect(tab).to_be_visible()
+            expect(link).to_be_visible()
+            settle(page, NOT_WIDER, None)
+            wide = page.evaluate("document.documentElement.scrollWidth - document.documentElement.clientWidth")
+            assert wide <= 0, f"{where}: {wide} px wider than the window"
+            # The menu stays on the tabs' line, the link at the row's end inside the window.
+            got = page.evaluate("(() => { const r = (s) => document.querySelector(s).getBoundingClientRect();"
+                                " const m = r('.tabs-menu-box .menu-button'), l = r('.switcher-row > a.explore-link');"
+                                " return { menuTop: m.top, linkRight: l.right, menuRight: m.right, linkLeft: l.left, vw: innerWidth }; })()")
+            assert got["linkRight"] <= got["vw"] and got["menuRight"] <= got["linkLeft"], f"{where}: {got}"
+            run.shot(page, f"explore-tab-{width}-{scheme}")
+            if (width, scheme) == (1280, "light"):
+                run.a11y(page, "the Explore tab, signed in")
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.emulate_media(color_scheme="light")
+    # A project one is no member of: the dashed tab, its id from the project's own read, then the star.
+    with page.expect_response(lambda r: r.url == f"{run.base}/api/v1/projects/owner/e2e-alpha" and r.request.method == "GET") as read:
+        card.click()
+    project_id = read.value.json()["id"]
+    expect(page).to_have_url(re.compile(re.escape(run.base) + r"/owner/e2e-alpha/overview$"))
+    outsider = page.locator(OUTSIDER_TAB)
+    expect(outsider).to_have_attribute("aria-current", "page")
+    settle(page, DASHED, OUTSIDER_TAB)
+    expect(tab).to_have_count(1)
+    expect(tab).not_to_have_attribute("aria-current", "page")
+    star = page.locator("header nav.switcher .outsider-tab button.tab-star")
+    expect(star).to_have_attribute("aria-pressed", "false")
+    with page.expect_request(lambda r: r.url == f"{run.base}/api/v1/me" and r.method == "PATCH") as sent:
+        star.click()
+    assert json.loads(sent.value.post_data or "{}") == {"starred": [project_id]}, sent.value.post_data
+    expect(star).to_have_attribute("aria-pressed", "true")
+    expect(outsider).to_have_class(re.compile(r"\bstarred\b"))
+    me = page.request.get(f"{run.base}/api/v1/me").json()
+    assert [s["id"] for s in me["member"]["starred"]] == [project_id], me["member"]["starred"]
+    # A reload at /explore: the shell, the tab still open (the browser session's).
+    page.goto(run.base + "/explore")
+    expect(tab).to_have_attribute("aria-current", "page")
+    expect(page.locator("#main a.explore-card[data-full-name='owner/e2e-alpha'] .explore-mark")).to_have_text("starred")
+    # `?as=public` is the hub's page for anyone.
+    shown = context.new_page()
+    watch_page(run, shown)
+    shown.goto(run.base + "/explore?as=public")
+    expect(shown.locator("h1")).to_have_text("Public projects")
+    assert not shown.evaluate("!!(window.Maity && window.Maity.route)"), "/explore?as=public: the dashboard, not the hub's page"
+    shown.close()
+    # The star off again, as it was; the × closes the tab and leads to All projects; the menu's Explore opens it again.
+    star_off = page.request.patch(f"{run.base}/api/v1/me", headers={**_csrf(page), "Content-Type": "application/json"},
+                                  data=json.dumps({"starred": []}))
+    assert star_off.status == 200, (star_off.status, star_off.text())
+    page.reload()
+    page.locator("header nav.switcher .explore-tab-box button.tab-close").click()
+    expect(page).to_have_url(f"{run.base}/all")
+    expect(tab).to_have_count(0)
+    menu.get_by_role("button", name="Project tabs", exact=True).click()
+    menu.get_by_role("menuitem", name="Explore", exact=True).click()
+    expect(page).to_have_url(f"{run.base}/explore")
+    expect(tab).to_have_attribute("aria-current", "page")
+    # Another browser tab has its own session's tabs: no Explore tab there.
+    other = context.new_page()
+    watch_page(run, other)
+    other.goto(run.base + "/all")
+    expect(other.locator("header nav.switcher a[href='/all']")).to_have_attribute("aria-current", "page")
+    expect(other.locator(EXPLORE_TAB)).to_have_count(0)
+    other.close()
+    no_problems(run, "explore tab")
+    context.close()
+    # A member: the card opens the project as its own tab, solid, at its inbox. The scenario changed the
+    # owner's password long before this round.
+    context, page = signed_in_page(run, browser, password=OWNER_CHANGED_PASSWORD)
+    expect(page.locator("header .me")).to_be_visible()
+    page.goto(run.base + "/explore")
+    expect(page.locator(EXPLORE_TAB)).to_have_attribute("aria-current", "page")
+    own = page.locator("#main a.explore-card[data-full-name='owner/e2e-alpha']")
+    expect(own.locator(".explore-mark")).to_have_text("member")
+    own.click()
+    expect(page).to_have_url(re.compile(re.escape(run.base) + r"/owner/e2e-alpha/inbox$"))
+    solid = page.locator("header nav.switcher a[data-project]", has_text="E2E Alpha")
+    expect(solid).to_have_attribute("aria-current", "page")
+    expect(page.locator(OUTSIDER_TAB)).to_have_count(0)
+    page.locator("header nav.switcher .explore-tab-box button.tab-close").click()
+    expect(page.locator(EXPLORE_TAB)).to_have_count(0)
+    expect(page).to_have_url(re.compile(re.escape(run.base) + r"/owner/e2e-alpha/inbox$"))
+    no_problems(run, "explore tab, member")
     context.close()
 
 
@@ -8960,7 +9099,7 @@ def project_tabs_step(run: Run, page: Page) -> None:
     assert 0 <= gap[0] <= 24 and gap[1], f"the tabs menu is not right after the tabs: {gap}"
     # The tabs menu is drawn as the row's last tab (tsk-qa2r972wjsws): the tabs' height, top, pill and gap, light and
     # dark, at 1280 and 390 px; still a menu button, not a tab; outside the tabs, so no drag or key moves it, and on a
-    # phone it keeps the row's right end while the tabs scroll.
+    # phone it keeps the row's end, or the spot just before the Explore link where it is shown, while the tabs scroll.
     like_tab = ("(() => { const ts = Array.from(document.querySelectorAll('nav.switcher a[data-project]')); const t = ts[ts.length - 1];"
                 " const b = document.querySelector('.tabs-menu-box .menu-button'); const r = (e) => e.getBoundingClientRect();"
                 " const s = (e) => { const c = getComputedStyle(e); return [c.borderTopLeftRadius, c.paddingTop, c.paddingLeft, c.fontSize,"
@@ -9397,7 +9536,7 @@ def dormant_step(run: Run, page: Page) -> None:
 def change_password(run: Run, page: Page) -> None:
     """docs/api.md §2.1: the new password works, the old one does not, other sessions end."""
     run.step("account: change the password; another session ends; sign in with the new one")
-    new_password = "e2e changed password, long enough"
+    new_password = OWNER_CHANGED_PASSWORD
     other = page.context.browser.new_context()
     second = other.new_page()
     second.goto(run.base + "/")

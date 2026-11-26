@@ -5099,6 +5099,30 @@
     "en": "f0d839b3df807c74",
     "text": "560e825104bf42d5"
   },
+  "explore.heading": {
+    "en": "1a72c10edf3e3765",
+    "text": "3260f78288665d00"
+  },
+  "explore.intro": {
+    "en": "b3ebf768bddefa24",
+    "text": "27a5887a7134fc6e"
+  },
+  "explore.member": {
+    "en": "68884b2d004b2e09",
+    "text": "fe62fa399a60fc3d"
+  },
+  "explore.none": {
+    "en": "de4acb7d0b2ed99f",
+    "text": "159c28331b6ddcd7"
+  },
+  "explore.off": {
+    "en": "9c69d81d9c58bdeb",
+    "text": "b7d712121c640d63"
+  },
+  "explore.starred": {
+    "en": "66d7dfa128f2c01b",
+    "text": "c51a568670ce20ac"
+  },
   "factor_banner.label": {
     "en": "ca4ae1ba2d424523",
     "text": "1ece2e7329f2c592"
@@ -19858,6 +19882,18 @@
   "tabs.closed": {
     "en": "41a13659a8884709",
     "text": "2c7c424ff051b9ec"
+  },
+  "tabs.explore": {
+    "en": "e3abd89f854ecdf2",
+    "text": "68f1ce9ee80907ba"
+  },
+  "tabs.explore_close": {
+    "en": "cdb225acbb2d4a15",
+    "text": "fa38c1064aea2cd9"
+  },
+  "tabs.explore_title": {
+    "en": "b02bcc4f7f5b8c41",
+    "text": "7fbb7ed0818a0ef0"
   },
   "tabs.keep_at_start": {
     "en": "bded12959749c950",

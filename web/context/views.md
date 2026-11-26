@@ -4854,42 +4854,68 @@ While a tab is dragged, a 3 px upright line in the accent colour stands in the g
 - The line as an element between two tabs: it would widen the row while dragging and move the tab under the pointer.
 - An inset `box-shadow` on the tab: on the round tab it follows the curve and reads as a second border, not as a place between two tabs.
 
-## The tabs menu offers New project too, beside the projects; the "+" menu keeps its entry
+## The tabs menu offers New project and Explore too, first, then the projects; it shows for every signed-in human; the "+" menu keeps its entry
 
 **Id:** 6fd6bc4c-d67a-41bc-93fd-a37f3f4082ef
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** card tsk-c4dz5x6rb2h8 (the owner's report in the project chat, 2026-11-10: the "…" menu right of the project tabs lacks the option to create a project)
-**Revisit when:** the tabs menu gets items that are neither about the tabs nor about the projects in them, or the "+" menu loses its New project entry
+**Source:** card tsk-c4dz5x6rb2h8 (the owner's report in the project chat, 2026-11-10: the "…" menu right of the project tabs lacks the option to create a project); card tsk-r6bk2py3ezwg and the lead's decision of 2026-11-25 on the maintainer's design (the menu's order, Explore as a plain action, the menu for every signed-in human)
+**Revisit when:** the tabs menu gets items that are neither about the tabs, the projects in them nor finding a project, or the "+" menu loses its New project entry
 **See:** views.md#the-row-of-tabs-has-no-new-project-tab-the-tabs-menu-follows-the-tabs-a-dragged-tabs-place-is-a-line — 4ff40142-df78-4c11-8f0c-c0024adecd79 — as of 2026-11-10
 
-The tabs menu ("…", `tabsMenu` in `js/app.js`) ends with a separator and **New project** (`view.new_project`), a link to `/new`, the same create form the header's "+" menu opens. Like the "+" menu it is there for humans only. The "+" entry stays; the row of tabs still has no New project tab of its own.
+The tabs menu ("…", `tabsMenu` in `js/app.js`) starts with its actions: **New project** (`view.new_project`), a link to `/new`, the same create form the header's "+" menu opens; **Explore**, a link to `/explore` that opens the Explore tab or goes to it, an action and no switch (the Explore tab: 621d3034-0e4a-4a59-9b84-fd9c62dea509); and **Keep these tabs at start**, which is left out while the human has no project. A separator follows, then each project as a switch, then Move this tab left or right where the current tab can go. Since 2026-11-25 the menu is there for every signed-in human, one without projects too, as both actions are; an agent gets none, as before. The "+" entry stays; the row of tabs still has no New project tab of its own.
 
-**Reason:** a person looks for a new project next to the projects. After the tab went (4ff40142), the action lived only in the header's "+" menu, and the owner did not find it where he looked, in the menu beside the tabs. That outweighs keeping the menu strictly about the tabs.
+**Reason:** a person looks for a new project next to the projects. After the tab went (4ff40142), the action lived only in the header's "+" menu, and the owner did not find it where he looked, in the menu beside the tabs. That outweighs keeping the menu strictly about the tabs. The actions first, and the menu for a human without projects, are the lead's 2026-11-25 ruling: such a human has no tab to manage yet but still looks for a new project and for the public ones.
 
 **Rejected alternatives:**
 - Bringing back the "+ New project" tab: the owner's 2026-11-08 layout keeps the row for projects and the menu right after the last tab (4ff40142).
 - Moving the entry out of the "+" menu: that menu is the header's one place to add something (an agent, a person, a runner, a project), and nothing asked to change it.
+- Explore as a checkbox among the switches, like a project: it opens or goes to a tab, which is an action, not a state to toggle (the lead, 2026-11-25).
 
-## The tabs menu is drawn as the row's last tab, fixed at the end, and stays a menu button
+## The tabs menu is drawn as the row's last tab, fixed after the tabs, and stays a menu button; the Explore link stands apart at the row's end
 
 **Id:** dd8eaa01-7117-4ed2-94de-8eee9ee82e57
 **Type:** decision
 **Status:** active
-**Evidence:** confirmed
-**Source:** card tsk-qa2r972wjsws (the owner in the project chat, 2026-11-10, seq 105570: the "⋯" beside the project tabs should look like a tab; the proposal approved in seq 105578; seq 105588: it cannot be moved, it stays the last tab)
-**Revisit when:** the tabs menu gets a view of its own, or the row of tabs gets groups or pinned tabs
+**Evidence:** inferred
+**Source:** card tsk-qa2r972wjsws (the owner in the project chat, 2026-11-10: the "⋯" beside the project tabs should look like a tab; the proposal approved the same day; it cannot be moved, it stays the last tab); card tsk-r6bk2py3ezwg and the lead's decision of 2026-11-25 on the maintainer's design (a link to Explore at the right end of the project tab row)
+**Revisit when:** the tabs menu gets a view of its own, the row of tabs gets groups or pinned tabs, or something else is to stand in the row beside the tabs menu and the Explore link
 **See:** views.md#the-row-of-tabs-has-no-new-project-tab-the-tabs-menu-follows-the-tabs-a-dragged-tabs-place-is-a-line — 4ff40142-df78-4c11-8f0c-c0024adecd79 — as of 2026-11-11
 
-The tabs menu ("⋯", `tabsMenu` in `js/app.js`) is drawn like a project tab: the same pill, padding, height, font, colours and bottom edge, on the tabs' line, the tabs' gap after the last one (`.tabs-menu-box .menu-button.tabs-menu` in `css/app.css`). Wider than a phone, many tabs scroll before the row wraps (`max-width: calc(100% - 24px - 0.88rem)` on `.switcher` in a row with the menu, the menu's own width at any root font size), so the menu stays on their line; before, tabs enough to fill the line pushed the menu to a line of its own. Open, it takes the current tab's accent edge and raised ground. It stays an `M.menuButton`: `aria-haspopup="menu"`, named "Project tabs", no `role="tab"`, and Enter, ArrowDown and Escape work as before. It stands outside `nav.switcher`, so dragging and Alt+Shift+Arrow move only the project tabs and never past it, and on a phone, where the tabs scroll, it keeps the row's right end.
+The tabs menu ("⋯", `tabsMenu` in `js/app.js`) is drawn like a project tab: the same pill, padding, height, font, colours and bottom edge, on the tabs' line, the tabs' gap after the last one (`.tabs-menu-box .menu-button.tabs-menu` in `css/app.css`). Wider than a phone, many tabs scroll before the row wraps (`max-width: calc(100% - 24px - 0.88rem)` on `.switcher` in a row with the menu, the menu's own width at any root font size), so the menu stays on their line; before, tabs enough to fill the line pushed the menu to a line of its own. Open, it takes the current tab's accent edge and raised ground. It stays an `M.menuButton`: `aria-haspopup="menu"`, named "Project tabs", no `role="tab"`, and Enter, ArrowDown and Escape work as before. It stands outside `nav.switcher`, so dragging and Alt+Shift+Arrow move only the project tabs and never past it, and on a phone, where the tabs scroll, it stays at the row's right end, just before the Explore link.
 
-**Reason:** the owner wants it to read as part of the row; a lone square button beside the pills looked like it belonged elsewhere. Outside the tabs it is fixed by construction, which is the owner's rule that it never moves.
+Since 2026-11-25 a signed-in human's row also carries the link to Explore (`exploreLink`, `a.explore-link`) after the menu, pushed to the row's right end (`margin-inline-start: auto`): a plain link, no tab and no menu. In a row with it the row does not wrap at all (`flex-wrap: nowrap`, the `max-width` above lifted): the tabs shrink and scroll, the menu stays right after the last tab and the link at the end. On a phone the link shows its compass alone, its name kept for a screen reader. The menu is still the row's last tab: the link is no tab, and the Explore tab, when open, stands inside `nav.switcher` before the menu.
+
+**Reason:** the owner wants it to read as part of the row; a lone square button beside the pills looked like it belonged elsewhere. Outside the tabs it is fixed by construction, which is the owner's rule that it never moves. The Explore link at the row's end is the maintainer's design as the lead ruled it on 2026-11-25; not wrapping in a row with it is the implementing change's own way to keep both rules, the menu after the last tab and the link at the end, and the lead has not confirmed it, so the entry is inferred; the rest stays confirmed.
 
 **Rejected alternatives:**
-- Leaving the many-tab wrap as it was and saying so: the owner's rule is that it stays the last tab (seq 105588), and it would not be exactly when there are the most tabs.
+- Leaving the many-tab wrap as it was and saying so: the owner's rule is that it stays the last tab, and it would not be exactly when there are the most tabs.
+- The Explore link inside `nav.switcher` or before the menu: it would scroll away with the tabs, or the menu would no longer follow the last tab.
 - A real tab (`role="tab"` or a link in `nav.switcher`): a screen reader would announce a view that does not exist, and the drag and keyboard moves would treat it as a project tab.
 - Leaving it as it was, a small button with a gap: it did not read as part of the row.
+
+## Signed in, Explore is a tab of its own in the dashboard for the browser session; the star stays in the dashed tab
+
+**Id:** 621d3034-0e4a-4a59-9b84-fd9c62dea509
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-r6bk2py3ezwg (a signed-in Explore inside the dashboard, on the maintainer's design of 2026-11-25); the lead's decision of 2026-11-25; docs/api.md §16.9 "Explore, signed in", §5.1 "Stars", §2.3; `exploreTab`, `exploreLink`, `exploreView` in web/js/app.js, `exploreOpen` in web/js/tabs.js; the Explore cases in web/tools/smoke.js and `explore_tab_round` in web/tools/e2e.py
+**See:** views.md#a-public-project-one-is-no-member-of-is-a-dashed-tab-for-the-browser-session-that-opens-the-projects-member-views-a-starred-one-is-a-dashed-tab-among-ones-tabs-opened-after-start_tabs — f461c919-3041-4558-af0e-e44127041a01 — as of 2026-11-25
+**See:** views.md#the-tabs-menu-offers-new-project-and-explore-too-first-then-the-projects-it-shows-for-every-signed-in-human-the--menu-keeps-its-entry — 6fd6bc4c-d67a-41bc-93fd-a37f3f4082ef — as of 2026-11-25
+**See:** views.md#the-tabs-menu-is-drawn-as-the-rows-last-tab-fixed-after-the-tabs-and-stays-a-menu-button-the-explore-link-stands-apart-at-the-rows-end — dd8eaa01-7117-4ed2-94de-8eee9ee82e57 — as of 2026-11-25
+**See:** routing.md#explore-and-forslug-are-the-hubs-pages-a-click-on-a-link-to-them-a-page-load-except-bare-explore-signed-in-the-dashboards-explore-tab-both-stay-routes — b8377791-ca86-4ebe-82a3-dbf40b17daa2 — as of 2026-11-25
+**Revisit when:** Explore needs a state of its own that outlives the browser session (a filter, a search, a sort), or the stars move out of the dashed tab
+
+A signed-in human finds Explore inside the dashboard, not in the hub's frame. The link at the right end of the project tab row (dd8eaa01) and the tabs menu's **Explore** (6fd6bc4c) open the Explore tab, or go to it where it is open; so does the address `/explore`, which the hub answers a session with the shell (b8377791), so a reload or a deep link opens it too. The tab stands last in the row, drawn as a tab and never moved; it shows Explore instead of a project, with no project views under it. It lasts for the browser session, as an outsider's unstarred tab does (kept in sessionStorage, never sent), and closes with its own × beside the link; from its own page the × leads to All projects. Its page lists `GET /public/explore`, the same answer for everyone: a member's project opens as its own tab, any other as the outsider's dashed tab, where the star is; a card shows "member" or "starred" from `/me`, nothing else. Signed out, and with `?as=public`, `/explore` is the hub's page as before.
+
+**Reason:** the maintainer's design, as the lead ruled it: a signed-in reader explores without leaving the dashboard, and a project found there opens where every project opens, in the tab row. The star already lives in the dashed tab (f461c919), which reads the project's id; one place to star a project keeps one way to do it, and the public list stays free of per-reader data. That a click on the link is a route change, not a page load, rests on b8377791, whose part on it is inferred.
+
+**Rejected alternatives:**
+- A star on each card: a second place to star with its own state to keep in step, and the public list carries no project id, so each card would need a read of its own (the lead, 2026-11-25).
+- Explore as a checkbox in the tabs menu, like a project's switch: it opens or goes to a tab, an action, not a state (the lead, 2026-11-25).
+- A tab that lasts for good, kept in the browser like the member tabs or on the account like `start_tabs`: Explore is a place one visits, like a project opened from outside, so it goes with the browser session (the lead, 2026-11-25).
 
 ## Forge access is a section of the account, also at /settings/forge; a project's settings say which grant reads its repository
 
