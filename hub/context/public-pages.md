@@ -804,7 +804,8 @@ without the card history and the member and card fields the contract opens to an
 **Revisit when:** the login is no longer the way a mail link goes on after a sign-in
 
 The pages themselves worked; the shell around them does not know visitors and shows the login. So `/explore`,
-which the landing page's button named and nothing served, is now a page for everyone, a slash at the end of a
+which the landing page's button named and nothing served, is now a page for every visitor (a signed-in human
+gets the shell there since 2026-11-25, b723d46b), a slash at the end of a
 page's address leads to the page, and the join host keeps `/<owner>/<slug>…`. A dashboard address under a
 public project stays the login and links the page. A signed-in non-member first went to `?as=public`; since
 2026-11-02 they read the same view in the app at the same address (70c80e4f), and since 2026-11-03 the
@@ -1565,3 +1566,37 @@ digest hashes, so each would be rewritten and dated again; the second needs five
 
 A mechanical change: the stored pages, their `data` and the public routes' answers on one world (people, agents, an
 organisation, a second project, cards, an online agent, a profile switched off) are the same before and after.
+
+## A signed-in `/explore` is the shell, and `GET /public/explore` lists the projects the same for everyone
+
+**Id:** b723d46b-9810-4de0-b29c-0f1ad1f72c48
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-r6bk2py3ezwg (a signed-in Explore inside the dashboard, on the maintainer's design of 2026-11-25); the lead's decision of 2026-11-25 on the plan for it (the route, the reads, the cache rule, two pull requests); contract `docs/api.md` §16.9 "Explore, signed in", §16.11; `routes.pages.explore` and `read_explore`, `public_projects.explore_rows`
+**See:** public-pages.md#a-visitor-on-the-way-to-a-public-page-never-ends-at-the-login — 439a36e9-c05c-4c87-a3d3-1cd2ff5061d7 — as of 2026-11-25
+**Revisit when:** the dashboard's Explore needs something per reader that `GET /me` does not carry, or a shared cache in front of the hub stops honouring `Vary: Cookie`
+
+`/explore` answers a request with a live session, unless it asks `?as=public`, with the app shell (`no-cache`,
+`Vary: Cookie`, as every shell), and the dashboard draws Explore there as a tab of its own. A visitor, and anyone
+with `?as=public`, gets the page as before. The dashboard reads its list from `GET /public/explore`,
+`{"projects": [{name, full_name}]}`, the same answer for everyone (`public, max-age=60`, an `ETag`, no
+`Vary: Cookie`), from `public_projects.explore_rows`, the one listing the page draws as well. Whether the reader
+is a member of a listed project or has starred it, the dashboard takes from `GET /me`; a project's id for a new
+star from `GET /projects/{owner}/{slug}`, which an outsider reads (§2.3). The star stays in the dashed tab, not
+on the list. While a maintenance window runs the route decides, as `/` does: a visitor gets the 503 page, a
+signed-in reader the shell, whose app shows the full page; the middleware no longer refuses `/explore` for everyone.
+
+**Reason:** the same address keeps every link to it working (the frame's header, the not-found page) and needs no
+new reserved first segment, which would take a handle away. The answer already varied on the cookie, and stored
+public pages and `/` already hand a session the shell, so caches meet nothing new. A list the same for everyone can
+be cached publicly and stays a plain public read; what differs per reader is already in `/me`.
+
+**Rejected alternatives:**
+- A dashboard address of its own, such as `/all/explore`: Explore is a tab beside the projects, not a view of the
+  All projects scope; and a new first word would need a reserved segment that may already be a handle.
+- A signed-in list that marks each project as the reader's membership or star: it repeats `/me` and can only be
+  cached privately.
+- The project's id in the public list, so a star needs no further read: the public list carries what the pages
+  show, and one read per new star is cheap; the lead ruled the ids out.
+- The dashboard reading `/explore`'s HTML for its list: it would tie the app to the page's markup.
