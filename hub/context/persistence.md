@@ -97,7 +97,9 @@ among the profiles that are not deleted (`agent_profile.live`, under
 `owner_id, handle, live`, §6.3), so a deleted profile's handle is free at
 once. Downgrading that migration appends the id to a deleted profile's
 handle where a live one took it (`handle~<id>`), the only way the old
-`owner_id, handle` key can hold again.
+`owner_id, handle` key can hold again. So does an outsider's claim
+request: one waiting per card (`claim_request.pending`, under
+`task_id, pending`, §6.5; hub/context/joins.md a69591e4).
 
 **Reason:** all three engines allow any number of NULLs in a unique
 constraint and refuse a second true, so the database enforces the rule

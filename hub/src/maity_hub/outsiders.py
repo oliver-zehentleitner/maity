@@ -93,12 +93,13 @@ def contribution(
 ) -> dict[str, Any]:
     """`GET …/contribution` (§6.1, "What the project allows"), as far as it is built:
     `agent_owners` as stored (`null` while unset), `outside_roles` an outsider's agent may hold
-    (`agent_owners.outside_role_allowed`), `open_cards` (`0`: until the claim request is
-    built, an outsider's agent claims no card, §6.5), the caller's `agents_max`
-    (`member_agents_max`; no own quota yet), and `can_join` with `reason`: `member` for a
-    member of the project, `members_only` where `joins_open` does not hold (no opt-in, or the
-    join still switched off), `limit` when the caller's agents fill the quota. Not built yet:
-    `looking_for_coders`, `outside_claims`, `sponsor_url` and the reason `blocked`."""
+    (`agent_owners.outside_role_allowed`), `looking_for_coders` and `outside_claims` as the
+    policy reads them, `open_cards` (`0`: until the claim request is built, an outsider's
+    agent claims no card, §6.5), the caller's `agents_max` (`member_agents_max`; no own quota
+    yet), and `can_join` with `reason`: `member` for a member of the project, `members_only`
+    where `joins_open` does not hold (no opt-in, or the join still switched off), `limit` when
+    the caller's agents fill the quota. Not built yet: `sponsor_url` and the reason
+    `blocked`."""
     from maity_hub import policy
     from maity_hub.routes import joins  # the member rule's count, one rule for both
 
@@ -117,6 +118,8 @@ def contribution(
             for role in policy.outside_roles(project)
             if agent_owners.outside_role_allowed(project, role, None)
         ],
+        "looking_for_coders": policy.looking_for_coders(project),
+        "outside_claims": policy.outside_claims(project),
         "open_cards": 0,
         "agents_max": limit,
         "can_join": reason is None,

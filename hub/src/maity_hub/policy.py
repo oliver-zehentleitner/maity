@@ -44,6 +44,10 @@ CHOICES = {
     "merged_closes": ("notify", "auto"),
     "member_agents": ("off", "on"),
     "agent_owners": ("members", "anyone"),
+    # Which open cards an outsider's agent may claim, and who confirms its claim (§6.1,
+    # §6.5 "An outsider's claim"). Null columns read as the defaults below.
+    "looking_for_coders": ("per_card", "all", "off"),
+    "outside_claims": ("human", "agent", "direct"),
 }
 LEASE_MIN, LEASE_MAX, LEASE_DEFAULT = 600, 86400, 7200
 MAX_PLACEMENTS_DEFAULT = 8  # within the ceiling of §6.31 (ceilings.py)
@@ -63,6 +67,7 @@ FIELDS = (
     "outside_roles",
     "own_approvals",
     "own_agents",
+    "outside_claims_max",
 )
 # Kept when a preset changes: a preset must not quietly loosen signing or who may start
 # agents, reset the placement limit, the coordinator seats or the takeover window, or
@@ -88,6 +93,9 @@ KEPT_ON_PRESET = (
     "outside_roles",
     "own_approvals",
     "own_agents",
+    "looking_for_coders",
+    "outside_claims",
+    "outside_claims_max",
 )
 # A project that requires a test keeps requiring it (§6.1): no preset names these.
 DONE_KEPT_ON_PRESET = ("tester", "reviewer_and_tester")
@@ -112,6 +120,17 @@ OWN_APPROVALS_MAX = 2_147_483_647
 OWN_AGENTS = ("owners", "members")
 OWN_AGENTS_DEFAULT = "members"
 OWNERS_OF = "owners_of"
+
+# An outsider's claim (§6.1, §6.5): every open card that `open_to_outsiders` marks, confirmed
+# by the project's humans, and no cap, for a preset and for a project that predates them.
+LOOKING_FOR_CODERS_DEFAULT = "per_card"
+OUTSIDE_CLAIMS_DEFAULT = "human"
+# `agent` and `direct` let an agent, or nobody, decide who works in the project: a human
+# with trust `owner` sets them; `human` back is any `project:admin` human's (§6.1, the lead's
+# ruling of 2026-11-25, Q9).
+OUTSIDE_CLAIMS_OWNER_ONLY = ("agent", "direct")
+# `outside_claims_max`: from one up to the column's width, as `own_approvals`; null is no cap.
+OUTSIDE_CLAIMS_MAX_MAX = OWN_APPROVALS_MAX
 
 
 def keep_the_why_effective(project: Any) -> str:
@@ -143,6 +162,9 @@ def filled(preset: str, owner_id: str) -> dict[str, Any]:
         "outside_roles": list(OUTSIDE_DEFAULT),
         "own_approvals": OWN_APPROVALS_DEFAULT,
         "own_agents": OWN_AGENTS_DEFAULT,
+        "looking_for_coders": LOOKING_FOR_CODERS_DEFAULT,
+        "outside_claims": OUTSIDE_CLAIMS_DEFAULT,
+        "outside_claims_max": None,  # no cap
     }
     if preset == "solo":
         policy["contract_arbiter"] = owner_id
@@ -178,7 +200,24 @@ def of(project: Any) -> dict[str, Any]:
         "outside_roles": outside_roles(project),
         "own_approvals": own_approvals(project),
         "own_agents": own_agents(project),
+        "looking_for_coders": looking_for_coders(project),
+        "outside_claims": outside_claims(project),
+        "outside_claims_max": project.outside_claims_max,
     }
+
+
+def looking_for_coders(project: Any) -> str:
+    """`policy.looking_for_coders` (§6.1): the stored value, `per_card` for a project that
+    predates it."""
+    stored = project.looking_for_coders
+    return LOOKING_FOR_CODERS_DEFAULT if stored is None else str(stored)
+
+
+def outside_claims(project: Any) -> str:
+    """`policy.outside_claims` (§6.1): the stored value, `human` for a project that predates
+    it."""
+    stored = project.outside_claims
+    return OUTSIDE_CLAIMS_DEFAULT if stored is None else str(stored)
 
 
 def outside_roles(project: Any) -> list[str]:
@@ -261,6 +300,9 @@ def columns(policy: dict[str, Any]) -> dict[str, Any]:
         "outside_roles": policy["outside_roles"],
         "own_approvals": policy["own_approvals"],
         "own_agents": policy["own_agents"],
+        "looking_for_coders": policy["looking_for_coders"],
+        "outside_claims": policy["outside_claims"],
+        "outside_claims_max": policy["outside_claims_max"],
     }
 
 

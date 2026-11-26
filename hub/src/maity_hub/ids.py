@@ -54,6 +54,7 @@ PREFIXES = {
     "bridge": "brg",
     "maintenance_window": "mnt",
     "maintenance_change": "mnc",
+    "claim_request": "clr",  # an outsider's claim request (§6.5; the lead's ruling Q18)
 }
 
 

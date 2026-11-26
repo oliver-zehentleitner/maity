@@ -25,6 +25,7 @@ from maity_hub.ids import new_id
 # The card columns a member's write changes that the history records.
 RECORDED = (
     "title", "body", "label", "needs", "area", "status", "assigned_to", "ktw_ref", "parent",
+    "open_to_outsiders",
 )  # fmt: skip
 DIFFED = ("title", "body")
 
