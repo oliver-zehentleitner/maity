@@ -430,11 +430,14 @@
      "keep_the_why": "string",
      "keep_the_why_defaults": "string",
      "lease_seconds": "number",
+     "looking_for_coders": "string",
      "max_placements": "number",
      "member_agents": "string",
      "member_agents_max": "number",
      "merged_closes": "string",
      "on_runner_revoke": "string",
+     "outside_claims": "string",
+     "outside_claims_max": "null",
      "outside_roles": {
       "array": "string"
      },
@@ -1022,6 +1025,9 @@
        }
       },
       "claim": "null",
+      "claim_requests": {
+       "array": null
+      },
       "closed_at": "null",
       "contract": "null",
       "cover": "null",
@@ -1071,6 +1077,7 @@
         "total": "number"
        }
       },
+      "open_to_outsiders": "boolean",
       "parent": "null",
       "rank": "null",
       "related": {
@@ -1107,6 +1114,9 @@
     }
    },
    "claim": "null",
+   "claim_requests": {
+    "array": null
+   },
    "closed_at": "null",
    "contract": "null",
    "cover": "null",
@@ -1156,6 +1166,7 @@
      "total": "number"
     }
    },
+   "open_to_outsiders": "boolean",
    "parent": "null",
    "rank": "null",
    "related": {
@@ -1282,6 +1293,9 @@
        }
       },
       "claim": "null",
+      "claim_requests": {
+       "array": null
+      },
       "closed_at": "null",
       "contract": "null",
       "cover": "null",
@@ -1331,6 +1345,7 @@
         "total": "number"
        }
       },
+      "open_to_outsiders": "boolean",
       "parent": "null",
       "rank": "null",
       "related": {
@@ -2026,6 +2041,9 @@
     }
    },
    "claim": "null",
+   "claim_requests": {
+    "array": null
+   },
    "closed_at": "null",
    "contract": "null",
    "cover": "null",
@@ -2053,6 +2071,7 @@
      "total": "number"
     }
    },
+   "open_to_outsiders": "boolean",
    "parent": "null",
    "rank": "null",
    "related": {

@@ -6776,7 +6776,7 @@ entry of an agent's list has the shape above with `isolated: false`.
 | `GET /projects/{owner}/{slug}/keep-the-why` | `project:read` | the family's summary and the entries that need attention, per member (§11.3) |
 | `GET /projects/{owner}/{slug}/overview` | `project:read` | board counts, open requests, recent reports, for the overview page (§6.11) |
 | `GET /projects/{owner}/{slug}/contract` | `project:read` | the file `settings.contract_path` names, whole, with its table of contents (§6.8) |
-| `GET /projects/{owner}/{slug}/contribution` | any signed-in human while the project is public; a member too | what the project allows an outsider (below, "What the project allows"; built without `looking_for_coders`, `outside_claims`, `sponsor_url` and the reason `blocked`, which come with those settings) |
+| `GET /projects/{owner}/{slug}/contribution` | any signed-in human while the project is public; a member too | what the project allows an outsider (below, "What the project allows"; built without `sponsor_url` and the reason `blocked`, which come with those settings) |
 
 **What the project allows.** The maintainer's decision of 2026-11-14
 (tsk-yr3ckca01b9q): the outsider's tab (§5.1, "Stars") says what the
@@ -6811,13 +6811,13 @@ project that is not public, the answer is `not_found` to anyone who is
 no member, as for any non-member read.
 
 What is built so far answers `{agent_owners, outside_roles,
-open_cards, agents_max, can_join, reason}`: `outside_roles` lists the
+looking_for_coders, outside_claims, open_cards, agents_max, can_join,
+reason}`, in that order: `outside_roles` lists the
 roles of the policy's list an outsider's agent may hold (never
 `blue-team`, §6.1 `outside_roles`), `agents_max` is
 `member_agents_max`, and `reason` is also `members_only` while the
-outsiders' join is switched off (§3.1). `looking_for_coders`,
-`outside_claims`, `sponsor_url` and the reason `blocked` come with
-those settings.
+outsiders' join is switched off (§3.1). `sponsor_url` and the reason
+`blocked` come with those settings.
 
 **The outsiders' opt-in.** The maintainer's decision of 2026-11-23
 (req-gp8jzgr6zdvj, option o1): an outsider's agent comes into a public
@@ -7536,9 +7536,9 @@ stay; `state_changed` is not emitted for the mapping.
 | `outside_roles` | list of roles, default `["coder"]` | under `agent_owners: anyone` (an outsider's agent: under a stored `anyone`, "The outsiders' opt-in" above), the roles an agent whose owner is no member may hold (§6.2, "An agent whose owner is no member"); any role the project offers except `manager`, `ops`, `proxy` and `blue-team` and a project role on one of them (§2.3): `coder`, `reviewer`, `tester`, `designer`, `writer`, `red-team`, `purple-team`, `expert` and the project roles on `coder`, `reviewer`, `tester`, `designer` or `writer` (B.1 of §6.30, the maintainer's answers to Q10 and req-gz27mawemtvk, tsk-jf0m1t0fa6a9). **Not built yet:** `reviewer`, `tester`, `red-team`, `purple-team` and the project roles on `reviewer` or `tester` open together with the rule that such a role gives an outside owner's agent no done authority (§6.2, "An agent whose owner is no member"); until then the hub answers them `invalid` (`details.fields.outside_roles: "role_not_allowed"`), so the list takes `coder`, `designer`, `writer`, `expert` and the project roles on `coder`, `designer` or `writer`. `manager`, `ops`, `proxy`, `blue-team` and a project role on `ops` are `invalid` here (`details.fields.outside_roles`): an outsider's agent leads no line, deploys nothing and relays no decision, and a security team's defence stays with the project's own owners (req-nyfb57avd4j3, 2026-11-13). A list stored while `blue-team` was allowed reads without `blue-team`, and the next write of the policy stores it so; an agent that holds `blue-team` falls back to `coder` as §6.2 says (the lead's decision of 2026-11-13, no migration). A role on the list that reviews or tests gives such an agent no done authority, and its review result never counts as an own approval (§2.3, "Own approvals"; `own_approvals` below). The settings form warns in plain words when the list names a role that checks or approves (`reviewer`, `tester`, `red-team`, `purple-team` or a project role on `reviewer` or `tester`): the project's own members then share the say over what outsiders deliver. Trust `admin` stays closed to such an agent whatever the list says (§6.2). Set by a human with `project:admin`, with `reason`; every preset leaves the default |
 | `own_approvals` | integer from 1 to 2147483647, default 1 | how many own approvals (§2.3, "Own approvals": an `approve` on exactly the reported head from one of the project's own agents, or the approval of a human of the project) outsiders' work needs before anything moves its card to `done`; a move without them is `forbidden` with `details.reason: own_approvals`, `details.needed` and `details.counted`. Cards of the project's own members are not gated by it. A value above the number of the project's own reviewing agents and humans blocks every such card; the form says so in plain words, the hub does not refuse it. `0`, a larger number than 2147483647 or anything but an integer is `invalid` with `details.fields.own_approvals: out_of_range`: work by outsiders always needs one (the maintainer's answer o1 to req-9wpst24yyz7a, B.2 of §6.30). Every preset fills 1 at creation, a project that predates the field reads as 1, and a later preset change keeps it. Set by a human with `project:admin`, with `reason` |
 | `own_agents` | `owners`, `members` (default), or `{"owners_of": ["handle", …]}` | whose agents count as the project's own for `own_approvals` (§2.3, "Own approvals") **[Q11]**: `owners` the agents of the project's humans with trust `owner`; `members` the agents of every human member; `owners_of` the agents of the human members the owner picks. The value is sent whole, `owners_of` with at most 200 handles (repeats count once; an empty list counts no member's agents). At the write, a handle that names a person the stored `owners_of` does not hold yet is checked: one that names no person, or a pending, suspended or deleted account, is `invalid` with `details.fields.own_agents: unknown_handle`, and one that names a person who is not a human member of the project with `not_a_member`; any other shape is `unknown`, and more than 200 handles `too_many`. A handle that names a person the stored `owners_of` already holds, matched by the person it resolves to (its current handle or an alias, §6.24), is accepted as it is, member or not, so a list read and sent back passes after a member has left, and so does an edit that keeps that member (as for `settings.restricted_access`). A write of `owners` or `members` drops the stored list: a later `owners_of` starts from none, so every handle in it is checked as new, and a person who is no member then cannot be picked. A picked member who later leaves stays in `owners_of`, and the hub does not remove the handle: while that person is not a member, their agents are outside agents and count nothing (§2.3, "Own approvals"), and a display may mark the entry as not a member. If they rejoin, their agents count again; an agent the hub isolated while they were no member (when they left, or when the setting came to read `members`) counts once an admin lifts that isolation (§6.2). An agent with trust `outside`, and an agent of the owner of an agent that holds the card or filed its current report (the owner of every such outside agent included), never counts as the project's own, whatever the value. Humans of the project count whatever it says, except a human who owns such an agent (§2.3, "Own approvals"). Every preset fills `members` at creation, a project that predates the field reads as `members`, and a later preset change keeps it. Set by a human with trust `owner` only (`forbidden`, `owner_only`), with `reason`. It moves into the review setting of tsk-kymz2pdrf85k once that card is contracted |
-| `looking_for_coders` | `per_card` (default), `all`, `off` | under a stored `agent_owners: anyone` ("The outsiders' opt-in" above), which `open` cards an outsider's agent (trust `outside`, §2.3) may claim: those with the card field `open_to_outsiders: true` (§6.4), every one, or none; a claim on any other is `forbidden` with `details.reason: not_open_to_outsiders` (§6.5, "An outsider's claim"). It limits claims only: an admin's `assign` to an outsider's agent is not bound by it. Every preset fills `per_card` at creation, a project that predates the field reads as `per_card`, and a later preset change keeps it. Set by a human with `project:admin`, with `reason` (the maintainer's decision of 2026-11-14, Q12) |
-| `outside_claims` | `human` (default), `agent`, `direct` | who confirms the claim of an outsider's agent (§6.5, "An outsider's claim"): `human` the confirmers who are humans; `agent` agent confirmers as well; `direct` nobody, the claim takes the card at once as any claim does. Every preset fills `human` at creation, a project that predates the field reads as `human`, and a later preset change keeps it. Set by a human with `project:admin`, with `reason`; `agent` and `direct` only by a human with trust `owner` (`forbidden`, `owner_only`), and the form says in plain words that an agent then decides who works in the project, or nobody does (the maintainer's decision of 2026-11-14, Q27) |
-| `outside_claims_max` | `null` (default) or an integer ≥ 1, no upper bound | claims one outsider's agents may have in the project together, held and pending claim requests (§6.5) counted, all their instances and expired leases included; `null` is no cap. A claim beyond it is `forbidden` with `details.reason: outside_claims_max` and `details.max`; count and claim are one atomic step per outsider. A claim that comes otherwise (an admin's `assign`, a takeover, §6.19, a claim that stays when a new head sends a card of outsiders' work back from `done` to `review`, §6.6) is not refused and counts from then on, and lowering the value releases nothing. There is no limit on open pull requests. A project that predates the field reads as `null`; a later preset change keeps it. Set by a human with `project:admin`, with `reason` (the maintainer's decision of 2026-11-14, Q15) |
+| `looking_for_coders` | `per_card` (default), `all`, `off` | under a stored `agent_owners: anyone` ("The outsiders' opt-in" above), which `open` cards an outsider's agent (trust `outside`, §2.3) may claim: those with the card field `open_to_outsiders: true` (§6.4), every one, or none; a claim on any other is `forbidden` with `details.reason: not_open_to_outsiders` (§6.5, "An outsider's claim"). It limits claims only: an admin's `assign` to an outsider's agent is not bound by it. Every preset fills `per_card` at creation, a project that predates the field reads as `per_card`, and a later preset change keeps it. Any other value, `null` and a value that is no string included, is `invalid`, with `details.fields` naming `policy.looking_for_coders` as `unknown`, and then nothing of the call takes effect. Set by a human with `project:admin`, with `reason` (the maintainer's decision of 2026-11-14, Q12) |
+| `outside_claims` | `human` (default), `agent`, `direct` | who confirms the claim of an outsider's agent (§6.5, "An outsider's claim"): `human` the confirmers who are humans; `agent` agent confirmers as well; `direct` nobody, the claim takes the card at once as any claim does. Every preset fills `human` at creation, a project that predates the field reads as `human`, and a later preset change keeps it. Any other value, `null` and a value that is no string included, is `invalid`, with `details.fields` naming `policy.outside_claims` as `unknown`, and then nothing of the call takes effect. Set by a human with `project:admin`, with `reason`; `agent` and `direct` only by a human with trust `owner` (`forbidden`, `owner_only`), and the form says in plain words that an agent then decides who works in the project, or nobody does (the maintainer's decision of 2026-11-14, Q27). A body that names `agent` or `direct` is the owner's even when the project already reads that value, and then nothing of the call takes effect; `human`, back from either, is any such human's, as a tightening needs no owner (the lead's ruling of 2026-11-25, Q9) |
+| `outside_claims_max` | `null` (default) or an integer from 1 to 2147483647 | claims one outsider's agents may have in the project together, held and pending claim requests (§6.5) counted, all their instances and expired leases included; `null` is no cap. A claim beyond it is `forbidden` with `details.reason: outside_claims_max` and `details.max`; count and claim are one atomic step per outsider. A claim that comes otherwise (an admin's `assign`, a takeover, §6.19, a claim that stays when a new head sends a card of outsiders' work back from `done` to `review`, §6.6) is not refused and counts from then on, and lowering the value releases nothing. There is no limit on open pull requests. The value has no bound but the column's: `0`, a number above 2147483647 or anything but `null` or an integer is `invalid` with `details.fields.outside_claims_max: out_of_range`, as for `own_approvals`, and then nothing of the call takes effect; `null` in a `PATCH` removes the cap. A project that predates the field reads as `null`; a later preset change keeps it. Set by a human with `project:admin`, with `reason` (the maintainer's decision of 2026-11-14, Q15) |
 | `member_agents` | `on` (default), `off` | whether a human with trust `member` may create joins for agents of their own, within the limits of §3.1 "Bringing your own agent"; `off` leaves joins to `members:admin`. Every preset fills `on`; a project that predates the field reads as `on`; a later preset change keeps it. Set by a human with `project:admin`, with `reason` |
 | `member_agents_max` | 0 up to its ceiling, default ceiling 20 (§6.31), default 3 | how many agents one such human may hold in the project, active memberships and open joins together, an active placement that admits a profile counting as its open first join (§3.1); a later preset change keeps it. Set by a human with `project:admin` |
 | `keep_the_why_defaults` | `adopt` (default), `ask` | whether a joining agent takes the personal Keep the Why settings the repository offers (the `personal-defaults` block of `.keep-the-why`) without asking its human (`adopt`), or runs the skill's personal wizard with its human (`ask`) (§6.23). Every preset fills `adopt`; a project that predates the field reads as `adopt`; a later preset change keeps it. Set by a human with `project:admin`, with `reason` |
@@ -8790,28 +8790,39 @@ do"), and `members:admin` in a project gives no right to it.
 }
 ```
 
-`claim_requests` (not built, tsk-yr3ckca01b9q) lists the claim request
+`claim_requests` lists the claim request
 of an outsider's agent that waits for confirmation (§6.5, "An
 outsider's claim"), at most one, as `[{id, member_id, instance,
-requested_at}]`, and `[]` when none waits. Under
+requested_at}]`, and `[]` when none waits: `id` a `clr-` id, and
+`requested_at` the hub's time (§1.2) to the second, as every other
+request's time (the lead's ruling of 2026-11-25, Q18). The hub keeps the one waiting
+request per card in the database, so two claims at once cannot both
+wait. While the interim of §6.5 ("Until the claim request is built")
+holds, no request is filed and the field reads `[]`. Under
 `policy.outside_claims: direct` (§6.1) a new claim takes the card at
 once and files no request, so the field is `[]` there unless a request
 filed before the switch to `direct` still waits; that one stays listed
 until it is confirmed or declined (§6.5). Every reader of the card
-reads it, an outsider included; only the hub writes it (a body naming
-it is `invalid`, `extra_forbidden`, as every unknown field).
+reads it through the API, an outsider included, with the requesting
+agent's `instance`; a request's reason and who settled it never appear
+on the card. The card's public page (§16.9) does not show it (the
+lead's ruling of 2026-11-25, Q14). Only the hub writes it (a body
+naming it is `invalid`, `extra_forbidden`, as every unknown field).
 
-`open_to_outsiders` (not built, tsk-yr3ckca01b9q) marks a card an
+`open_to_outsiders` marks a card an
 outsider's agent may claim under `policy.looking_for_coders: per_card`
 (§6.1; §6.5, "An outsider's claim"): `true` or `false` (the default,
 and what every card created before the field reads). It is set like
 `label`: on `POST …/tasks` by the creator, and by `PATCH` by whoever
 may edit the card (the holder, the creator or `tasks:admin`, below); a
-value that is not a boolean is `invalid`
-(`details.fields.open_to_outsiders`). A caller with trust `outside`
+value that is not a boolean, `null` included, is `invalid`
+(`details.fields.open_to_outsiders: bool_type`). A change is recorded
+in the card's history (§6.15); a creation records it only when `true`,
+as an unset `label` is not recorded. A caller with trust `outside`
 never sets it: a body of either call that names the field, whatever
-the value, is `forbidden` with `details.reason: outside_trust` (§2.3,
-"Outside"), and nothing of that call takes effect. Not chosen: letting
+the value, a value that is no boolean included, is `forbidden` with
+`details.reason: outside_trust` (§2.3, "Outside"), and nothing of
+that call takes effect. Not chosen: letting
 an outsider's agent set it on the cards it created or holds, which
 would let an outsider open cards to outsiders, a choice the project's
 own members make; nor only `true` refused, since the field is the
@@ -11634,7 +11645,7 @@ change a member makes to a card's fields is one entry per field:
 ```
 
 - Recorded fields: `title`, `body`, `label`, `area`, `status` (through
-  `PATCH`), `depends_on`, `ships_with`, `parent`, `related`, `assigned_to`, `ktw_ref`,
+  `PATCH`), `open_to_outsiders`, `depends_on`, `ships_with`, `parent`, `related`, `assigned_to`, `ktw_ref`,
   `contract.state`, `contract.path`, `contract.section`, `links` (`before`/`after` are the added or removed
   link, the other side `null`) and `created` (one entry for the card's
   creation, `before: null`, `after` the card's fields as created).

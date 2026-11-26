@@ -117,6 +117,9 @@ class TaskCreate(Written):
     kind: str = "task"
     label: str | None = None
     needs: str | None = None
+    # §6.4: a boolean, checked by hand after the trust (`_open_to_outsiders`), so that a
+    # caller with trust `outside` is refused whatever the value.
+    open_to_outsiders: Any = None
     area: str | None = None
     status: str = "open"
     assigned_to: str | None = None
@@ -136,6 +139,7 @@ class TaskPatch(Written):
     body: str | None = markdown(default=None)
     label: str | None = None
     needs: str | None = None
+    open_to_outsiders: Any = None  # §6.4, as on `TaskCreate`
     area: str | None = None
     status: str | None = None
     approve: Literal["review", "test"] | None = None  # §6.4, under `reviewer_and_tester`
@@ -573,6 +577,26 @@ def _signatures(
 def _check_label(label: str | None) -> None:
     if label is not None and label not in cards.LABELS:
         raise invalid({"label": "unknown"})
+
+
+def _open_to_outsiders(mine: Membership, given: set[str], value: Any) -> bool | None:
+    """`open_to_outsiders` of a `POST …/tasks` or `PATCH …/tasks/{id}` body (§6.4): None when
+    the body does not name it. A caller with trust `outside` never sets it: a body that names
+    it, whatever the value, is `forbidden` `outside_trust`, before anything is written, so no
+    outsider opens cards to outsiders (§2.3 "Outside"). Otherwise a value that is not a
+    boolean is `invalid`."""
+    if "open_to_outsiders" not in given:
+        return None
+    if mine.trust == OUTSIDE:
+        raise ApiError(
+            403,
+            "forbidden",
+            "a card is opened to outsiders by the project's own members",
+            {"reason": "outside_trust"},
+        )
+    if not isinstance(value, bool):
+        raise invalid({"open_to_outsiders": "bool_type"})
+    return value
 
 
 def _check_needs(project: Any, needs: str | None) -> None:
@@ -1023,6 +1047,7 @@ CREATED = (
     "body",
     "label",
     "needs",
+    "open_to_outsiders",
     "status",
     "area",
     "assigned_to",
@@ -1099,6 +1124,7 @@ def create_card(
     observation of its one link, read before the transaction."""
     mine = membership(conn, caller, slug)
     mine.require("tasks:write")
+    open_to_outsiders = _open_to_outsiders(mine, body.model_fields_set, body.open_to_outsiders)
     if body.kind not in cards.KINDS:
         raise invalid({"kind": "unknown"})
     if body.kind == "setup":
@@ -1177,6 +1203,7 @@ def create_card(
                     mentions=found,
                     label=body.label,
                     needs=body.needs,
+                    open_to_outsiders=bool(open_to_outsiders),
                     status=status,
                     parent=body.parent,
                     area=body.area,
@@ -1207,7 +1234,12 @@ def create_card(
         )
     view = task_view(conn, card, fg)
     # One history entry for the creation, with the card's fields as created (§6.15).
-    fields = [name for name in CREATED if name in view and view[name] not in (None, [])]
+    # `open_to_outsiders` only when set: `false` is every card's default, as an unset label.
+    fields = [
+        name
+        for name in CREATED
+        if name in view and view[name] is not None and view[name] != [] and view[name] is not False
+    ]
     entry = history.created(
         conn, card_id, {name: view[name] for name in fields}, caller.actor(mine.id)
     )
@@ -1276,6 +1308,8 @@ def patch_task(
         mine = _locked(conn, mine)
         if given != {"contract"}:
             mine.require("tasks:write")  # again, on the row read under the lock
+        # Before every other check of the body: never a trust-`outside` caller's (§6.4).
+        open_to_outsiders = _open_to_outsiders(mine, given, body.open_to_outsiders)
         card = _project_card(conn, mine, card_id)
         new_assignee: int | None = None
         if "assigned_to" in given and body.assigned_to:
@@ -1371,6 +1405,9 @@ def patch_task(
         if "needs" in given:
             _check_needs(mine.project, body.needs)
             values["needs"] = body.needs
+        if open_to_outsiders is not None:
+            # Set like `label`, by whoever edits the card; `false` declines nothing (§6.4).
+            values["open_to_outsiders"] = open_to_outsiders
         if "area" in given:
             _check_area(body.area)
             values["area"] = body.area

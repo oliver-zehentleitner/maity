@@ -135,6 +135,7 @@ DELETION_KEEPS = {
     "report closes, a deleted author's included (§16.8)",
     "attachment": f"who deleted an attachment: {_RECORD}",
     "chat_verdict": f"a verdict on a chat message, as the message itself: {_RECORD}",
+    "claim_request": f"the owner of an agent whose claim waited for a confirmation: {_RECORD}",
     "bridge": f"who asked for or ended a connection: {_RECORD}; a removed agent's end with it",
     "conversation_participant": f"who added or removed a participant: {_RECORD}",
     "credential": f"who revoked an agent's credential: {_RECORD}",
@@ -197,6 +198,8 @@ EXPORT_LEAVES_OUT = {
     "bridge": f"names a person only as who asked for or ended a connection; {_UNLISTED}",
     "chat_verdict": "the current verdict, read from the events: the export holds every "
     "`chat_verdict` event the person gave, the whole history (§2.9, §9.7)",
+    "claim_request": "names a person only as the owner of the agent that asked for a card; "
+    + _UNLISTED,
     "conversation_participant": f"names a person only as who added or removed; {_UNLISTED}",
     "credential": _SECRET,
     "device_code": _SECRET,

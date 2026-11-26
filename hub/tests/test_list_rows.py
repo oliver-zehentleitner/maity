@@ -141,7 +141,14 @@ LIST_KEYS: dict[str, set[str]] = {
         "shared_environment",
     },
     "/projects/{}/{}/roles": {"builtin", "custom"},
-    "/projects/{}/{}/tasks/{}": {"depends_on", "links", "mentions", "related", "ships_with"},
+    "/projects/{}/{}/tasks/{}": {
+        "claim_requests",  # at most one waiting request (§6.4)
+        "depends_on",
+        "links",
+        "mentions",
+        "related",
+        "ships_with",
+    },
     "/runner": {"update_requests"},
 }
 
