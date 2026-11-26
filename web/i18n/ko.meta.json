@@ -5816,8 +5816,8 @@
     "text": "507dc4b96403b514"
   },
   "handles.format": {
-    "en": "7c0f89573b9054d1",
-    "text": "90df7d912f775b1c"
+    "en": "c1d1dc642ff3e26a",
+    "text": "4e5ca7cec4160c57"
   },
   "handles.label": {
     "en": "91b340998b72895d",
@@ -5844,8 +5844,8 @@
     "text": "e9be86b18c43b34f"
   },
   "handles.reserved": {
-    "en": "90faec94487053b7",
-    "text": "62ac0da8a25f5459"
+    "en": "d9b64d8e3cc55db9",
+    "text": "c4cbfa05690363e5"
   },
   "handles.same": {
     "en": "140f66aa7a128909",
@@ -12087,6 +12087,10 @@
     "en": "6c675eafabb0d256",
     "text": "bf701710ac4b6848"
   },
+  "name_rules.handle_person": {
+    "en": "b83f07916d982f95",
+    "text": "78c4008355791625"
+  },
   "name_rules.slug": {
     "en": "0851da38257f9de3",
     "text": "19add0ed018ab127"
@@ -12868,8 +12872,8 @@
     "text": "847b54c44717a8bc"
   },
   "orgs.field.format": {
-    "en": "97ea92837113d4eb",
-    "text": "1296ffbb68abc49d"
+    "en": "d4d166f86e3818b4",
+    "text": "7ac91a228e3db471"
   },
   "orgs.field.invited": {
     "en": "ad21cd4d8779da6a",
@@ -12892,8 +12896,8 @@
     "text": "c908b88ad9915f44"
   },
   "orgs.field.reserved": {
-    "en": "5b3615cae20fe05e",
-    "text": "7ce8e23da532bcd0"
+    "en": "b152f0e294a9b31a",
+    "text": "10ccf92396a1be45"
   },
   "orgs.field.taken": {
     "en": "602ababe9582fbbe",

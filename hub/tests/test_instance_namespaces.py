@@ -190,9 +190,9 @@ def test_an_alias_is_not_held_and_its_id_takes_it_back(
     make_client: ClientFactory, migrated: Engine
 ) -> None:
     owner = flow.human(make_client, migrated)
-    assert owner.patch("/me", {"handle": "boss"}).status_code == 200
+    assert owner.patch("/me", {"handle": "big-boss"}).status_code == 200
     with migrated.begin() as conn:
-        assert not handles.held_for_instance(conn, "maintainer")  # boss's alias now
+        assert not handles.held_for_instance(conn, "maintainer")  # big-boss's alias now
     back = owner.patch("/me", {"handle": "maintainer"})
     assert back.status_code == 200, back.text
 
@@ -237,7 +237,7 @@ def test_the_start_names_held_and_former_names(
     make_client: ClientFactory, migrated: Engine, caplog: pytest.LogCaptureFixture
 ) -> None:
     owner = flow.human(make_client, migrated)
-    assert owner.patch("/me", {"handle": "boss"}).status_code == 200  # maintainer: an alias
+    assert owner.patch("/me", {"handle": "big-boss"}).status_code == 200  # maintainer: an alias
     caplog.clear()
     with caplog.at_level(logging.WARNING, logger="maity_hub.app"):
         make_client()

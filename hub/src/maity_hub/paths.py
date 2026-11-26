@@ -35,16 +35,84 @@ MISLEADING_HANDLES = frozenset({"hub", "human", "maity", "system"})
 # alias back: the reservation stops a new claimant, not the id's own old name.
 LOADTEST_HANDLE = re.compile(r"lt-[0-9]+")
 
+# A new person or organisation may not take a handle this short or one of `PRODUCT_WORDS`
+# (§16.11), so that `/<word>` stays free for the product's own pages (the maintainer,
+# 2026-11-25, tsk-3ykgt3t9jd57). Like `lt-<n>` these are no members of `RESERVED_FIRST`: they
+# name no route, so the robots list, the join host, the dashboard and `never_a_page` read them
+# as any handle, and whoever holds one already keeps it, its page and its alias. A word that
+# gets a page of ours later moves to `RESERVED_FIRST` in that change, which deals with its holder.
+# `owner` and `owners` stay free: every scripted hub, harness and doc creates `owner`, and
+# `maity-hub owner create`, the operator's command, is held to the words but not to the length
+# (the maintainer, 2026-11-25, req-x0efaacq8zyh: handles are 6 characters at least).
+SHORT_HANDLE = 5  # §6.24 allows 2 to 31 characters
+PRODUCT_WORDS = frozenset(
+    {
+        "about", "account-recovery", "accounts", "administrator", "administrators", "admins",
+        "ads", "affiliate", "affiliates", "agent", "analytics", "announcements", "apps",
+        "archive", "area", "areas", "attachment", "attachments", "auth", "authorize", "billing",
+        "blog", "blogs", "board", "boards", "bot", "bots", "brand", "branding", "briefing",
+        "briefings", "business", "callback", "card", "cards", "career", "careers", "cart",
+        "changelog", "chat", "checkout", "claim", "cli", "coder", "coders", "commit",
+        "community", "compare", "compliance", "confirm", "contact", "contacts", "context",
+        "contract", "contribute", "contribution", "conversation", "conversations", "cookies",
+        "copyright", "customer", "customers", "dashboard", "default", "demo", "deploy",
+        "design", "designer", "dev", "developer", "developers", "discord", "discuss",
+        "discussions", "doc", "docs", "documentation", "domain", "domains", "donate",
+        "download", "downloads", "edit", "email", "enterprise", "event", "events", "example",
+        "examples", "expert", "faq", "faqs", "feature", "features", "feed", "feedback", "file",
+        "files", "fork", "forks", "forum", "forums", "gdpr", "github", "gitlab", "guide",
+        "guides", "help", "home", "hooks", "hosting", "info", "instance", "instances",
+        "integration", "integrations", "investors", "invitation", "invitations", "issue",
+        "issues", "job", "jobs", "joins", "jour-fixe", "jourfixe", "keep-the-why",
+        "knowledge-base", "knowledgebase", "ktw", "landing", "learn", "legal", "licence",
+        "licences", "license", "licenses", "link", "links", "list", "lists", "log-in",
+        "log-out", "logout", "manager", "marketplace", "me", "media", "member", "members",
+        "memory", "mention", "mentions", "merge", "message", "messages", "moderator",
+        "moderators", "news", "newsletter", "note", "notes", "notification", "oauth",
+        "official", "onboarding", "org", "organisation", "organisations", "organization",
+        "organizations", "orgs", "outsider", "outsiders", "overview", "page", "pages",
+        "partner", "partners", "password", "payment", "payments", "placement", "placements",
+        "plan", "plans", "platform", "policies", "policy", "popular", "pr", "press", "pricing",
+        "pro", "product", "products", "profile", "profiles", "project", "projects", "proxy",
+        "prs", "public", "pull", "pulls", "readme", "release", "releases", "repo", "report",
+        "reports", "repos", "repositories", "repository", "request", "reset", "review",
+        "reviewer", "reviewers", "reviews", "roadmap", "role", "roles", "root", "rss",
+        "runner", "sales", "sdk", "search", "security", "server", "service", "services",
+        "setup", "shop", "showcase", "sign-out", "sign-up", "signin", "signout", "signup",
+        "site", "sitemap", "sites", "soul", "source", "sponsor", "sponsors", "staff", "stats",
+        "status", "steward", "store", "stream", "subscribe", "subscription", "subscriptions",
+        "support", "takeover", "task", "tasks", "team", "teams", "terms-of-service",
+        "terms-of-use", "test", "tester", "testers", "testing", "thread", "threads", "ticker",
+        "ticket", "tickets", "tos", "tour", "tracker", "trackers", "trending", "trust",
+        "tutorial", "tutorials", "unsubscribe", "update", "updates", "upgrade", "upload",
+        "uploads", "user", "users", "verify", "wait", "webhook", "webhooks", "welcome", "why",
+        "wiki", "writer", "www",
+    }
+)  # fmt: skip
 
-def handle_reserved(handle: str, *, of_agent: bool = False) -> bool:
+
+def kept_from_new_claims(handle: str, *, by_operator: bool = False) -> bool:
+    """Whether `handle` is reserved for a new person or organisation only (§16.11): of the form
+    `lt-<digits>`, at most `SHORT_HANDLE` characters, or one of `PRODUCT_WORDS`. Whoever holds
+    one already keeps it and may take it back as their alias (§6.24). `by_operator`: for
+    `maity-hub owner create`, which the length does not bind."""
+    return (
+        LOADTEST_HANDLE.fullmatch(handle) is not None
+        or (not by_operator and len(handle) <= SHORT_HANDLE)
+        or handle in PRODUCT_WORDS
+    )
+
+
+def handle_reserved(handle: str, *, of_agent: bool = False, by_operator: bool = False) -> bool:
     """Whether nobody may take `handle`: the one check of every path that gives one (§6.25). An
     agent's handle is no first segment of a path, so only the misleading words hold for it.
-    `lt-<digits>` is reserved for a person or an organisation, for the load-test accounts."""
+    For a person or an organisation the first segments hold, and `kept_from_new_claims`;
+    `by_operator` (`maity-hub owner create`) is not held to the length."""
     if handle in MISLEADING_HANDLES:
         return True
     if of_agent:
         return False
-    return handle in RESERVED_FIRST or LOADTEST_HANDLE.fullmatch(handle) is not None
+    return handle in RESERVED_FIRST or kept_from_new_claims(handle, by_operator=by_operator)
 
 
 # The views of a project in the dashboard (§16.11): `/<owner>/<slug>/<view>…`. A slug is never
