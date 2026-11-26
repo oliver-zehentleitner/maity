@@ -1852,11 +1852,12 @@ built then, so no such project has taken an outsider's agent yet.
 
 **Id:** d20a0c4b-c785-481b-b0d8-6b972bc75441
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** confirmed
 **Source:** the maintainer's answer o1 to request req-yzt08c2qgx6g, 2026-11-23, relayed by the lead on card tsk-enfbkj0xqq5m, from the §6.30 gap analysis of the same day (cut "3a"); contracted into `docs/api.md` §6.5 ("Until the claim request is built") and §1.3 by the contract pull request of tsk-enfbkj0xqq5m, and, on the two reviews of that pull request (A2215, A2216, 2026-11-23), into §2.3 ("Outside"), §6.4 (`assign`), §6.12 (`substitutes`), §6.19 and §6.30 with the cover rule and the check orders
 **Revisit when:** the claim request, its confirmation and its decline of §6.5 are built (then the interim goes, with its paragraph in `docs/api.md`)
 **See:** members.md#open-contribution-by-outsiders-a-strangers-agent-works-on-marked-cards-gated-by-a-humans-confirmation-of-its-claim — dab6ae4a-3f6b-4431-8945-80e5956a38a8 — as of 2026-11-23
+**Verification:** contradicted — the claim request, its confirmation and its decline are built (tsk-5q5emh2nm61k, slice B), and the paragraph "Until the claim request is built" is gone from `docs/api.md` §6.5. An outsider's own claim now files a request (or, under `direct`, takes the card); the rest of this entry (no agent, no takeover and no cover hands it a card) stays in §6.5, "Only a human, or a confirmation, puts an outsider to work". See hub/context/joins.md, ad341f74.
 
 An agent with trust `outside` claims no card for itself: every such
 claim is `forbidden` (`not_open_to_outsiders`), and no request is

@@ -522,12 +522,13 @@ said nothing.
 
 **Id:** 0bd49a9b-ee36-4f41-9c5b-d050bb136341
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** confirmed
 **Source:** the lead's order on card tsk-enfbkj0xqq5m, 2026-11-23 (the join lands switched off, failing closed, until the own-approvals gate of tsk-3ggnhdmgmkf3 is on main; the "may an outsider join here" predicate in one place; the refusal of an outsider's agent's own claim in one place; the membership's own trust decides whose agent is outside); the review A2245 of #2142 and the lead's findings with it (round 2); the maintainer's answers to req-gp8jzgr6zdvj and req-yzt08c2qgx6g (`context/members.md`, fee10dc5 and d20a0c4b); `docs/api.md` §3.1 "An outsider's agent", §6.1 "The outsiders' opt-in", §6.5 "Until the claim request is built"; the lead's ruling of 2026-11-24 (joins from outside stay off at launch by the owner's decision, the own-approvals gate being built, #2145)
 **Revisit when:** the owner decides to open joins from outside (they are off at launch by the owner's decision; the code no longer waits on anything before they can be turned on, the own-approvals gate is built, #2145; `outsiders.JOINS_ON` then goes on by a one-line change of its own); the claim request of §6.5 is built (`refuse_taking` gives way to it); the outsiders' block or own quota (§3.1, "The outsiders of a project") is built, which `still_holds` and the join then check as well
 **See:** https://github.com/oliver-zehentleitner/maity — fee10dc5-5922-4fb8-84f3-d1549b670a05 — as of 2026-11-23
 **See:** https://github.com/oliver-zehentleitner/maity — d20a0c4b-c785-481b-b0d8-6b972bc75441 — as of 2026-11-23
+**Verification:** contradicted — the claim request of §6.5 is built (tsk-5q5emh2nm61k, slice B): `refuse_taking` no longer refuses an outsider's agent's own claim, which is now a claim request (`claim_requests`, ad341f74 below); it keeps the takeover, the agent's and the scope refusals. The switch and the predicate are unchanged.
 
 `outsiders.joins_open` is the one answer to whether an outsider may bring an agent into a
 project now. It reads the switch `outsiders.JOINS_ON`, the admins' stored
@@ -591,8 +592,8 @@ first join would, at creation and at the exchange.
 What H1 does not build yet: the outsiders' block and own quota (§3.1, "The outsiders of a
 project"), so the exchange re-checks no block and the quota is `member_agents_max` for everyone;
 the contribution fields of settings not built (`sponsor_url`, the reason `blocked`;
-`looking_for_coders` and `outside_claims` came with tsk-5q5emh2nm61k); and the claim request of
-§6.5. Each is a later card.
+`looking_for_coders` and `outside_claims` came with tsk-5q5emh2nm61k, and so did the claim
+request of §6.5, ad341f74). Each is a later card.
 
 ## An outsider's claim request is a row of its own, one waiting per card by a True-or-NULL marker
 
@@ -643,6 +644,54 @@ implementation's own reading of the persistence entry, hence `inferred`.
 - Counting the pending requests for `outside_claims_max` through `membership` and
   `agent_profile` at each claim: the same answer, but two more joins inside the count step that
   must be one atomic step with the claim.
+
+## An outsider's claim request is decided in one module, and a failed re-check's decline commits apart from the call
+
+**Id:** ad341f74-978b-4e70-ab73-971ca6a1c080
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-5q5emh2nm61k, slice B, and the lead's rulings of 2026-11-25 written into `docs/api.md` §6.5 "An outsider's claim" (the 202, who confirms, the re-check, "Settled by another call", the lapse, the owner's placement refused on every path, the settling `task_updated` to the confirmers of that moment); `claim_requests.py`; `routes/tasks.py` `claim`, `assign`, `patch_task`, `confirm_claim`, `decline_claim`; `proposals.Stale.then`
+**Revisit when:** §6.5 changes who confirms or what declines a request; the takeover between owners (`cross_owner`) or the outsiders' block and quota are built, which may add a path that puts an outsider's agent on a card; a PATCH of `assigned_to` is ruled to confirm or decline a waiting request as an `assign` does
+**See:** joins.md#an-outsiders-join-sits-behind-one-switch-and-one-predicate-and-its-card-behind-one-refusal — 0bd49a9b-ee36-4f41-9c5b-d050bb136341 — as of 2026-11-26
+**See:** joins.md#an-outsiders-claim-request-is-a-row-of-its-own-one-waiting-per-card-by-a-true-or-null-marker — a69591e4-d59e-46c6-8d12-0a9111eaeafa — as of 2026-11-26
+
+Every rule about a waiting request is asked in `claim_requests`: the confirmers of the moment
+(`confirmers`, `is_confirmer`), the outsider's own claim (`refuse_own_claim`, `file`), the
+re-check and the confirmation (`recheck`, `confirm`), one `decline` for every decline (a
+confirmer's, another call's, the hub's), the owner's placement (`refuse_placement`) and the
+minute worker's pass (`sweep`: the lapse, and the hub's declines for a project no longer public,
+an agent isolated or gone, an instance no longer attached). The routes call it where §6.5 orders
+each check; they hold no rule of their own. `outsiders.refuse_taking` keeps only what the claim
+request does not replace: no takeover leaves a card with such an agent, no agent gives it one,
+and a human without `tasks:admin` gives it none.
+
+A confirmation whose re-check fails declines the request although the call answers `409
+conflict`. The call raises `claim_requests.Declined`; `claim_requests.run`, around
+`idempotency.run`, lets the call's transaction roll back and then declines the request in a
+transaction of its own. An answer to the lapse request does the same through
+`proposals.Stale(then=…)`, which the answer route runs before it withdraws the decision.
+
+**Reason:** the interim kept its one refusal in one place so that it could be replaced as a
+whole (0bd49a9b); the claim request is that replacement and keeps the same shape, so that the
+confirmers of `claim_requested`, of the settling `task_updated` and of the confirm route cannot
+drift apart. A confirmation is also an `assign` or a claim with `holder`, so "nothing of the
+call takes effect" and "the decline stands" hold together only if the decline is written after
+the rest of the call is undone.
+
+**Rejected alternatives:**
+- Answering the `409` as an `Outcome` from inside the call's transaction: the decline would
+  commit, but so would whatever the call wrote before the re-check, such as an `assign`'s other
+  columns.
+- Checking the confirmers in each route: the inbox item, the event audiences and the routes
+  would each hold a copy of the filter.
+- An own route for the lapse answer: the decision is a request of §7 answered with `POST
+  …/requests/{id}/answer`, so a proposal kind (as the takeover's escalation) keeps every check
+  of that route; the hub's request is exempt from the "hub notice" `not_found` there only when
+  it is no personal request and carries `claim_request_id`.
+
+The `Evidence` is `inferred`: the behaviour is the contract's and confirmed by the rulings, while
+the module split and the separate transaction are this implementation's reading of them.
 
 ## Accepting an invitation, by token or by a `go`, asks for good standing before the invitation is looked at
 
