@@ -10,7 +10,8 @@
 // (§5.1 "Stars", §6.30 Q2; web/context/views.md): one opened in this browser
 // session is kept in sessionStorage until it is closed or the session ends,
 // and is never sent; a starred one (`/me` `starred`) joins the tabs above,
-// after `start_tabs` in a browser that has none yet.
+// after `start_tabs` in a browser that has none yet. Explore is a tab of its own for the browser
+// session too (exploreOpen), last in the row, with no project behind it.
 "use strict";
 
 window.Maity = window.Maity || {};
@@ -79,6 +80,22 @@ window.Maity = window.Maity || {};
 
   // Tabs make sense for a human with projects; an agent's one project stays as it is.
   const managed = (ctx) => ctx.me && ctx.me.kind === "human";
+
+  // The Explore tab (docs/api.md §16.9, "Explore, signed in"; web/context/views.md): open or not,
+  // for this browser session as an outsider's unstarred tab is, kept in sessionStorage and never
+  // sent. The tab row's Explore link, the tabs menu and the address `/explore` open it; its × closes it.
+  const exploreKey = (me) => "maity.tabs.explore." + me.id;
+  function exploreOpen(ctx) {
+    if (!managed(ctx)) return false;
+    const k = exploreKey(ctx.me);
+    if (!healed(k, kept[k] ? "1" : null, "sessionStorage")) return !!kept[k];
+    try { return window.sessionStorage.getItem(k) === "1"; } catch (err) { return !!kept[k]; }
+  }
+  function setExplore(ctx, on) {
+    if (!managed(ctx)) return;
+    kept[exploreKey(ctx.me)] = !!on;
+    store(exploreKey(ctx.me), on ? "1" : null, "sessionStorage");
+  }
 
   // A dashed tab's name: the project's own where the page read gave it, else its full name
   // (`/me` `starred` carries only `{id, full_name}`).
@@ -272,5 +289,5 @@ window.Maity = window.Maity || {};
     store(filterKey(me), on ? "1" : null);
   }
 
-  M.tabs = { open, row, placed, starredClosed, isOpen, setOpen, visit, closeOutsider, unstar, star, busy, move, moveBefore, inStart, startWith, keepAsStart, onlyOpen, setOnlyOpen, managed };
+  M.tabs = { open, row, placed, starredClosed, isOpen, setOpen, visit, closeOutsider, unstar, star, busy, move, moveBefore, inStart, startWith, keepAsStart, onlyOpen, setOnlyOpen, managed, exploreOpen, setExplore };
 })(window.Maity);
