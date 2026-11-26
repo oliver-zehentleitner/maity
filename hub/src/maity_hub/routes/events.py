@@ -96,7 +96,10 @@ class RedactIn(Strict):
 
 def load_event(conn: Connection, seq: str, reader: Any = None) -> dict[str, Any]:
     row = conn.execute(select(t.event).where(t.event.c.seq == int(seq))).one()
-    return event_views(conn, [row], reader)[0]
+    views = event_views(conn, [row], reader)
+    if not views:
+        raise not_found()
+    return views[0]
 
 
 def _load_for_caller(conn: Connection, seq: str, request: Request) -> dict[str, Any]:
@@ -108,7 +111,10 @@ def _load_for_caller(conn: Connection, seq: str, request: Request) -> dict[str, 
         reader = membership(conn, request.state.caller, slug) if slug else None
     except ApiError:
         reader = None
-    return event_views(conn, [row], reader)[0]
+    views = event_views(conn, [row], reader)
+    if not views:
+        raise not_found()
+    return views[0]
 
 
 def _single_read(conn: Connection, mine: Membership, number: int, carried: bool) -> list[Any]:
@@ -465,7 +471,10 @@ def read_event(slug: str, seq: str, request: Request, caller: AnyCaller) -> JSON
         )
         if not rows:
             raise not_found()
-        view = event_views(conn, rows, mine)[0]
+        views = event_views(conn, rows, mine)
+        if not views:
+            raise not_found()
+        view = views[0]
         from maity_hub.routes import conversations  # it imports this module
 
         conversation = rows[0].conversation_id
@@ -712,11 +721,14 @@ def post_message(
             )
         audience = list(dict.fromkeys([target, f"member:{me}"]))
     if body.task_id is not None:
-        found = conn.execute(
-            select(t.card.c.id).where(
-                t.card.c.id == body.task_id, t.card.c.project_id == mine.project.id
-            )
-        ).first()
+        query = select(t.card.c.id).where(
+            t.card.c.id == body.task_id, t.card.c.project_id == mine.project.id
+        )
+        if reads_from_outside(mine):
+            from maity_hub import public_cards
+
+            query = query.where(public_cards.outside_clause())
+        found = conn.execute(query).first()
         if found is None:
             raise invalid({"task_id": "unknown_task"})
     mentioned: list[dict[str, Any]] = []

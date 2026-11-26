@@ -157,6 +157,7 @@ def test_the_project_view_is_the_outsiders(team: Team) -> None:
     assert set(seen["settings"]) == {"language"}
     for key in ("repository", "memory", "setup", "policy"):
         assert key not in seen, key
+    assert team.agent.get("/projects").json()["items"] == [{**seen, "isolated": False}]
     full = team.member.get(P).json()
     assert "repository" in full and set(full["settings"]) > {"language"}
 
@@ -328,7 +329,8 @@ def test_the_resume_packet_is_read_as_from_outside(team: Team) -> None:
     assert team.secret not in str(packet["events"]) and team.open not in str(packet["events"])
     assert set(packet["project"]) <= PACKET_PROJECT_KEYS
     assert "markdown" not in packet["rules"]
-    assert "setup" not in packet
+    assert {"setup", "onboarding", "keep_the_why"}.isdisjoint(packet)
+    assert packet["membership"]["briefing_source"] != "project"
     for store in ("team", "role", "community"):
         assert packet["memory"][store]["items"] == [], store
     assert packet["requests"]["to_answer"] == [] and packet["ticker"]["items"] == []
@@ -610,3 +612,100 @@ def test_an_exchanged_agent_is_the_outsiders(
     _opt_in(owner)
     agent = _exchange(make_client, _first(outsider))
     assert owner.get(f"{P}/members/{agent.id}").json()["trust"] == "outside"
+
+
+def test_credentials_follow_the_project_membership(team: Team) -> None:
+    path = f"{P}/members/{team.agent.id}/credentials"
+    listed = team.agent.get(path)
+    assert listed.status_code == 200
+    assert {row["id"] for row in listed.json()["items"]} == {team.agent.credential_id}
+    assert team.owner.get(path).status_code == 200
+    assert team.member.get(path).status_code == 403
+    for principal in (team.member.id, "agt-unlisted"):
+        _gone(team.agent.get(f"{P}/members/{principal}/credentials"))
+
+
+def test_private_avatar_requires_an_ordinary_shared_membership(team: Team) -> None:
+    from tests.test_avatars import image, put_agent
+
+    assert put_agent(team.member, image()).status_code == 200
+    assert put_agent(team.agent, image()).status_code == 200
+    assert team.agent.get(f"/avatars/{team.agent.id}").status_code == 200
+    assert team.owner.get(f"/avatars/{team.member.id}").status_code == 200
+    assert team.agent.get(f"/avatars/{team.member.id}").status_code == 404
+    assert team.member.get(f"/avatars/{team.agent.id}").status_code == 200
+
+
+def test_outside_policy_closes_request_writes() -> None:
+    for path in ("requests", "requests/{request_id}/answer", "requests/{request_id}/claim"):
+        assert not access.outside_agent_may_read("POST", f"{access.API_PROJECT}/{path}")
+    assert access.outside_agent_may_read("POST", f"{access.API_PROJECT}/tasks")
+
+
+def test_hour_and_day_quotas_use_exact_windows() -> None:
+    assert joins.OUTSIDER_JOINS_HOUR.exact
+    assert joins.OUTSIDER_JOINS_DAY.exact
+    assert joins.OUTSIDER_FIRST_JOINS_DAY.exact
+    assert agents.PROFILE_DELETIONS_DAY.exact
+
+
+def test_visible_card_events_use_the_readers_current_projected_edges(team: Team) -> None:
+    card_id = team.card("Milestone", related=[team.fixed, team.secret])
+    assigned = team.owner.post(f"{P}/tasks/{card_id}/claim", {"holder": team.agent.id})
+    assert assigned.status_code == 200
+    # A public change on a card the agent holds creates an event addressed to it.
+    change = team.owner.patch(f"{P}/tasks/{card_id}", {"related": [team.open, team.secret]})
+    assert change.status_code == 200
+    team.card("Visible child", parent=card_id)
+    team.card("Private child", parent=card_id, label="security")
+    items = team.agent.get(f"{P}/events", params={"after": 0}).json()["items"]
+    payloads = [e["payload"] for e in items if e["subject"] == {"type": "task", "id": card_id}]
+    assert any(p.get("related") == [team.open] for p in payloads)
+    assert any(p.get("children") == {"open": 1, "total": 1} for p in payloads)
+    assert all(team.secret not in (p.get("related") or []) for p in payloads)
+    assert team.member.get(f"{P}/tasks/{card_id}").json()["children"]["total"] == 2
+
+
+def test_authorized_self_hiding_edit_commits_once(team: Team) -> None:
+    card_id = _given(team, team.agent, "Assigned work")
+    path = f"/api/v1{P}/tasks/{card_id}"
+    headers = team.agent.auth | team.agent.key()
+    for _ in range(2):
+        changed = team.agent.client.patch(path, json={"label": "security"}, headers=headers)
+        assert changed.status_code == 204
+        assert changed.content == b""
+    assert len(_released(team.engine, card_id)) == 1
+    current = team.owner.get(f"{P}/tasks/{card_id}").json()
+    assert current["label"] == "security"
+    assert current["claim"] is None
+    assert current["assigned_to"] is None
+
+
+def test_join_reservations_are_returned_on_rollback(
+    on: None, owner: flow.Human, outsider: flow.Human, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from maity_hub.errors import ApiError
+
+    _opt_in(owner)
+    hour = Limiter(1, 3600, name="test.join.rollback", local=True)
+    monkeypatch.setattr(joins, "OUTSIDER_JOINS_HOUR", hour)
+
+    def cancelled(*args: Any, **kwargs: Any) -> Any:
+        raise ApiError(409, "cancelled", "transaction cancelled")
+
+    with monkeypatch.context() as change:
+        change.setattr(joins, "_issue", cancelled)
+        assert _join(outsider).status_code == 409
+    assert _join(outsider).status_code == 201
+    assert hour.blocked(outsider.id) > 0
+
+
+def test_hidden_card_assignments_are_refused_and_visible_assignments_succeed(team: Team) -> None:
+    for card_id in team.hidden:
+        _gone(team.owner.post(f"{P}/tasks/{card_id}/assign", {"assignee": team.agent.id}))
+        _gone(team.owner.post(f"{P}/tasks/{card_id}/claim", {"holder": team.agent.id}))
+        assert _card_row(team.engine, card_id).assigned_to is None
+        assert _card_row(team.engine, card_id).claim_holder is None
+    good = team.owner.post(f"{P}/tasks/{team.open}/assign", {"assignee": team.agent.id})
+    assert good.status_code == 200
+    assert good.json()["assigned_to"] == team.agent.id

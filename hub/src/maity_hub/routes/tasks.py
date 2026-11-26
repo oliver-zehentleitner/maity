@@ -20,7 +20,6 @@ from maity_hub import (
     access,
     availability,
     card_search,
-    card_watches,
     cards,
     clock,
     contract_text,
@@ -1052,6 +1051,38 @@ def create_task(slug: str, body: TaskCreate, request: Request, caller: AnyCaller
     return response
 
 
+def _check_visible_edges(conn: Connection, mine: Membership, body: TaskCreate | TaskPatch) -> None:
+    if not access.reads_from_outside(mine):
+        return
+    from maity_hub import public_cards
+
+    edges = {
+        "parent": [body.parent] if body.parent else [],
+        "depends_on": body.depends_on or [],
+        "ships_with": body.ships_with or [],
+        "related": body.related or [],
+    }
+    referenced = {card_id for targets in edges.values() for card_id in targets}
+    if not referenced:
+        return
+    visible = set(
+        conn.scalars(
+            select(t.card.c.id).where(
+                t.card.c.id.in_(referenced),
+                t.card.c.project_id == mine.project.id,
+                public_cards.outside_clause(),
+            )
+        )
+    )
+    for field, targets in edges.items():
+        if not visible.issuperset(targets):
+            if field == "parent":
+                raise invalid({"parent": "unknown_task"})
+            raise invalid(
+                {field: "unknown_task"}, "an edge names a card that is not in this project"
+            )
+
+
 def create_card(
     conn: Connection,
     caller: Caller,
@@ -1081,6 +1112,7 @@ def create_card(
     _check_area(body.area)
     mine = _locked(conn, mine)
     mine.require("tasks:write")  # again, on the row read under the lock
+    _check_visible_edges(conn, mine, body)
     _check_needs(mine.project, body.needs)
     state = _require_open_project(mine, body.reason)
     _refuse_paused(conn, mine.id, mine.instance)  # a paused agent opens no new work
@@ -1196,11 +1228,16 @@ def create_card(
     if body.parent is not None:
         _touch_parents(conn, mine, caller, {body.parent}, fg)
     _ping(conn, mine, caller, card, found, "body", before=[])
-    if release_from_outside(conn, card_id, caller.actor(mine.id)):
-        view = task_view(conn, _card(conn, card_id), fg)
+    released = release_from_outside(conn, card_id, caller.actor(mine.id))
     releases.recheck(conn, mine.project.id, fg)  # a release may be ready from the start
-    watching = bool(card_watches.watching(conn, [card_id], mine.id))  # by its dependencies
-    return idempotency.Outcome(201, "task", card_id, {**view, "watching": watching})
+    if released or access.reads_from_outside(mine):
+        visible = task_views(conn, [_card(conn, card_id)], fg, mine)
+        if not visible:
+            return idempotency.Outcome(204, None, None, {})
+        view = visible[0]
+    else:
+        view["watching"] = bool(card_watches.watching(conn, [card_id], mine.id))
+    return idempotency.Outcome(201, "task", card_id, view)
 
 
 def _refuse_imported_twice(conn: Connection, mine: Membership, forge_url: str) -> None:
@@ -1290,6 +1327,7 @@ def patch_task(
             review_move and body.status == "done" and cards.two_signatures(mine.project)
         ):
             raise invalid({"approve": "not_applicable"})
+        _check_visible_edges(conn, mine, body)
         values: dict[str, Any] = {}
         parent = body.parent if "parent" in given else card.parent
         wanted_status = body.status if body.status is not None else card.status
@@ -1503,9 +1541,10 @@ def patch_task(
         # `outside` that holds it or is assigned it ends both (§2.3 "Outside").
         release_from_outside(conn, card.id, caller.actor(mine.id))
         releases.recheck(conn, mine.project.id, fg)
-        return idempotency.Outcome(
-            200, "task", card.id, task_view(conn, _card(conn, card.id), fg, mine)
-        )
+        visible = task_views(conn, [_card(conn, card.id)], fg, mine)
+        if not visible:
+            return idempotency.Outcome(204, None, None, {})
+        return idempotency.Outcome(200, "task", card.id, visible[0])
 
     return idempotency.run(engine_of(request), request, caller, action)
 
@@ -1521,6 +1560,10 @@ def release_from_outside(conn: Connection, card_id: str, actor: Actor) -> bool:
     from maity_hub import public_cards  # the public pages' modules, as `access` reads them
 
     seen = case((public_cards.outside_clause(), 1), else_=0).label("seen")
+    project_id = conn.scalar(select(t.card.c.project_id).where(t.card.c.id == card_id))
+    if project_id is None:
+        return False
+    project = lock_project(conn, project_id)
     found = conn.execute(select(t.card, seen).where(t.card.c.id == card_id)).first()
     if found is None or found.seen:
         return False
@@ -1536,8 +1579,7 @@ def release_from_outside(conn: Connection, card_id: str, actor: Actor) -> bool:
     )
     if not outside:
         return False
-    project = lock_project(conn, found.project_id)
-    card = _card(conn, card_id)  # as of the lock
+    card = found
     changed = False
     if card.claim_holder in outside:
         before = card
@@ -1706,6 +1748,14 @@ def _ping(
     )
 
 
+def _require_visible_to_assignee(conn: Connection, card_id: str, target: Any) -> None:
+    if target.trust == OUTSIDE:
+        from maity_hub import public_cards
+
+        if not conn.scalar(select(public_cards.outside_card(card_id))):
+            raise not_found()
+
+
 # --- claims and leases (§6.5) ----------------------------------------------------------
 
 
@@ -1748,6 +1798,7 @@ def claim(
         # An outsider's agent claims nothing itself (§6.5, "Until the claim request is built"):
         # after the scope, the project's state and the card's existence, before its state.
         outsiders.refuse_taking(holder_row, mine)
+        _require_visible_to_assignee(conn, card.id, holder_row)
         _refuse_paused(conn, holder_id, instance)  # also when an admin claims on its behalf
         if card.claim_holder is not None:
             raise _already_claimed(conn, card)
@@ -2070,6 +2121,7 @@ def assign(
             _require_assigner(conn, mine, assignee, card.assigned_to, card.claim_holder)
         availability.refuse_coordinator_out(conn, mine, "new assignments")  # after the right
         assignee_row = conn.execute(select(t.membership).where(t.membership.c.id == assignee)).one()
+        _require_visible_to_assignee(conn, card.id, assignee_row)
         takes = card.claim_holder is not None and card.claim_holder != assignee
         if body.instance is not None:
             instances.require_active(conn, assignee_row, body.instance, "instance")

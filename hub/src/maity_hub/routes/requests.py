@@ -42,7 +42,7 @@ from maity_hub import (
     ticker,
 )
 from maity_hub import tables as t
-from maity_hub.access import Membership, member_row, membership
+from maity_hub.access import Membership, member_row, membership, reads_from_outside
 from maity_hub.auth import second_factor
 from maity_hub.auth.caller import Caller
 from maity_hub.cards import CLOSED
@@ -556,6 +556,8 @@ def may_see(conn: Connection, request_id: str, caller: Caller) -> bool:
     try:
         mine = membership(conn, caller, namespace.name_of(conn, row.project_id))
     except ApiError:
+        return False
+    if reads_from_outside(mine):
         return False
     if _withdrew_the_pair(conn, row, mine):
         return True

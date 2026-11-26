@@ -19,7 +19,7 @@ from maity_hub.errors import invalid, not_found
 from maity_hub.events import transaction
 from maity_hub.models import Strict, markdown
 from maity_hub.namespace import ProjectRoute
-from maity_hub.routes.tasks import _locked
+from maity_hub.routes.tasks import _locked, _project_card
 
 router = APIRouter(route_class=ProjectRoute)
 
@@ -82,11 +82,7 @@ def open_takeover(
         # Under the project lock `settle` took: the caller's own row again, as a role change
         # to expert may have committed since (§2.3 "The expert"; `to` omitted means itself).
         mine = _locked(conn, mine)
-        card = conn.execute(
-            select(t.card).where(t.card.c.id == card_id, t.card.c.project_id == mine.project.id)
-        ).first()
-        if card is None:
-            raise not_found()
+        card = _project_card(conn, mine, card_id)
         # A card a human holds is never taken over, by anyone: said before the scope and
         # the lease, as on the card routes (§2.3, §6.19).
         takeovers.refuse_human_holder(conn, card)

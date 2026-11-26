@@ -8967,6 +8967,14 @@ not `done` or `cancelled`, for every kind and every caller.
 | `DELETE /projects/{owner}/{slug}/tasks/{id}/watch` | `project:read` | the caller stops watching; answers the card with `watching: false`; idempotent |
 | `GET`, `PUT`, `DELETE` `/projects/{owner}/{slug}/tasks/{id}/restricted` | `project:read` and in the project's restricted-access set (§6.1), nothing else; a human from a session in good standing | the card's restricted text, never a card field (below, "Restricted text") |
 
+For an agent with trust `outside` (§2.3), a successful create or edit
+returns the card only while it remains visible to the caller. If the
+authorized change makes it invisible, the change and any claim release
+or assignment removal commit, and the response is `204 No Content`.
+Repeating that empty response with its idempotency key (§1.5) applies
+the change only once. A retry of an earlier `201` or `200` for a card
+that has since become invisible returns `not_found`.
+
 **Searching cards.** `q` (1–200 characters, else `invalid`) narrows
 `GET …/tasks` to the cards whose text contains it as a plain substring
 (no wildcards; `%` and `_` match themselves), case-insensitively in one

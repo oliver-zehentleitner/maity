@@ -233,7 +233,7 @@ OUTSIDE_READS = frozenset(
 # template): an outsider's reads, and beyond them only its own credentials and the events it
 # reads (§8.2, `events.readable_by`). A list, closed by construction as `OUTSIDE_READS` is: a
 # read of the project not named here, a route added later included, answers such an agent
-# `not_found` (`refuse_outside_read`). Its writes are not decided here.
+# `not_found` (`refuse_outside_read`). Request writes are closed as well.
 OUTSIDE_AGENT_READS = OUTSIDE_READS | frozenset(
     {
         ("GET", f"{API_PROJECT}/events"),
@@ -405,7 +405,8 @@ def outside_agent_may_read(method: str, route: str) -> bool:
     `OUTSIDE_AGENT_READS`. `route` is the template of the route that answers
     (`request_stats.route_of`)."""
     if method not in ("GET", "HEAD"):
-        return True
+        requests = f"{API_PROJECT}/requests"
+        return route != requests and not route.startswith(requests + "/")
     if route != API_PROJECT and not route.startswith(API_PROJECT + "/"):
         return True
     return ("GET", route) in OUTSIDE_AGENT_READS

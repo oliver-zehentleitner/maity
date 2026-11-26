@@ -1545,6 +1545,30 @@ def event_views(conn: Connection, rows: Sequence[Any], reader: Any = None) -> li
         found = held.get(f"{row.project_id}/{row.seq}") if row.kind == "message" else None
         if found is not None:  # only while a hold stands on the message (§16.8)
             view["moderation"] = found
+    from maity_hub import access, events, public_cards
+
+    if access.reads_from_outside(reader):
+        # Project the saved edges at read time, the same way as the card itself. A partial
+        # update keeps only fields present in that event; the event's stored body stays intact.
+        cards = [
+            {**view["payload"], "id": events.event_card(row), "_seq": row.seq}
+            for row, view in zip(rows, views, strict=True)
+            if row.kind in events.OUTSIDE_CARD_KINDS
+        ]
+        projected = {card["_seq"]: card for card in public_cards.outside_views(conn, cards)}
+        kept = []
+        for row, view in zip(rows, views, strict=True):
+            if row.kind in events.OUTSIDE_CARD_KINDS:
+                projected_card = projected.get(row.seq)
+                if projected_card is None:
+                    continue
+                payload = dict(view["payload"])
+                for key in (*public_cards.EDGE_FIELDS, "children", "release", "parent"):
+                    if key in payload:
+                        payload[key] = projected_card[key]
+                view["payload"] = payload
+            kept.append(view)
+        return kept
     return views
 
 
