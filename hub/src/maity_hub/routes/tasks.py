@@ -1109,6 +1109,31 @@ def _check_visible_edges(conn: Connection, mine: Membership, body: TaskCreate | 
             )
 
 
+def _edge_patch(conn: Connection, mine: Membership, card_id: str, body: TaskPatch) -> TaskPatch:
+    """A replacement edits the part of each relation the caller could see in its GET."""
+    if not access.reads_from_outside(mine):
+        return body
+    from maity_hub import public_cards
+
+    fields = {field for field in public_cards.EDGE_FIELDS if getattr(body, field) is not None}
+    if not fields:
+        return body
+    e = t.card_edge.c
+    hidden = conn.execute(
+        select(e.kind, e.to_card).where(
+            e.from_card == card_id,
+            e.kind.in_(fields),
+            ~public_cards.outside_card(e.to_card),
+        )
+    )
+    updated: dict[str, list[str]] = {}
+    for field, target in hidden:
+        if field not in updated:
+            updated[field] = list(getattr(body, field))
+        updated[field].append(target)
+    return body.model_copy(update=updated) if updated else body
+
+
 def create_card(
     conn: Connection,
     caller: Caller,
@@ -1363,6 +1388,7 @@ def patch_task(
         ):
             raise invalid({"approve": "not_applicable"})
         _check_visible_edges(conn, mine, body)
+        edge_patch = _edge_patch(conn, mine, card.id, body)
         values: dict[str, Any] = {}
         parent = body.parent if "parent" in given else card.parent
         wanted_status = body.status if body.status is not None else card.status
@@ -1384,7 +1410,7 @@ def patch_task(
                 card.id,
                 kind=card.kind,
                 parent=parent,
-                depends_on=body.depends_on,
+                depends_on=edge_patch.depends_on,
                 fields=graph_fields,
             )
         if "parent" in given:
@@ -1424,24 +1450,26 @@ def patch_task(
             values["release_data"] = _patched_release(mine, card, body.release)
         if body.contract is not None:
             values["contract"] = _patched_contract(conn, mine, card, body.contract)
-        if body.depends_on is not None:
+        if edge_patch.depends_on is not None:
             _refuse_closed_release(card)
         before = (
             cards.edges(conn, card.id)
-            if body.depends_on is not None
-            or body.ships_with is not None
-            or body.related is not None
+            if edge_patch.depends_on is not None
+            or edge_patch.ships_with is not None
+            or edge_patch.related is not None
             else None
         )
-        depends_changed = body.depends_on is not None and cards.set_depends_on(
-            conn, mine.project.id, card.id, body.depends_on
+        depends_changed = edge_patch.depends_on is not None and cards.set_depends_on(
+            conn, mine.project.id, card.id, edge_patch.depends_on
         )
         partners: set[str] = set()
-        if body.ships_with is not None:
-            partners = cards.set_ships_with(conn, mine.project.id, card.id, body.ships_with)
+        if edge_patch.ships_with is not None:
+            partners = cards.set_ships_with(conn, mine.project.id, card.id, edge_patch.ships_with)
         related: set[str] = set()
-        if body.related is not None:
-            related = cards.set_symmetric(conn, mine.project.id, card.id, body.related, "related")
+        if edge_patch.related is not None:
+            related = cards.set_symmetric(
+                conn, mine.project.id, card.id, edge_patch.related, "related"
+            )
         if "status" in given and body.status is not None and body.status != card.status:
             if body.status not in cards.STATUSES:
                 raise invalid({"status": "unknown"})

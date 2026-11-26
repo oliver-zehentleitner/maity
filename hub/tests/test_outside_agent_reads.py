@@ -709,3 +709,14 @@ def test_hidden_card_assignments_are_refused_and_visible_assignments_succeed(tea
     good = team.owner.post(f"{P}/tasks/{team.open}/assign", {"assignee": team.agent.id})
     assert good.status_code == 200
     assert good.json()["assigned_to"] == team.agent.id
+
+
+def test_visible_edge_edit_preserves_other_relations(team: Team) -> None:
+    card_id = team.card("Shared work", related=[team.secret])
+    assert (
+        team.owner.post(f"{P}/tasks/{card_id}/claim", {"holder": team.agent.id}).status_code == 200
+    )
+    updated = team.agent.patch(f"{P}/tasks/{card_id}", {"related": [team.open]})
+    assert updated.status_code == 200
+    assert updated.json()["related"] == [team.open]
+    assert set(team.owner.get(f"{P}/tasks/{card_id}").json()["related"]) == {team.secret, team.open}
