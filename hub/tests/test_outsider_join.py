@@ -220,6 +220,8 @@ def test_contribution_tells_an_outsider_whether_they_may_add_an_agent(
     assert closed.json() == {
         "agent_owners": None,
         "outside_roles": ["coder"],
+        "looking_for_coders": "per_card",
+        "outside_claims": "human",
         "open_cards": 0,
         "agents_max": 3,
         "can_join": False,
