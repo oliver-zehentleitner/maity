@@ -34,15 +34,29 @@ KIND = "card"
 
 
 def shown(card: Any) -> bool:
-    """Whether the card itself may stand on a public page: a `security` card only once it is
-    done (§16.9). The project and the hold are checked by the caller."""
+    """Whether the card itself may stand on a public page (§16.9): every card but one labelled
+    `security`, in any case, that is not `done`; no label and the empty label are not
+    `security`. The project and the hold are checked by the caller.
+
+    The rule on a row already read (the card's page, the snapshot's ticker); `shown_clause`
+    is its twin for a query, and the two change together: `tests/test_public_board_rule.py`
+    holds them to the same answer on every status and label of its matrix."""
     return (card.label or "").lower() != "security" or card.status == "done"
 
 
 def shown_clause(card: Any = t.card) -> Any:
     """`shown` as a condition on `card` (the table or an alias of it), for a query of cards:
-    what the Board's columns leave out (`public_project_views.board_rows`), and what a public
-    project's outsider does not read through the member routes either (§2.3)."""
+    what the Board's columns leave out (`public_project_views.board_rows`, which reads it
+    rather than a rule of its own), and what a public project's outsider does not read through
+    the member routes either (§2.3, `outside_clause`).
+
+    The same answer as `shown`, spelled for SQL: `done`, or no label (NULL is named, since
+    `lower(NULL) != 'security'` is NULL, not true), or a label that lowered is not `security`;
+    never NULL itself (`status` is NOT NULL, and a NULL `label` is the second term), so its
+    negation is exactly the rest. The two agree on the labels the hub writes: its card routes
+    accept only `cards.LABELS` (`fix`, `feature`, `chore`) or none, so no blank and nothing
+    outside ASCII, which the parity test checks on the engine it runs on; beyond those an
+    engine's `lower` or comparison may differ from Python's."""
     c = card.c
     return or_(c.status == "done", c.label.is_(None), func.lower(c.label) != "security")
 

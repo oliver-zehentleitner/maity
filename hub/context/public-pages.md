@@ -1766,3 +1766,36 @@ be cached publicly and stays a plain public read; what differs per reader is alr
 - The project's id in the public list, so a star needs no further read: the public list carries what the pages
   show, and one read per new star is cheap; the lead ruled the ids out.
 - The dashboard reading `/explore`'s HTML for its list: it would tie the app to the page's markup.
+
+## The Board's columns read `shown_clause`; `shown` and `shown_clause` are twins a test holds together
+
+**Id:** 6f980a4a-0765-447a-8e8f-9fc911126903
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-mtyyaqj39c22 (point 12 of its remainder: the rule of which cards are public spelled in several places); the lead's go of 2026-11-27 for the smallest part of it, with snapshot batching kept out; `public_cards.shown`, `shown_clause`, `public_project_views.board_rows`, `tests/test_public_board_rule.py`
+**See:** public-pages.md#who-a-public-page-names-lives-in-one-module-team-is-the-shown-members-of-that-read — cc4685d4-6489-4858-bd5e-cb0f490e853f — as of 2026-11-27
+**Revisit when:** the `security` rule gains a condition, a label can be written with blanks or outside ASCII, or the snapshot's card reads are batched into one query
+
+`board_rows` leaves the not-done `security` cards out of a column with `public_cards.shown_clause`, the
+condition the outsider's reads use (`outside_clause`), instead of spelling the rule once more inline; the
+holds, the 30-day window of the closed columns, the order (newest first, the id on a tie) and the column
+limit are unchanged, and the Board shows the same cards. `shown` (a row already read: the card's page, the
+snapshot's ticker) and `shown_clause` (a query) stay two functions, documented as twins:
+`tests/test_public_board_rule.py` holds them to the same answer over every status × a label matrix (none,
+empty, `security` in several cases, look-alikes), checks that the clause is never NULL, and holds the Board
+to the answer of its former inline rule and of the rule spelled out in Python, under holds, the cutoff and
+limits of 200, 5 and 1, on whichever engine the suite runs on.
+
+**Reason:** the clause's docstring already said the Board used it while the Board carried a copy; a change
+of the rule in one place would have left the Board, the outsider's reads or a card's page disagreeing, and
+nothing would have failed. One clause for every query, and a test across the two spellings, make such a
+drift a failing test.
+
+**Rejected alternatives:**
+- One function for both, a Python check on SQL rows only: the Board and the outsider's lists must decide in
+  the statement that reads the rows (their limit counts only shown cards, and READ COMMITTED gives each
+  statement its own moment), so the SQL form cannot go.
+- Batching the snapshot's per-card reads in the same change: it touches a separate current-title read, missing
+  ids, empty merge lists, project bounds and READ COMMITTED (an id set read first proves nothing about rows
+  read later), and needs a plan of its own; the lead kept it out of this slice.
