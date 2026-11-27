@@ -1714,3 +1714,77 @@ drift a failing test.
 - Batching the snapshot's per-card reads in the same change: it touches a separate current-title read, missing
   ids, empty merge lists, project bounds and READ COMMITTED (an id set read first proves nothing about rows
   read later), and needs a plan of its own; the lead kept it out of this slice.
+
+## The per-target lock of the public pages is a row of `public_page_lock` on MariaDB
+
+**Id:** 90640108-771e-4647-adf0-cd298e31a963
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-pwqhg0d0tznn (from the security team's third round: a page taken off must not be written back from an older read, on every database); the lead's go of 2026-11-27 for variant 2 of the coder's plan (a lock row for the public pages only, `db.xact_lock` and `sign_in_settings` unchanged); `public_pages._target_lock`, `refresh`, `touch`, `render_all`; `mail.address.take_lock`; `write_guard`; `tests/test_public_pages_lock.py`, `tests/test_public_pages_timing.py`, `tests/test_public_pages_engine.py`, run against MariaDB 11.8.9 before and after the change
+**See:** public-pages.md#a-touched-page-is-taken-off-in-the-writers-transaction-and-rendered-after-its-commit-one-render-has-a-time-limit-and-a-start-takes-up-no-target-after-its-budget — deafb243-f385-4108-8de4-81fc8f9a7872 — as of 2026-11-27
+**Revisit when:** MariaDB runs more than one hub process, an engine runs above READ COMMITTED, `db.xact_lock` gets a MariaDB form of its own, or a render starts taking row locks of the domain tables
+
+`refresh`, a removing `touch` and `render_all`'s cleanup take the target's lock through `public_pages._target_lock`,
+not `db.xact_lock`.
+- **PostgreSQL:** it is the advisory lock as before.
+- **SQLite:** nothing, as before.
+- **MySQL/MariaDB:** `db.xact_lock` is a no-op there, because the hub runs one process. That one process still
+  renders from request threads, the pages worker and the snapshot thread, each on its own pooled connection.
+  - So a render that had read a card as shown could write its page after a takedown had deleted it and committed.
+  - The page stayed until the next render. A test showed this against MariaDB on the unchanged code, three runs
+    out of three.
+  - The fix: the target's row of `public_page_lock`, keyed by the sha256 of the lock's name and locked
+    `SELECT … FOR UPDATE` until the transaction ends.
+  - The row is looked for first: it exists for every target rendered before. Only an absent row goes through
+    `take_lock` (an insert in a savepoint, then the lock, run once more if the row vanished).
+  - Rows are never deleted. The table is made on every engine and stays empty off MariaDB.
+
+**What holds, and what the tests show:**
+- A takedown waits for a render that holds the lock, then deletes its page (`test_a_render_cannot_write_back_…`).
+  The same test with the lock patched to the no-op still finds the stale page, so the test can fail.
+- A rollback gives the lock back, also where the rollback took the freshly made row with it.
+- A render that waits past `innodb_lock_wait_timeout` (1205, not retried) fails before it reads or writes
+  anything. Its transaction rolls back, and the stored page stays as it was: **not** taken off.
+  - That page is never one a committed takedown removed, since the takedown deletes it in its own transaction.
+  - Only a render that ran and failed takes a page off.
+- The render's own lock comes before any of its reads, so under READ COMMITTED every statement after it sees
+  the takedown. An engine at REPEATABLE READ would also need the lock before the first plain read, and the
+  non-`events.transaction` path of `touch` reads first.
+
+**Lock order:** a run of the public page tests against MariaDB recorded every statement inside a `refresh`
+(2333 renders of all six kinds and the snapshot):
+- no write outside `public_page*`;
+- no locking read from a renderer;
+- only `write_guard`'s shared `account_lock`. The guard takes it before a human caller's first locking
+  statement, so before the page lock.
+
+So the order on MariaDB is the domain's (account, organisation, project), then `public_page_lock`, then
+`public_page`, as in a writer, and a render cannot close a cycle with a writer. Two writers that take several
+targets' locks across their transactions can still deadlock. InnoDB then ends one (1213), as PostgreSQL does
+today (40P01).
+
+On PostgreSQL the advisory lock's `SELECT` is no locking statement for the guard, so there the guard takes its
+locks after the page lock. That is a different order, which this change leaves as it is.
+
+**Reason:** a row lock is transactional on InnoDB, as the advisory lock is on PostgreSQL:
+- it is released at commit and at rollback and never left on a pooled connection;
+- InnoDB's deadlock detection sees it;
+- `retrying` already handles its deadlock errors.
+
+The probe before `take_lock` saves the failed insert, its savepoint and the shared lock of its duplicate check
+on every render of a known target. (With up to six waiters on one held row, MariaDB 11.8.9 showed no deadlock
+with either form.)
+
+**Rejected alternatives:**
+- A MariaDB branch inside `db.xact_lock` (variant 1): it would also have turned `sign_in_settings`' lock into a
+  real one. The lead kept the change to the public pages.
+- `GET_LOCK`: it is session-scoped. COMMIT and ROLLBACK do not release it, and SQLAlchemy has no hook after the
+  database commit. A missed release stays on the pooled connection, and InnoDB's deadlock detection does not see
+  it.
+- `FOR UPDATE` on the project row: a render would block every write of the project for its whole length. The
+  person, organisation and agent targets have no project row.
+- A conditional write with a generation counter: it still needs a row per target and changes every removing
+  writer and every `put`.
+- An in-process `threading` lock: it has no hook at the database commit, it is invisible to InnoDB, and it does
+  not cover CLI processes writing the same database.

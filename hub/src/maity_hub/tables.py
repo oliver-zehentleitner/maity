@@ -3166,6 +3166,19 @@ public_page = Table(
     **MYSQL_TABLE,
 )
 
+# The lock of one target's public pages on MySQL/MariaDB (hub/context/public-pages.md,
+# tsk-pwqhg0d0tznn): a render, a takedown and the cleanup lock the target's row here
+# (`SELECT … FOR UPDATE`, made if absent) until their transaction ends, as PostgreSQL holds an
+# advisory lock. Only a lock, no data; on PostgreSQL and SQLite the table stays empty. A row is
+# never deleted.
+public_page_lock = Table(
+    "public_page_lock",
+    metadata,
+    # The sha256 of the lock's name (`public_page:{kind}:{target_id}`), a fixed length.
+    Column("digest", String(64), primary_key=True),
+    **MYSQL_TABLE,
+)
+
 # A card's restricted text (docs/api.md §6.4 "Restricted text"): at most one per card, in
 # its own table so that no read of the card (its view, search, history, events, export,
 # public page) can carry it by accident. `text` is null once cleared; `version` counts every

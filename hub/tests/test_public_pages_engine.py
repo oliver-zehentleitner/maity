@@ -13,7 +13,7 @@ from typing import Any
 import pytest
 from sqlalchemy import Connection, Engine, insert, select, update
 
-from maity_hub import clock, db, public_pages
+from maity_hub import clock, public_pages
 from maity_hub import tables as t
 from maity_hub.config import Settings
 from maity_hub.routes import seo
@@ -276,15 +276,16 @@ def test_render_all_keeps_a_page_whose_target_went_off_and_on_during_the_cleanup
     assert set(rows(migrated)) == {"/a", "/n"}
 
 
-def test_on_postgresql_the_cleanup_spares_a_page_rendered_by_another_transaction(
+def test_on_a_server_database_the_cleanup_spares_a_page_rendered_by_another_transaction(
     migrated: Engine, settings: Settings, shown: Shown
 ) -> None:
-    """The same interleaving with two real transactions (PostgreSQL, READ COMMITTED): "n" is
-    rendered and committed by another connection after the cleanup's first read of the
-    targets, so the cleanup keeps its page; and a render that comes while the cleanup holds
-    "n"'s lock waits for it, so it cannot fall between the second read and the delete."""
-    if migrated.dialect.name != "postgresql":
-        pytest.skip("SQLite writes one transaction at a time; the window is PostgreSQL's")
+    """The same interleaving with two real transactions (PostgreSQL or MariaDB, READ
+    COMMITTED): "n" is rendered and committed by another connection after the cleanup's first
+    read of the targets, so the cleanup keeps its page; and a render that comes while the
+    cleanup holds "n"'s lock waits for it, so it cannot fall between the second read and the
+    delete."""
+    if migrated.dialect.name == "sqlite":
+        pytest.skip("SQLite writes one transaction at a time; the window is a server's")
     config = hub(settings)
     shown.targets["a"] = ("A", True, clock.now())
     shown.targets["n"] = ("N", True, clock.now())
@@ -329,21 +330,21 @@ def test_on_postgresql_the_cleanup_spares_a_page_rendered_by_another_transaction
     assert set(rows(migrated)) == {"/a", "/n"}
 
 
-def test_on_postgresql_the_cleanup_holds_one_targets_lock_at_a_time(
+def test_on_a_server_database_the_cleanup_holds_one_targets_lock_at_a_time(
     migrated: Engine, settings: Settings, shown: Shown, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A writer may take several targets' locks in an order of its own across its transaction
     (an organisation's suspension touches its projects one after the other, each with its
     cards: the #1509 review, fmzu). Here one holds "y" and then waits for "x" while the cleanup
     holds "x": had the cleanup kept "x" and gone on to "y", the two would wait for each other
-    and PostgreSQL would end one. With one lock per candidate, both finish."""
-    if migrated.dialect.name != "postgresql":
-        pytest.skip("SQLite writes one transaction at a time; advisory locks are PostgreSQL's")
+    and the server would end one. With one lock per candidate, both finish."""
+    if migrated.dialect.name == "sqlite":
+        pytest.skip("SQLite writes one transaction at a time; the locks are a server's")
     config = hub(settings)
     shown.targets.update({t: (t.upper(), True, clock.now()) for t in ("a", "x", "y")})
     public_pages.render_all(migrated, config)
     del shown.targets["x"], shown.targets["y"]  # gone, their pages left: both are candidates
-    original = db.xact_lock
+    original = public_pages._target_lock
     holds_y = threading.Event()
     writer: list[Future[None]] = []
 
@@ -353,7 +354,7 @@ def test_on_postgresql_the_cleanup_holds_one_targets_lock_at_a_time(
             holds_y.set()
             original(conn, f"public_page:{NOTE}:x")
 
-    def xact_lock(conn: Connection, name: str) -> None:
+    def target_lock(conn: Connection, name: str) -> None:
         original(conn, name)
         if name == f"public_page:{NOTE}:x" and not writer:
             future = Future[None]()
@@ -369,7 +370,7 @@ def test_on_postgresql_the_cleanup_holds_one_targets_lock_at_a_time(
             threading.Thread(target=step, daemon=True).start()
             assert holds_y.wait(10)
 
-    monkeypatch.setattr(public_pages, "xact_lock", xact_lock)
+    monkeypatch.setattr(public_pages, "_target_lock", target_lock)
     public_pages.render_all(migrated, config)
     writer[0].result(timeout=10)  # not ended as a deadlock's victim
     assert set(rows(migrated)) == {"/a"}
