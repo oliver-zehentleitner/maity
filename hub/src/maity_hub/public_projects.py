@@ -340,9 +340,9 @@ def pages_of_member(conn: Connection, human_id: str) -> list[tuple[str, str]]:
     ).scalars()
     # Mine first, as the former query did: the active memberships in a project with a page,
     # frozen with their project ids. The editor's projects are those ids, not a second
-    # selection that would re-check active, owner or public_page. The same ids then go to
-    # `edited_by`. Holder and author run after that, with their own frozen set (any active
-    # membership of theirs) and the cards of a project with a page.
+    # selection that would re-check active, owner or public_page. Holder and author then
+    # run as a SELECT of the person's active memberships (any project), re-evaluated in
+    # each statement as the former joins were, for cards of a project with a page.
     mine_rows = conn.execute(
         select(m.id, m.project_id)
         .join(t.project, t.project.c.id == m.project_id)
@@ -352,8 +352,8 @@ def pages_of_member(conn: Connection, human_id: str) -> list[tuple[str, str]]:
     by_them: set[str] = set()
     for part in chunks(row.project_id for row in mine_rows):
         by_them |= public_cards.edited_by(conn, mine, (t.card.c.project_id.in_(part),))
-    holding = set(conn.execute(select(m.id).where(*_theirs(t.membership, human_id))).scalars())
     public = select(t.project.c.id).where(t.project.c.public_page == "on")
+    holding = select(m.id).where(*_theirs(t.membership, human_id))
     cards = sorted(
         public_cards.held_or_noted_by(conn, holding, (t.card.c.project_id.in_(public),)) | by_them
     )

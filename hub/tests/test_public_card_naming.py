@@ -388,10 +388,9 @@ def test_the_statements_do_not_grow_with_the_cards_or_the_memberships(
     cards: Cards, migrated: Engine
 ) -> None:
     """Both callers send the same statements for the few cards and memberships of the world as
-    for forty more: the memberships are frozen once, IN lists stay in one `chunks.CHUNK` at
-    the default bound, and the edited notes are read once per chunk of projects, not of
-    memberships. The exact counts of a one-chunk world are pinned so a silent rise is a
-    failing test."""
+    for forty more: IN lists stay in one `chunks.CHUNK` at the default bound, and the edited
+    notes are read once per chunk of projects, not of memberships. The exact counts of a
+    one-chunk world are pinned so a silent rise is a failing test."""
     me = cards.human["me"]
     before = (
         _data_statements(migrated, lambda c: public_projects.pages_of_member(c, me)),
@@ -399,7 +398,7 @@ def test_the_statements_do_not_grow_with_the_cards_or_the_memberships(
             migrated, lambda c: public_cards.naming(c, cards.project["public-one"], me)
         ),
     )
-    assert before == (6, 4)
+    assert before == (5, 4)
     for n in range(40):
         agent = cards._agent(f"extra{n}", me)
         cards.member[f"extra{n}@public-one"] = factory.membership(
@@ -418,6 +417,32 @@ def test_the_statements_do_not_grow_with_the_cards_or_the_memberships(
         listed = {i for kind, i in public_projects.pages_of_member(conn, me) if kind == "card"}
         assert {cards.cards[f"extra card {n}"] for n in range(40)} <= listed
         assert public_projects.pages_of_member(conn, me) == old_pages(conn, me)
+
+
+def _former_memberships(world: Cards, project: str, human_id: str, count: int) -> None:
+    """Extra removed rows for one human in one project, so `naming` sees more than one
+    membership of the same principal. They are inserted already unset: a second active
+    row would break the unique key."""
+    from maity_hub.events import newest_seq
+
+    trust, role = factory.trust_and_role("member")
+    for _ in range(count):
+        with world.engine.begin() as conn:
+            conn.execute(
+                insert(t.membership).values(
+                    project_id=world.project[project],
+                    human_id=human_id,
+                    role=role,
+                    role_base=role,
+                    trust=trust,
+                    areas=["/"],
+                    capabilities=[],
+                    joined_at=clock.now(),
+                    joined_seq=newest_seq(conn, world.project[project]),
+                    active=None,
+                    removed_at=clock.now(),
+                )
+            )
 
 
 def test_many_memberships_stay_under_the_engines_limit_on_bound_parameters(
@@ -439,6 +464,7 @@ def test_many_memberships_stay_under_the_engines_limit_on_bound_parameters(
         )
         cards.card(f"extra card {n}", "public-one", f"extra{n}@public-one")
         cards.note(f"extra card {n}", f"extra{n}@public-one", edited_by=f"extra{n}@public-one")
+    _former_memberships(cards, "public-one", me, 20)
     with migrated.connect() as conn:
         expected_pages = old_pages(conn, me)
         expected_naming = old_naming(conn, cards.project["public-one"], me)
@@ -462,8 +488,8 @@ def test_many_memberships_stay_under_the_engines_limit_on_bound_parameters(
     assert len([i for kind, i in expected_pages if kind == "card"]) >= 40
 
 
-def _data_statements(engine: Engine, call: Callable[[Connection], Any]) -> int:
-    """Statements `call` sends, not the BEGIN/COMMIT `connect()` adds on SQLite."""
+def _data_sql(engine: Engine, call: Callable[[Connection], Any]) -> list[str]:
+    """The SQL `call` sends, not the BEGIN/COMMIT `connect()` adds on SQLite."""
     seen: list[str] = []
 
     def collect(conn: Any, cursor: Any, statement: str, *rest: Any) -> None:
@@ -473,7 +499,30 @@ def _data_statements(engine: Engine, call: Callable[[Connection], Any]) -> int:
 
     with engine.connect() as conn, listening(engine, collect, async_engines=False):
         call(conn)
-    return len(seen)
+    return seen
+
+
+def _data_statements(engine: Engine, call: Callable[[Connection], Any]) -> int:
+    return len(_data_sql(engine, call))
+
+
+def statement_kind(sql: str) -> str:
+    """Which of the two callers' steps a statement is: enough to pin order and to fail a
+    reordering or a re-filter of the editor's projects."""
+    text = " ".join(sql.split()).upper()
+    if "EDITED IS NOT NULL" in text:
+        return "edited"
+    if "CLAIM_HOLDER" in text:
+        return "holder"
+    if "CARD_NOTE" in text and "AUTHOR" in text:
+        return "author"
+    if "DISTINCT" in text and "PROJECT.ID" in text:
+        return "projects"
+    if "MEMBERSHIP.PROJECT_ID" in text and "JOIN PROJECT" in text:
+        return "mine"
+    if "FROM MEMBERSHIP" in text:
+        return "ids"
+    raise AssertionError(f"unclassified statement: {sql}")
 
 
 def test_a_membership_selection_that_names_none_reads_no_notes(
@@ -501,22 +550,111 @@ def test_a_membership_selection_that_names_none_reads_no_notes(
             event.remove(migrated, "before_cursor_execute", seen)
 
 
-def test_naming_an_empty_membership_selection_is_one_statement(
+def test_naming_and_pages_send_the_former_statements_in_the_former_order(
     cards: Cards, migrated: Engine
 ) -> None:
-    """A principal with no membership in the project costs one statement, as before: the
-    ids are read, and the holder, author and editor queries do not run."""
-    empty = _data_statements(
-        migrated,
-        lambda c: public_cards.naming(c, cards.project["public-one"], cards.human["nobody"]),
+    """`naming` is one statement when empty (the membership read) and four when not: ids,
+    holder, authors, edited notes. `pages_of_member` is five when mine is not empty
+    (projects, mine, edited notes, holder, authors) and four when mine is empty (no edited
+    read; the former query still sent one). The kinds are pinned in that order, and the
+    edited read of a person's pages names no membership table: the projects are the frozen
+    mine rows' project ids, not a second filter on active, owner or public_page."""
+    nobody = cards.human["nobody"]
+    me = cards.human["me"]
+    empty = [
+        statement_kind(sql)
+        for sql in _data_sql(
+            migrated,
+            lambda c: public_cards.naming(c, cards.project["public-one"], nobody),
+        )
+    ]
+    nonempty = [
+        statement_kind(sql)
+        for sql in _data_sql(
+            migrated,
+            lambda c: public_cards.naming(c, cards.project["public-one"], me),
+        )
+    ]
+    pages = _data_sql(migrated, lambda c: public_projects.pages_of_member(c, me))
+    pages_kinds = [statement_kind(sql) for sql in pages]
+    empty_pages = [
+        statement_kind(sql)
+        for sql in _data_sql(migrated, lambda c: public_projects.pages_of_member(c, nobody))
+    ]
+    assert empty == ["ids"]
+    assert nonempty == ["ids", "holder", "author", "edited"]
+    assert pages_kinds == ["projects", "mine", "edited", "holder", "author"]
+    assert empty_pages == ["projects", "mine", "holder", "author"]
+    edited_sql = [sql for sql, kind in zip(pages, pages_kinds, strict=True) if kind == "edited"]
+    assert edited_sql and all("membership" not in sql.lower() for sql in edited_sql)
+
+
+def test_chunked_in_lists_keep_order_and_cost_one_statement_per_chunk(
+    cards: Cards, migrated: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """When an IN list is longer than `chunks.CHUNK`, each chunk is its own statement, in
+    the same overall order. `naming` repeats holder and author per membership chunk, then
+    reads the edited notes once. `pages_of_member` reads the edited notes once per project
+    chunk, then holder and author once (a subquery, no bound list of memberships). On
+    SQLite, a fresh connection with the bound-parameter limit lowered to 16 before any
+    statement still answers what the former queries answered without the cap."""
+    me = cards.human["me"]
+    for n in range(8):
+        name = f"chunk-pub-{n}"
+        cards.project[name] = factory.project(migrated, name, public_page="on")
+        cards.member[f"me@{name}"] = factory.membership(
+            migrated, cards.project[name], "member", human_id=me
+        )
+        # created_by must be a membership of this project; me is one.
+        cards.card(f"{name}: edited by me", name, f"me@{name}")
+        cards.note(f"{name}: edited by me", f"me@{name}", edited_by=f"me@{name}")
+    # Further (removed) memberships of the same human in public-one, so naming's IN
+    # list of that principal crosses a chunk at CHUNK=2. Owned agents are a different
+    # principal and do not appear in this naming() call.
+    _former_memberships(cards, "public-one", me, 6)
+    monkeypatch.setattr(chunks, "CHUNK", 2)
+    with migrated.connect() as conn:
+        expected_pages = old_pages(conn, me)
+        expected_naming = old_naming(conn, cards.project["public-one"], me)
+        assert public_projects.pages_of_member(conn, me) == expected_pages
+        assert public_cards.naming(conn, cards.project["public-one"], me) == expected_naming
+
+    naming_kinds = [
+        statement_kind(sql)
+        for sql in _data_sql(
+            migrated,
+            lambda c: public_cards.naming(c, cards.project["public-one"], me),
+        )
+    ]
+    # 1 active + 6 removed = 7 memberships -> 4 holder chunks and 4 author chunks, then one
+    # edited read.
+    assert naming_kinds == ["ids"] + ["holder", "author"] * 4 + ["edited"]
+
+    pages_sql = _data_sql(migrated, lambda c: public_projects.pages_of_member(c, me))
+    pages_kinds = [statement_kind(sql) for sql in pages_sql]
+    # public-one, public-two, and 8 new public projects (public-three is inactive): 10
+    # project ids -> 5 edited chunks, then holder and author once.
+    assert pages_kinds == ["projects", "mine"] + ["edited"] * 5 + ["holder", "author"]
+    assert all(
+        "membership" not in sql.lower()
+        for sql, kind in zip(pages_sql, pages_kinds, strict=True)
+        if kind == "edited"
     )
-    nonempty = _data_statements(
-        migrated,
-        lambda c: public_cards.naming(c, cards.project["public-one"], cards.human["me"]),
-    )
-    pages = _data_statements(
-        migrated, lambda c: public_projects.pages_of_member(c, cards.human["me"])
-    )
-    assert empty == 1
-    assert nonempty == 4  # ids, holder, authors, edited notes: one chunk
-    assert pages == 6  # projects, mine, edited notes, holding, holder, authors: one chunk
+
+    if migrated.dialect.name != "sqlite":
+        return
+    from sqlalchemy import create_engine
+
+    # The list of project ids is short (ten), so the cap is a proof that the per-chunk
+    # statements still run, not that an unchunked project IN would fail (that is this
+    # file's membership-list test, with many more ids).
+    fresh = create_engine(migrated.url)
+    try:
+        with fresh.connect() as conn:
+            raw = conn.connection.dbapi_connection
+            assert isinstance(raw, sqlite3.Connection)
+            raw.setlimit(sqlite3.SQLITE_LIMIT_VARIABLE_NUMBER, 16)
+            assert public_projects.pages_of_member(conn, me) == expected_pages
+            assert public_cards.naming(conn, cards.project["public-one"], me) == expected_naming
+    finally:
+        fresh.dispose()

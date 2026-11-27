@@ -20,7 +20,7 @@ from __future__ import annotations
 from collections.abc import Collection, Sequence
 from typing import Any
 
-from sqlalchemy import Connection, and_, case, func, or_, select
+from sqlalchemy import Connection, Select, and_, case, func, or_, select
 
 from maity_hub import clock, moderation, namespace, public_design, public_pages
 from maity_hub import tables as t
@@ -281,31 +281,40 @@ def of_project(conn: Connection, project_id: str) -> list[str]:
     )
 
 
-def held_or_noted_by(conn: Connection, who: Collection[int], where: Sequence[Any] = ()) -> set[str]:
-    """The cards whose page names one of the memberships `who` (a frozen set of membership
-    ids) as its claim holder or as the author of a note (`render_card`), among the cards that
-    meet every condition of `where` (on `t.card`: which project's cards count).
+def held_or_noted_by(
+    conn: Connection, who: Collection[int] | Select[Any], where: Sequence[Any] = ()
+) -> set[str]:
+    """The cards whose page names one of the memberships `who` as its claim holder or as the
+    author of a note (`render_card`), among the cards that meet every condition of `where`
+    (on `t.card`: which project's cards count).
 
-    The caller reads the memberships once and hands the same ids to this reader and to
-    `edited_by`, so every later statement uses that one snapshot. Each IN list is cut at
-    `chunks.CHUNK`. No statements when `who` is empty."""
+    `who` is either a frozen set of membership ids (`naming`: the principal's memberships
+    in that project, already read once) or a SELECT of ids (`pages_of_member`: the person's
+    active memberships, re-evaluated in each of the two statements as the former joins were).
+    A frozen collection is cut at `chunks.CHUNK`. A SELECT is used as a subquery, with no
+    bound list to cut. No statements when a frozen collection is empty."""
+    c, n = t.card.c, t.card_note.c
+
+    def once(part: Any) -> set[str]:
+        held = conn.execute(select(c.id).where(c.claim_holder.in_(part), *where)).scalars()
+        noted = conn.execute(
+            select(n.card_id).join(t.card, c.id == n.card_id).where(n.author.in_(part), *where)
+        ).scalars()
+        return set(held) | set(noted)
+
+    if isinstance(who, Select):
+        return once(who)
     if not who:
         return set()
-    c, n = t.card.c, t.card_note.c
     found: set[str] = set()
     for part in chunks(who):
-        found.update(conn.execute(select(c.id).where(c.claim_holder.in_(part), *where)).scalars())
-        found.update(
-            conn.execute(
-                select(n.card_id).join(t.card, c.id == n.card_id).where(n.author.in_(part), *where)
-            ).scalars()
-        )
+        found |= once(part)
     return found
 
 
 def edited_by(conn: Connection, who: Collection[int], where: Sequence[Any] = ()) -> set[str]:
     """The cards among those meeting `where` with a note whose latest editor is one of the
-    memberships `who` (the same frozen ids `held_or_noted_by` received).
+    memberships `who` (a frozen set: `naming`'s ids, or `pages_of_member`'s mine).
 
     The editor is in JSON (`card_note.edited["by"]`), whose comparison differs between the
     engines in SQL: the edited notes of those cards are read once for this `where`, and
