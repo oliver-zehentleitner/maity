@@ -12,7 +12,7 @@ from __future__ import annotations
 from datetime import timedelta
 from typing import Any
 
-from sqlalchemy import Connection, Engine, func, or_, select
+from sqlalchemy import Connection, Engine, select
 
 from maity_hub import (
     cards,
@@ -27,6 +27,7 @@ from maity_hub import (
 )
 from maity_hub import tables as t
 from maity_hub.config import Settings
+from maity_hub.public_cards import shown_clause
 from maity_hub.public_members import (
     Person,
     holder_data,
@@ -84,8 +85,8 @@ def board_rows(
         )
         if status in cards.CLOSED:
             query = query.where(c.closed_at >= cutoff)
-        if status != "done":  # a `security` card stays internal until it is done (§16.9)
-            query = query.where(or_(c.label.is_(None), func.lower(c.label) != "security"))
+        # `public_cards.shown` as SQL: a `security` card stays internal until it is done (§16.9)
+        query = query.where(shown_clause())
         if held:  # the cards under a hold are left out in the query, so the limit counts the rest
             query = query.where(c.id.notin_(held))
         rows = list(
