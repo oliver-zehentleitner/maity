@@ -1166,26 +1166,34 @@ events on it because a member's name stands on the card pages they hold, which i
 `public_cards.naming` (the card pages to take off and render for one member's change) and
 `public_projects.pages_of_member` (the same for a person) each had their own queries for the cards whose page names
 a membership: as claim holder, as the author of a note, or as the latest editor of a note. They now share two
-readers in `public_cards`: `held_or_noted_by` (two statements: the holder, then the authors) and `edited_by`
-(the membership ids, then the edited notes of the cards in question, read once). Both take the memberships as a
-SELECT of ids and the card's project as conditions on `card`, so each caller says which memberships count and which
-project's cards, and nothing else is decided in the helper. `naming` passes the principal's memberships in the one
-project, active or not, and that project's cards. `pages_of_member` passes, for a holder or note author, the person's
-and their agents' active memberships in any project and the cards of a project with a page, and, for the latest
-editor, only the active memberships in projects with a page and the cards of the projects the person is a member
-of there. The result is the same list as before, in the same order (naming sorted, the person's pages the projects
-first and the cards by id); the pages that need a render, the order and the public routes are unchanged.
+readers in `public_cards`: `held_or_noted_by` and `edited_by`. Each caller freezes its membership ids once, then
+passes that same set to the readers, so later statements use that snapshot (READ COMMITTED gives each statement
+its own). The IN lists of those ids are cut at `chunks.CHUNK`. `edited_by` matches the editor in Python from one
+read of the edited notes for a given card filter; a further membership chunk does not scan the notes again, a
+further project chunk (the card filter) does.
+
+`naming` reads the principal's memberships in the one project, active or not, and returns if that set is empty.
+The same ids then go to the holder, the authors and the latest editors of that project's cards. On a one-chunk
+set this is one statement when empty (the membership read) and four when not (ids, holder, authors, edited notes).
+`pages_of_member` still has two selections: mine first (the person's and their agents' active memberships in a
+project with a page, frozen with their project ids), then the editors of cards in those projects, then a second
+frozen set (any active membership of theirs) for holder and author of cards of a project with a page. The editor's
+projects are the project ids of the frozen mine rows, not a second selection that would re-check active, owner or
+public_page. On a one-chunk world this is six statements (projects, mine, edited notes, holding, holder, authors).
+The result is the same list as before, in the same order (naming sorted, the person's pages the projects first and
+the cards by id); the pages that need a render, the order and the public routes are unchanged. The existing
+removal query-count gates are unchanged.
 
 **Reason:** the two copies of the queries and of the JSON scan could drift: a removal of a member's pages depends on
 `naming` finding every card that names them, and a person's pages on `pages_of_member`, so a rule changed in one
 place would leave a name on a public page or render pages for nothing, and nothing would fail. The editor stays a
 Python match of one read of the edited notes, since the JSON comparison is not portable in SQL across the engines
-and a read per membership or per chunk of ids would scan every edited note again. The memberships are a subquery of
-each statement, as the joins of the person's query were, so a statement reads them in its own snapshot (READ
-COMMITTED gives each statement one) and no IN list of ids can pass the engine's limit on bound parameters: a person
-with many agent memberships had an IN list of all of them (`mine`). The statements stay two for the holder and
-author and two for the editors whatever the number of cards or memberships, which the removal's statement count
-relies on (tsk-m65g76c979jk).
+and a read per membership or per chunk of membership ids would scan every edited note again. The memberships are
+read once, as both former callers already did for the editor (`naming` before holder, author and editor;
+`pages_of_member` mine before the edited notes and the holder and author joins), so a concurrent removal, owner
+change or `public_page` change cannot make the later statements see a different set than the first read. The IN
+lists are cut at `chunks.CHUNK` so a person with many agent memberships does not pass the engine's limit on bound
+parameters (`mine` was such a list). A test holds these statement counts and the former lists.
 
 **Rejected alternatives:**
 - One list of membership ids for both callers, as the audit proposed first: the person's queries do not select the
@@ -1194,9 +1202,11 @@ relies on (tsk-m65g76c979jk).
   card's project is not implied by a membership id, since the tables do not tie a holder, an author or an editor to
   the card's project. With the data the hub writes the two selections agree; a test holds the shared form to the
   former queries on a world where they differ, so that unifying them is a decision of its own.
-- Reading the membership ids first and cutting the IN lists at `chunks.CHUNK`: it moves the membership read out of
-  the statement that reads the cards, and every further chunk would ask the card queries again, or scan the edited
-  notes again.
+- Passing the memberships as a subquery of each statement, instead of freezing the ids once: it moved the snapshot
+  boundaries (each statement would re-read memberships, and `pages_of_member` would re-filter active, owner and
+  public_page for the editor's projects) and raised the empty `naming` path from one statement to three. A
+  concurrent removal or a change of `public_page` could then make the two callers disagree with their former
+  results.
 - Comparing the editor in SQL with the engine's JSON operators: the three engines differ, and the page's own rule
   (`render_card`) reads the JSON in Python.
 - Folding the cards each caller already hands to `_dependents` into the same change: the card is only the shared

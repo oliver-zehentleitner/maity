@@ -20,7 +20,7 @@ from maity_hub import chunks, clock, public_cards, public_projects
 from maity_hub import tables as t
 from maity_hub.ids import new_id
 from tests import factory
-from tests.statements import count_statements
+from tests.statements import listening
 
 
 def old_naming(conn: Connection, project_id: str, principal_id: str) -> list[str]:
@@ -267,6 +267,16 @@ def cards(migrated: Engine) -> Cards:
     world.note(
         "cross: card of a project they are not in", "other@public-two", edited_by="mine@public-one"
     )
+    # A private project's card, edited by a public-project membership, while the person is
+    # also an active member of that private project: pages_of_member must not list it. The
+    # editor's projects are the project ids of the frozen mine rows, which are only the
+    # public ones.
+    world.card("cross: private card edited by public membership", "private")
+    world.note(
+        "cross: private card edited by public membership",
+        "other@private",
+        edited_by="me@public-one",
+    )
     return world
 
 
@@ -353,6 +363,7 @@ def test_the_pages_of_a_person_are_what_the_former_query_found(
     assert ids["cross: card of a project they are not in"] not in cards_of["me"]
     assert ids["two: edited by removed mine"] not in cards_of["me"]
     assert ids["two: edited by me"] in cards_of["me"]
+    assert ids["cross: private card edited by public membership"] not in cards_of["me"]
 
 
 def test_both_callers_ignore_the_cards_of_a_project_with_no_page_as_before(
@@ -373,21 +384,22 @@ def test_both_callers_ignore_the_cards_of_a_project_with_no_page_as_before(
         )
 
 
-def _statements(engine: Engine, call: Callable[[Connection], Any]) -> int:
-    with engine.connect() as conn:
-        return count_statements(engine, lambda: call(conn), async_engines=False)
-
-
 def test_the_statements_do_not_grow_with_the_cards_or_the_memberships(
     cards: Cards, migrated: Engine
 ) -> None:
     """Both callers send the same statements for the few cards and memberships of the world as
-    for ten times as many: the memberships are a subquery and the edited notes are read once."""
+    for forty more: the memberships are frozen once, IN lists stay in one `chunks.CHUNK` at
+    the default bound, and the edited notes are read once per chunk of projects, not of
+    memberships. The exact counts of a one-chunk world are pinned so a silent rise is a
+    failing test."""
     me = cards.human["me"]
     before = (
-        _statements(migrated, lambda c: public_projects.pages_of_member(c, me)),
-        _statements(migrated, lambda c: public_cards.naming(c, cards.project["public-one"], me)),
+        _data_statements(migrated, lambda c: public_projects.pages_of_member(c, me)),
+        _data_statements(
+            migrated, lambda c: public_cards.naming(c, cards.project["public-one"], me)
+        ),
     )
+    assert before == (6, 4)
     for n in range(40):
         agent = cards._agent(f"extra{n}", me)
         cards.member[f"extra{n}@public-one"] = factory.membership(
@@ -396,8 +408,10 @@ def test_the_statements_do_not_grow_with_the_cards_or_the_memberships(
         cards.card(f"extra card {n}", "public-one", f"extra{n}@public-one")
         cards.note(f"extra card {n}", f"extra{n}@public-one", edited_by=f"extra{n}@public-one")
     after = (
-        _statements(migrated, lambda c: public_projects.pages_of_member(c, me)),
-        _statements(migrated, lambda c: public_cards.naming(c, cards.project["public-one"], me)),
+        _data_statements(migrated, lambda c: public_projects.pages_of_member(c, me)),
+        _data_statements(
+            migrated, lambda c: public_cards.naming(c, cards.project["public-one"], me)
+        ),
     )
     assert after == before
     with migrated.connect() as conn:
@@ -409,9 +423,11 @@ def test_the_statements_do_not_grow_with_the_cards_or_the_memberships(
 def test_many_memberships_stay_under_the_engines_limit_on_bound_parameters(
     cards: Cards, migrated: Engine, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A person with 40 agent memberships has no IN list of ids to cut: with SQLite's limit on
-    bound parameters lowered to 16 and `chunks.CHUNK` to 2 the statements still run and answer
-    what they answer without the limit, where a list of the 40 ids (the former
+    """A person with 40 agent memberships cuts each IN list at `chunks.CHUNK`. The expected
+    lists come from the former queries on one connection. A second, fresh engine to the same
+    database (so no prepared-statement cache from that first run) lowers SQLite's
+    bound-parameter limit to 16 *before* any statement and patches CHUNK to 2: the shared
+    readers still match the former lists, and an unchunked IN of those ids (the former
     `pages_of_member`) fails with "too many SQL variables"."""
     if migrated.dialect.name != "sqlite":
         pytest.skip("the bound-parameter limit is lowered on a SQLite connection")
@@ -424,21 +440,40 @@ def test_many_memberships_stay_under_the_engines_limit_on_bound_parameters(
         cards.card(f"extra card {n}", "public-one", f"extra{n}@public-one")
         cards.note(f"extra card {n}", f"extra{n}@public-one", edited_by=f"extra{n}@public-one")
     with migrated.connect() as conn:
-        whole = public_projects.pages_of_member(conn, me)
-        whole_naming = public_cards.naming(conn, cards.project["public-one"], me)
-        raw = conn.connection.dbapi_connection
-        assert isinstance(raw, sqlite3.Connection)
-        was = raw.getlimit(sqlite3.SQLITE_LIMIT_VARIABLE_NUMBER)
-        monkeypatch.setattr(chunks, "CHUNK", 2)
-        raw.setlimit(sqlite3.SQLITE_LIMIT_VARIABLE_NUMBER, 16)
-        try:
-            assert public_projects.pages_of_member(conn, me) == whole
-            assert public_cards.naming(conn, cards.project["public-one"], me) == whole_naming
+        expected_pages = old_pages(conn, me)
+        expected_naming = old_naming(conn, cards.project["public-one"], me)
+    monkeypatch.setattr(chunks, "CHUNK", 2)
+    # A new engine: setlimit on a pooled connection that already ran the 43-parameter
+    # query does not apply (the statement cache keeps that plan).
+    from sqlalchemy import create_engine
+
+    fresh = create_engine(migrated.url)
+    try:
+        with fresh.connect() as conn:
+            raw = conn.connection.dbapi_connection
+            assert isinstance(raw, sqlite3.Connection)
+            raw.setlimit(sqlite3.SQLITE_LIMIT_VARIABLE_NUMBER, 16)
+            assert public_projects.pages_of_member(conn, me) == expected_pages
+            assert public_cards.naming(conn, cards.project["public-one"], me) == expected_naming
             with pytest.raises(Exception, match="too many SQL variables"):
                 old_pages(conn, me)
-        finally:
-            raw.setlimit(sqlite3.SQLITE_LIMIT_VARIABLE_NUMBER, was)
-    assert len([i for kind, i in whole if kind == "card"]) >= 40
+    finally:
+        fresh.dispose()
+    assert len([i for kind, i in expected_pages if kind == "card"]) >= 40
+
+
+def _data_statements(engine: Engine, call: Callable[[Connection], Any]) -> int:
+    """Statements `call` sends, not the BEGIN/COMMIT `connect()` adds on SQLite."""
+    seen: list[str] = []
+
+    def collect(conn: Any, cursor: Any, statement: str, *rest: Any) -> None:
+        head = statement.lstrip().split(None, 1)[0].upper()
+        if head not in {"BEGIN", "COMMIT", "ROLLBACK"}:
+            seen.append(statement)
+
+    with engine.connect() as conn, listening(engine, collect, async_engines=False):
+        call(conn)
+    return len(seen)
 
 
 def test_a_membership_selection_that_names_none_reads_no_notes(
@@ -464,3 +499,24 @@ def test_a_membership_selection_that_names_none_reads_no_notes(
             assert len(edited_reads) == 1
         finally:
             event.remove(migrated, "before_cursor_execute", seen)
+
+
+def test_naming_an_empty_membership_selection_is_one_statement(
+    cards: Cards, migrated: Engine
+) -> None:
+    """A principal with no membership in the project costs one statement, as before: the
+    ids are read, and the holder, author and editor queries do not run."""
+    empty = _data_statements(
+        migrated,
+        lambda c: public_cards.naming(c, cards.project["public-one"], cards.human["nobody"]),
+    )
+    nonempty = _data_statements(
+        migrated,
+        lambda c: public_cards.naming(c, cards.project["public-one"], cards.human["me"]),
+    )
+    pages = _data_statements(
+        migrated, lambda c: public_projects.pages_of_member(c, cards.human["me"])
+    )
+    assert empty == 1
+    assert nonempty == 4  # ids, holder, authors, edited notes: one chunk
+    assert pages == 6  # projects, mine, edited notes, holding, holder, authors: one chunk

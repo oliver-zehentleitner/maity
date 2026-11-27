@@ -338,28 +338,24 @@ def pages_of_member(conn: Connection, human_id: str) -> list[tuple[str, str]]:
         .distinct()
         .order_by(t.project.c.id)
     ).scalars()
-    # The card pages that name them are found by `public_cards`, the memberships as a subquery
-    # of each statement. Its two readers take their own selection, as the person's queries did:
-    # a holder or note author is any active membership of theirs, for a card of a public
-    # project; the latest editor, matched in Python from JSON, only a membership of theirs in a
-    # public project, for a card of one of the projects they are a member of there. A
-    # membership id alone would not carry the card's project, nor tell the two apart.
+    # Mine first, as the former query did: the active memberships in a project with a page,
+    # frozen with their project ids. The editor's projects are those ids, not a second
+    # selection that would re-check active, owner or public_page. The same ids then go to
+    # `edited_by`. Holder and author run after that, with their own frozen set (any active
+    # membership of theirs) and the cards of a project with a page.
+    mine_rows = conn.execute(
+        select(m.id, m.project_id)
+        .join(t.project, t.project.c.id == m.project_id)
+        .where(t.project.c.public_page == "on", *_theirs(t.membership, human_id))
+    ).all()
+    mine = {row.id for row in mine_rows}
+    by_them: set[str] = set()
+    for part in chunks(row.project_id for row in mine_rows):
+        by_them |= public_cards.edited_by(conn, mine, (t.card.c.project_id.in_(part),))
+    holding = set(conn.execute(select(m.id).where(*_theirs(t.membership, human_id))).scalars())
     public = select(t.project.c.id).where(t.project.c.public_page == "on")
-    holding = select(m.id).where(*_theirs(t.membership, human_id))
-    mine, there = t.membership.alias("mine"), t.membership.alias("there")
-    editing = (
-        select(mine.c.id)
-        .join(t.project, t.project.c.id == mine.c.project_id)
-        .where(t.project.c.public_page == "on", *_theirs(mine, human_id))
-    )
-    projects_of_mine = (
-        select(there.c.project_id)
-        .join(t.project, t.project.c.id == there.c.project_id)
-        .where(t.project.c.public_page == "on", *_theirs(there, human_id))
-    )
     cards = sorted(
-        public_cards.held_or_noted_by(conn, holding, (t.card.c.project_id.in_(public),))
-        | public_cards.edited_by(conn, editing, (t.card.c.project_id.in_(projects_of_mine),))
+        public_cards.held_or_noted_by(conn, holding, (t.card.c.project_id.in_(public),)) | by_them
     )
     return [(kind, project_id) for project_id in ids for kind in (KIND, VIEWS)] + [
         (public_cards.KIND, card) for card in cards
