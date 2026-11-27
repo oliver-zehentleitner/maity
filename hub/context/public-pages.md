@@ -1153,6 +1153,55 @@ events on it because a member's name stands on the card pages they hold, which i
 - Narrowing by the `changed` fields of the event: 721bcdfa rejected an allowlist of shown fields, and the cost
   is in the number of pages, not in which field changed.
 
+## The cards that name a member are found by one pair of readers, each caller keeping its own selection
+
+**Id:** 955cf355-ba91-43a9-85a5-3b4363056049
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-qq4y8kw23jrz, point 10 of the clean-up audit of rendering and stored public pages (tsk-hgnbapyw7hnh, read at 80647565) and the lead's go for a local implementation of 2026-11-27; `public_cards.naming`, `public_projects.pages_of_member`
+**See:** public-pages.md#a-member-change-takes-off-and-renders-only-the-card-pages-that-name-that-member — fe966f9c-3557-4473-a0d6-14aa4d714a43 — as of 2026-11-27
+**Revisit when:** a card page names a member in a further way (an assignee, a reviewer), or a membership's project is made to agree with its card's project by a constraint
+
+`public_cards.naming` (the card pages to take off and render for one member's change) and
+`public_projects.pages_of_member` (the same for a person) each had their own queries for the cards whose page names
+a membership: as claim holder, as the author of a note, or as the latest editor of a note. They now share two
+readers in `public_cards`: `held_or_noted_by` (two statements: the holder, then the authors) and `edited_by`
+(the membership ids, then the edited notes of the cards in question, read once). Both take the memberships as a
+SELECT of ids and the card's project as conditions on `card`, so each caller says which memberships count and which
+project's cards, and nothing else is decided in the helper. `naming` passes the principal's memberships in the one
+project, active or not, and that project's cards. `pages_of_member` passes, for a holder or note author, the person's
+and their agents' active memberships in any project and the cards of a project with a page, and, for the latest
+editor, only the active memberships in projects with a page and the cards of the projects the person is a member
+of there. The result is the same list as before, in the same order (naming sorted, the person's pages the projects
+first and the cards by id); the pages that need a render, the order and the public routes are unchanged.
+
+**Reason:** the two copies of the queries and of the JSON scan could drift: a removal of a member's pages depends on
+`naming` finding every card that names them, and a person's pages on `pages_of_member`, so a rule changed in one
+place would leave a name on a public page or render pages for nothing, and nothing would fail. The editor stays a
+Python match of one read of the edited notes, since the JSON comparison is not portable in SQL across the engines
+and a read per membership or per chunk of ids would scan every edited note again. The memberships are a subquery of
+each statement, as the joins of the person's query were, so a statement reads them in its own snapshot (READ
+COMMITTED gives each statement one) and no IN list of ids can pass the engine's limit on bound parameters: a person
+with many agent memberships had an IN list of all of them (`mine`). The statements stay two for the holder and
+author and two for the editors whatever the number of cards or memberships, which the removal's statement count
+relies on (tsk-m65g76c979jk).
+
+**Rejected alternatives:**
+- One list of membership ids for both callers, as the audit proposed first: the person's queries do not select the
+  same way for holder or author as for editor (a membership of theirs in a project without a page still names a
+  card of a project with one, the editor only counts in a project with a page and for that project's cards), and the
+  card's project is not implied by a membership id, since the tables do not tie a holder, an author or an editor to
+  the card's project. With the data the hub writes the two selections agree; a test holds the shared form to the
+  former queries on a world where they differ, so that unifying them is a decision of its own.
+- Reading the membership ids first and cutting the IN lists at `chunks.CHUNK`: it moves the membership read out of
+  the statement that reads the cards, and every further chunk would ask the card queries again, or scan the edited
+  notes again.
+- Comparing the editor in SQL with the engine's JSON operators: the three engines differ, and the page's own rule
+  (`render_card`) reads the JSON in Python.
+- Folding the cards each caller already hands to `_dependents` into the same change: the card is only the shared
+  collection; which pages a change touches, snapshot batching and Explore stay as they are.
+
 ## A person can keep their online status off the public pages; their projects' pages then neither name nor count them
 
 **Id:** 54823a3a-96be-4484-9689-8059201b1bb3
