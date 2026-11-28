@@ -20,6 +20,7 @@ from sqlalchemy.exc import OperationalError
 from maity_hub import clock, events, public_pages
 from maity_hub import tables as t
 from maity_hub.config import Settings
+from maity_hub.errors import driver_code, driver_number
 from tests.concurrency import BLOCKED_FOR, FINISH_WITHIN
 from tests.test_public_pages_engine import NOTE, Shown, hub, rows
 from tests.test_public_pages_engine import shown as shown  # noqa: F401  (the fixture)
@@ -59,10 +60,22 @@ def server(engine: Engine) -> None:
         pytest.skip("SQLite writes one transaction at a time; the race needs two writers")
 
 
+def lock_refused(engine: Engine, error: Exception) -> bool:
+    """Whether `error` is a lock that was not granted: PostgreSQL's `lock_not_available`
+    (SQLSTATE 55P03, from `lock_timeout`), MariaDB's `ER_LOCK_WAIT_TIMEOUT` (1205, from
+    `innodb_lock_wait_timeout` and from `FOR UPDATE NOWAIT` alike; MySQL's own NOWAIT code 3572
+    is not MariaDB's). MariaDB's driver reports SQLSTATE HY000 for it, so its number is read
+    (`driver_number`); any other error is not a refused lock."""
+    if engine.dialect.name == "postgresql":
+        return driver_code(error) == "55P03"
+    return driver_number(error) == 1205
+
+
 def lock_held(engine: Engine, name: str) -> bool:
     """Whether another transaction holds the lock `name` right now, asked by a third one that
     does not wait for it: `pg_try_advisory_xact_lock` on PostgreSQL, the lock row `FOR UPDATE
-    NOWAIT` on MariaDB (no PROCESS privilege needed, which the CI user lacks)."""
+    NOWAIT` on MariaDB (no PROCESS privilege needed, which the CI user lacks). Only the code of
+    a refused lock (`lock_refused`) counts as held; any other error propagates."""
     with engine.connect() as conn, conn.begin():
         if engine.dialect.name == "postgresql":
             got = conn.execute(
@@ -75,7 +88,9 @@ def lock_held(engine: Engine, name: str) -> bool:
                 text("SELECT digest FROM public_page_lock WHERE digest = :key FOR UPDATE NOWAIT"),
                 {"key": key},
             ).all()
-        except OperationalError:
+        except OperationalError as error:
+            if not lock_refused(engine, error):
+                raise
             return True
         return False
 
@@ -214,11 +229,17 @@ def test_a_render_that_times_out_on_the_lock_writes_nothing_and_takes_nothing_of
     with migrated.connect() as holder, holder.begin():
         public_pages._target_lock(holder, f"public_page:{NOTE}:x")
         late = migrated.connect()
+        late_transaction = late.begin()
         try:
-            with pytest.raises(OperationalError), late.begin():
-                short_lock_wait(late)
+            # Outside the expected error: a failure here is a broken test, not the lock timeout.
+            short_lock_wait(late)
+            with pytest.raises(OperationalError) as refused:
                 public_pages.refresh(late, config, NOTE, "x")
+            assert lock_refused(
+                migrated, refused.value
+            ), "the render failed, but not on the lock timeout"
         finally:
+            late_transaction.rollback()
             late.invalidate()
             late.close()
     after = rows(migrated)["/x"]

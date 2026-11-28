@@ -1738,7 +1738,13 @@ not `db.xact_lock`.
     `SELECT … FOR UPDATE` until the transaction ends.
   - The row is looked for first: it exists for every target rendered before. Only an absent row goes through
     `take_lock` (an insert in a savepoint, then the lock, run once more if the row vanished).
-  - Rows are never deleted. The table is made on every engine and stays empty off MariaDB.
+  - Rows are never deleted: one persistent row per target ever locked. The table is made on every engine and
+    stays empty off MariaDB.
+  - The digest holds no raw id, but it is not anonymous: it is an unsalted, deterministic sha256 of
+    `public_page:{kind}:{id}`. Anyone with database access can compare it with a known kind and id and so link a
+    row to that target. For `person` the id is the human id, which the human tombstone and `account_lock` keep
+    after the account's deletion (§2.9). The row holds no erased attribute, only that link. A sweep, or a salted
+    key, would change that; neither is done here.
 
 **What holds, and what the tests show:**
 - A takedown waits for a render that holds the lock, then deletes its page (`test_a_render_cannot_write_back_…`).
@@ -1762,7 +1768,9 @@ not `db.xact_lock`.
 So the order on MariaDB is the domain's (account, organisation, project), then `public_page_lock`, then
 `public_page`, as in a writer, and a render cannot close a cycle with a writer. Two writers that take several
 targets' locks across their transactions can still deadlock. InnoDB then ends one (1213), as PostgreSQL does
-today (40P01).
+today (40P01). `db.retrying` runs such a transaction again only where its caller is wrapped in it (the request-path
+writers that call it). The render paths are not wrapped: `refresh`, `_render_after_commit`, `render_all`, the pages
+worker and the snapshot thread do not retry a 1213 themselves.
 
 On PostgreSQL the advisory lock's `SELECT` is no locking statement for the guard, so there the guard takes its
 locks after the page lock. That is a different order, which this change leaves as it is.
@@ -1770,7 +1778,8 @@ locks after the page lock. That is a different order, which this change leaves a
 **Reason:** a row lock is transactional on InnoDB, as the advisory lock is on PostgreSQL:
 - it is released at commit and at rollback and never left on a pooled connection;
 - InnoDB's deadlock detection sees it;
-- `retrying` already handles its deadlock errors.
+- `retrying` handles its deadlock errors (1213, 40P01) for the callers wrapped in it, which the render paths are
+  not (see the lock order above).
 
 The probe before `take_lock` saves the failed insert, its savepoint and the shared lock of its duplicate check
 on every render of a known target. (With up to six waiters on one held row, MariaDB 11.8.9 showed no deadlock
