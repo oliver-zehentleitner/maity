@@ -330,13 +330,15 @@ window.Maity = window.Maity || {};
   // Where a forge lists its pull requests. No hub field: the repository's own URL and forge
   // say it, and a forge not in this table gets no button.
   const PULL_PATHS = { github: "/pulls", gitea: "/pulls", gitlab: "/-/merge_requests", bitbucket: "/pull-requests" };
+  // A forge page under the repository: its URL without a trailing slash or `.git`, then the page's path.
+  const forgePage = (repo, forge, paths) => (repo && Object.hasOwn(paths, forge) ? repo.replace(/\/+$/, "").replace(/\.git$/, "") + paths[forge] : null);
   const PULLS_MARK = "M1.5 3.25a2.25 2.25 0 1 1 3 2.122v5.256a2.251 2.251 0 1 1-1.5 0V5.372A2.25 2.25 0 0 1 1.5 3.25Zm5.677-.177L9.573.677A.25.25 0 0 1 10 .854V2.5h1A2.5 2.5 0 0 1 13.5 5v5.628a2.251 2.251 0 1 1-1.5 0V5a1 1 0 0 0-1-1h-1v1.646a.25.25 0 0 1-.427.177L7.177 3.427a.25.25 0 0 1 0-.354ZM3.75 2.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm0 9.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm8.25.75a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0Z";
-  const pullsUrl = (repo, forge) => (repo && Object.hasOwn(PULL_PATHS, forge) ? repo.replace(/\/+$/, "").replace(/\.git$/, "") + PULL_PATHS[forge] : null);
+  const pullsUrl = (repo, forge) => forgePage(repo, forge, PULL_PATHS);
   // Where a forge runs its workflows, derived the same way (tsk-kdkdy864q11r). Only the forges that
   // call them Actions: GitLab and Bitbucket call theirs Pipelines, a word of its own.
   const ACTIONS_PATHS = { github: "/actions", gitea: "/actions" };
   const ACTIONS_MARK = "M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0ZM1.5 8a6.5 6.5 0 1 0 13 0 6.5 6.5 0 0 0-13 0Zm4.879-2.773 4.264 2.559a.25.25 0 0 1 0 .428l-4.264 2.559A.25.25 0 0 1 6 10.559V5.442a.25.25 0 0 1 .379-.215Z";
-  const actionsUrl = (repo, forge) => (repo && Object.hasOwn(ACTIONS_PATHS, forge) ? repo.replace(/\/+$/, "").replace(/\.git$/, "") + ACTIONS_PATHS[forge] : null);
+  const actionsUrl = (repo, forge) => forgePage(repo, forge, ACTIONS_PATHS);
   function mark(d) {
     const svg = document.createElementNS(SVG, "svg");
     [["viewBox", "0 0 16 16"], ["width", "16"], ["height", "16"], ["aria-hidden", "true"], ["focusable", "false"], ["class", "header-link-mark"]]
@@ -403,8 +405,6 @@ window.Maity = window.Maity || {};
   // The sign-in calls of js/device-sign-in.js send it too.
   M.signInNext = routeNext;
   M.safeNext = safeNext;
-  // A page's link to sign in or register and come back to it.
-  M.withNext = (route, back) => route + "?next=" + encodeURIComponent(back);
 
   // The session ended while the page was signed in (a 401 on a call that
   // needs it, js/api.js): everything in the background stops, and the
@@ -1225,7 +1225,8 @@ window.Maity = window.Maity || {};
     const roleRows = offered.map(roleRow);
     const rolesHint = h("p", { class: "hint" }, M.t("settings.outside_roles.hint"));
     // The project's own roles on a base that works may be offered too (§2.3, §6.1); without them the built-in ones stay.
-    // Added beside the others, so that what was ticked or typed meanwhile stays.
+    // Added beside the others, so that what was ticked or typed meanwhile stays. A failed read
+    // is said in the hint line: else a custom role missing from the list looks like none offered.
     M.api.get(ctx.base + "/roles").then((r) => {
       ((r && r.custom) || []).filter((x) => OUTSIDE_BASES.includes(x.base)).map((x) => x.name)
         .filter((name) => !offered.includes(name)).forEach((name) => {
@@ -1233,7 +1234,7 @@ window.Maity = window.Maity || {};
           boxes.push(h("input", { type: "checkbox", id: "outside-role-" + name, value: name }));
           rolesHint.parentNode.insertBefore(roleRow(name, offered.length - 1), rolesHint);
         });
-    }).catch(() => {});
+    }).catch((err) => append(rolesHint, " ", h("span", { class: "send-status failed" }, M.t("roles.load_failed", { reason: err.message || String(err) }))));
     const reason = h("input", { id: "agent-owners-reason", required: true, placeholder: M.t("settings.agent_owners.reason_hint") });
     const error = h("p", { class: "field-error", id: "agent-owners-error", role: "alert" });
     return h("form", {
@@ -2395,6 +2396,8 @@ window.Maity = window.Maity || {};
     const linkRow = header.querySelector(".project-links");
     if (linkRow) scrollCue(linkRow);
     // Whom the Lead button reaches: known at once in a project, read for every project outside one.
+    // A failed lookup draws no button, as where it reaches no one: found() already takes a project
+    // it cannot read as one without leads, so only a fault of its own is let go here.
     header.chatCtx = ctx;
     if (M.leadChat) {
       M.leadChat.found(ctx).then((f) => {
@@ -2624,11 +2627,6 @@ window.Maity = window.Maity || {};
     return withMembers(ctx, members.items);
   }
 
-  // One project's context inside a view that is not the project's (the
-  // global chat, js/chats.js): its project, members and role, its own
-  // listeners and no events feed of its own. chatLink builds the links of
-  // its chats, so that they stay in that view.
-  M.withMembers = (ctx, members) => withMembers(ctx, members);
   // A project's member list read once per page drawn (per ctx) for the views outside a project
   // that need several projects' members: on All projects the Lead button (js/lead-chat.js) reads
   // every project's members and the inbox (js/inbox.js) those of the projects its requests come
@@ -2641,6 +2639,10 @@ window.Maity = window.Maity || {};
     if (!bySlug.has(slug)) bySlug.set(slug, M.api.getAll("/projects/" + M.api.projectPath(slug) + "/members"));
     return bySlug.get(slug);
   };
+  // One project's context inside a view that is not the project's (the
+  // global chat, js/chats.js): its project, members and role, its own
+  // listeners and no events feed of its own. chatLink builds the links of
+  // its chats, so that they stay in that view.
   M.projectContext = async (ctx, slug, chatLink) => {
     const mine = ctx.projects.find((p) => p.full_name === slug);
     if (!mine) throw new M.api.ApiError(M.t("error.not_member", { slug }), 404, "/me", "not_found");

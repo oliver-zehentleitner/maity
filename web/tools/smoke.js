@@ -5763,7 +5763,15 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   aoForm().dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
   expect(aoLatePatches.length === 1 && JSON.stringify(aoLatePatches[0].policy.outside_roles) === JSON.stringify(["coder", "writer", "triage"]),
     "agent owners: a role that arrived later is sent too " + JSON.stringify(aoLatePatches[0]));
-  win.Maity.api.patch = aoPatch; win.Maity.api.get = aoRolesGet;
+  win.Maity.api.patch = aoPatch;
+  // A failed read of the project's roles is said in the roles' hint line; the built-in ones stay offered.
+  win.Maity.api.get = (p) => (p.endsWith("/roles") ? Promise.reject(new win.Maity.api.ApiError("roles down", 503, p, "unavailable")) : aoRolesGet(p));
+  await projectSettings("members");
+  for (let k = 0; k < 4; k++) await tick();
+  const aoRolesHint = aoForm().querySelectorAll("p.hint").find((p) => text(p).includes("Applies under Anyone."));
+  expect(aoRolesHint && text(aoRolesHint).includes("Could not read the roles: roles down") && byId("outside-role-writer"),
+    "agent owners: a failed read of the roles is said in their hint line " + (aoRolesHint && text(aoRolesHint)));
+  win.Maity.api.get = aoRolesGet;
   // Approvals for outsiders' work (§6.1 own_approvals and own_agents, §2.3 "Own approvals").
   // The fixture's own reviewers and testers: the maintainer, the admin agent-a and the reviewer.
   await projectSettings("work");
@@ -22580,6 +22588,10 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       .every((x) => !R.isAnchored(x) && R.anchoredHref(x) === null)
     && !R.isRoute("/maintainer/maity/contract#s-6.8"),
   "route: a route with one anchor of letters, digits, '.', '_' and '-' is a place; another origin, a hub path, a second '#', a space, a control character or a bare anchor is not, and no place is a route");
+  // A link to sign in that comes back (js/route.js withNext): a query of its own kept, a place last.
+  const rtNext = ["/login", "/login?lang=de", "/login#x", "/login?lang=de#x"].map((x) => R.withNext(x, "/a/b?c=d"));
+  expect(JSON.stringify(rtNext) === JSON.stringify(["/login?next=%2Fa%2Fb%3Fc%3Dd", "/login?lang=de&next=%2Fa%2Fb%3Fc%3Dd", "/login?next=%2Fa%2Fb%3Fc%3Dd#x", "/login?lang=de&next=%2Fa%2Fb%3Fc%3Dd#x"]),
+    "route: withNext adds ?next= to a plain route, &next= after a query of its own, and keeps a place last " + JSON.stringify(rtNext));
   R.dropFragment();
   expect(rtPushed.length === 1 && rtPushed[0][0] === "replace" && rtPushed[0][1] === "/maintainer/maity/board?q=x" && R.current().fragment === "",
     "route: the device code's fragment is dropped with replaceState, path and query kept");

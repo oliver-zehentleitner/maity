@@ -12,6 +12,11 @@ window.Maity = window.Maity || {};
   const { h, append } = M.dom;
 
   const isObject = (v) => !!v && typeof v === "object" && !Array.isArray(v);
+  // The hub's refusal of a setting in a few words: the fields it names, or its message.
+  const refusalWords = (err) => {
+    const fields = err && err.code === "invalid" && err.details && err.details.fields;
+    return fields ? Object.entries(fields).map(([f, r]) => f + ": " + r).join("; ") : (err && err.message) || String(err);
+  };
 
   // opts: id (the element ids' prefix), hint (what the body is), loadLabel (the load button's
   // words where loading does more than fill an editor), body() (the
@@ -64,5 +69,5 @@ window.Maity = window.Maity || {};
     return { el, pending, focus: () => { el.open = true; area.focus(); } };
   }
 
-  M.jsonIo = { part, isObject };
+  M.jsonIo = { part, isObject, refusalWords };
 })(window.Maity);
