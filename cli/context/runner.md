@@ -2230,7 +2230,7 @@ plain clone's top-level entries, each a file or a directory as git
 makes it (so no `commondir`, `config.worktree`, submodules or object
 alternates, nothing in `info/` but `exclude` and `refs` (an empty
 `config.worktree`, `config.lock` or alternates file, and empty
-`glab-cli`, `modules`, `remotes` and `worktrees` directories that Claude
+`glab-cli`, `modules`, `remotes`, `worktrees` and `NOTES_MERGE_WORKTREE` directories that Claude
 Code's sandbox leaves, pass as placeholders), and no symlink anywhere,
 since git follows them past every check) and `.git/config`, at most
 64 KiB, holds nothing but a plain clone's keys (core basics, origin, branch tracking,
@@ -3675,11 +3675,11 @@ message says are no boundary.
 **Id:** b4a8030d-3b24-4b76-81cc-a84b0ca84c11
 **Type:** decision
 **Status:** needs-review
-**Evidence:** confirmed
-**Source:** CLI hardening task, the boundary and the clone root chosen by the coordinator, 2026-11-04; a prefixed `maity` call (a command, a variable, `PYTHONPATH`, PATH before it) checked with Claude Code 2.1.318 and git 2.47.3 on the maintainer's laptop, 2026-11-04 (`claude -p` in a temporary clone with the runner's settings, no hub; markers in a `denyWrite` directory): refused by the runner's permission rules, kept in the sandbox with permissions open, and `excludedCommands` matched the plain command only; a placement refused at its next start over `.git/config.worktree`, 2026-11-10, and the lead's choice to accept the sandbox's placeholders while empty, with the runner deleting nothing in the clone, 2026-11-10; Claude Code 2.1.321's sandbox (bubblewrap) leaving them in a scratch clone, 2026-11-10 (`ls -la .git` of a plain clone of the same repository before, of the clone after a session that wrote none of them); the `.git/glab-cli`, `.git/modules` and `.git/worktrees` guards read in the list of protected paths of Claude Code 2.1.321's binary and seen empty after every session start with 2.1.323 on the runner's host (tsk-ydxv7x37fg08, 2026-11-13); card tsk-estwtzbae972 (an empty `.git/config.lock` the sandbox holds to keep `.git/config` unwritable, which refused a placement's own `maity report`/`checkpoint`; the lock's mechanism confirmed by `test_adapters.py` and `test_session_identity.py`, which leave an empty `config.lock`), 2026-11-18; PR #1954 review, 2026-11-18, correcting the reason: git never reads, adopts or commits a pre-existing `config.lock` (it writes `.git/config` through a lock it creates itself with `O_CREAT|O_EXCL` and renames only that one into place), so refusing a non-empty lock is a fail-safe default — accept only the known-inert placeholder shape — not a guard against git applying the lock; card tsk-rasfq0wt751a (security rating S226), 2026-11-20: one helper decides whether a session is placed, an empty or malformed id refused
+**Evidence:** inferred
+**Source:** CLI hardening task, the boundary and the clone root chosen by the coordinator, 2026-11-04; a prefixed `maity` call (a command, a variable, `PYTHONPATH`, PATH before it) checked with Claude Code 2.1.318 and git 2.47.3 on the maintainer's laptop, 2026-11-04 (`claude -p` in a temporary clone with the runner's settings, no hub; markers in a `denyWrite` directory): refused by the runner's permission rules, kept in the sandbox with permissions open, and `excludedCommands` matched the plain command only; a placement refused at its next start over `.git/config.worktree`, 2026-11-10, and the lead's choice to accept the sandbox's placeholders while empty, with the runner deleting nothing in the clone, 2026-11-10; Claude Code 2.1.321's sandbox (bubblewrap) leaving them in a scratch clone, 2026-11-10 (`ls -la .git` of a plain clone of the same repository before, of the clone after a session that wrote none of them); the `.git/glab-cli`, `.git/modules` and `.git/worktrees` guards read in the list of protected paths of Claude Code 2.1.321's binary and seen empty after every session start with 2.1.323 on the runner's host (tsk-ydxv7x37fg08, 2026-11-13); card tsk-estwtzbae972 (an empty `.git/config.lock` the sandbox holds to keep `.git/config` unwritable, which refused a placement's own `maity report`/`checkpoint`; the lock's mechanism confirmed by `test_adapters.py` and `test_session_identity.py`, which leave an empty `config.lock`), 2026-11-18; PR #1954 review, 2026-11-18, correcting the reason: git never reads, adopts or commits a pre-existing `config.lock` (it writes `.git/config` through a lock it creates itself with `O_CREAT|O_EXCL` and renames only that one into place), so refusing a non-empty lock is a fail-safe default — accept only the known-inert placeholder shape — not a guard against git applying the lock; card tsk-rasfq0wt751a (security rating S226), 2026-11-20: one helper decides whether a session is placed, an empty or malformed id refused; card tsk-c55vrwabp6wc and its note, 2026-11-28: two placements on a runner host refused over an empty `.git/NOTES_MERGE_WORKTREE` directory, removed by hand, and seen made again empty (mode 0700, born in the same second as the session's `info/exclude`) by the next session start in one of those clones (`stat` and `ls -la .git` from inside that session); the Claude Code binary was not readable from that session, so its list of protected paths was not checked
 **See:** runner.md#sandboxed-agents-git-redirects-are-pinned-other-clones-and-secrets-unreadable — ea36c196-f8e6-43ae-bc47-49c8d5379a65 — as of 2026-11-04
 **See:** report.md#what-maity-hands-to-git-and-gh-is-checked-first-and-gits-transports-are-fixed — 4f4e8ada-9e3b-47bc-8a9e-d44daf025512 — as of 2026-11-04
-**Revisit when:** agents under the runner need a git configuration key a plain clone has not, the runner starts sessions without `GIT_COMMON_DIR` or `.git/maity`, someone needs submodules, Git LFS, worktrees, sparse checkout, partial clones or other repository format extensions under the runner, a maity command under the runner starts to show what git reads from the clone's objects to someone other than the agent, a sandbox stops denying the agent `.git/maity` or leaves other entries in a clone, or puts anything in the ones it leaves, maity's git under the runner needs to write, a harness's sandbox starts maity outside it when a command line sets variables or a PATH in front of it, or the runner's git moves after a session started
+**Revisit when:** agents under the runner need a git configuration key a plain clone has not, the runner starts sessions without `GIT_COMMON_DIR` or `.git/maity`, someone needs submodules, Git LFS, worktrees, sparse checkout, partial clones or other repository format extensions under the runner, a maity command under the runner starts to show what git reads from the clone's objects to someone other than the agent, a sandbox stops denying the agent `.git/maity` or leaves other entries in a clone, or puts anything in the ones it leaves, Claude Code's list of protected `.git` paths is read in a binary and does or does not name `NOTES_MERGE_WORKTREE` (or names `NOTES_MERGE_PARTIAL` or `NOTES_MERGE_REF`), maity's git under the runner needs to write, a harness's sandbox starts maity outside it when a command line sets variables or a PATH in front of it, or the runner's git moves after a session started
 
 In a session the runner started (`MAITY_PLACEMENT` set), every git
 maity itself starts first checks the clone the same way `gc` does
@@ -3769,7 +3769,20 @@ and the next start (tsk-ydxv7x37fg08). `modules/` is accepted from the
 list without having been seen: it is the same guard, and the check
 should not hang on which of the listed paths one release happens to
 make. With anything in them, `modules/` is refused as submodules and
-`worktrees/` as worktrees, as before. Empty means an empty regular
+`worktrees/` as worktrees, as before. It accepts an empty
+`NOTES_MERGE_WORKTREE/` as well. On 2026-11-28 two Claude Code placements
+on a runner host failed to start (`workspace_in_use / not_a_plain_clone`)
+over an empty `.git/NOTES_MERGE_WORKTREE` directory, mode 0700, next to the
+known placeholders. After it was removed by hand, it came back empty at the
+next session start, in the same second as that start's `info/exclude`
+(tsk-c55vrwabp6wc). It has not been read in a Claude Code binary: the
+binary was out of reach of the session that made the change. That it is
+one more protected path's guard is inferred from its shape and timing.
+Only that observed shape is accepted, an empty directory at that one name.
+An empty file named `NOTES_MERGE_WORKTREE` is refused, and so are
+`NOTES_MERGE_PARTIAL` and `NOTES_MERGE_REF`, which were never seen. With
+anything in it, `NOTES_MERGE_WORKTREE/` is a `git notes merge` in progress
+and is refused as no plain clone's. Empty means an empty regular
 file or directory: a symbolic link, a FIFO, a socket or a device anywhere
 in `.git` is refused, under any name, and so is a directory in `.git` that
 cannot be listed, since unlisted it would look empty. Any of them with
@@ -3787,7 +3800,11 @@ nothing git does: an empty `config.worktree` is not even read without
 an `extensions.worktreeConfig` the configuration check refuses, an
 empty `alternates` names no object store, and an empty `remotes/` names
 no remote, and empty `glab-cli/`, `modules/` and `worktrees/` hold no
-glab configuration, no submodule and no linked worktree. The check also
+glab configuration, no submodule and no linked worktree. An empty
+`NOTES_MERGE_WORKTREE/` holds no note: without `NOTES_MERGE_PARTIAL` and
+`NOTES_MERGE_REF`, which the check refuses, no notes merge is in progress
+(inferred from what a notes merge writes; git's own handling of the empty
+directory was not run). The check also
 accepts, while empty, a `config.lock`: Claude Code's sandbox holds an
 empty, read-only `.git/config.lock` so that `.git/config` stays
 unwritable — it is the lockfile git makes to write `.git/config`, and
@@ -3833,6 +3850,12 @@ every call can run that way.
 - Deleting the sandbox's `config.lock` before a start: as with the other
   placeholders, the runner changes nothing in an agent's clone, and the
   sandbox makes the lock again on the next session.
+- Accepting `NOTES_MERGE_PARTIAL` and `NOTES_MERGE_REF` too, or
+  `NOTES_MERGE_WORKTREE` in either shape, on the guess that the sandbox
+  guards the whole notes-merge state: only the empty
+  `NOTES_MERGE_WORKTREE/` was seen (tsk-c55vrwabp6wc), and the check
+  accepts only shapes the sandbox is known to leave. A name it is later
+  seen to leave is added then, as `NOTES_MERGE_WORKTREE` was.
 - Accepting any `config.lock` content (tolerating a non-empty lock): git
   never reads, adopts or commits a pre-existing `config.lock` (it writes
   `.git/config` through a lock it creates itself with `O_CREAT|O_EXCL`

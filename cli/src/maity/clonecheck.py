@@ -119,7 +119,14 @@ SANDBOX_EMPTY_FILES = frozenset({"config.worktree", "config.lock", *ALTERNATES})
 # `.git/worktrees` among the paths its sandbox protects (read in the binary of 2.1.321; seen made
 # empty at every session start by 2.1.323 for `glab-cli` and `worktrees`). With anything in
 # them `modules/` is still refused as submodules and `worktrees/` as worktrees (UNSUPPORTED).
-SANDBOX_EMPTY_DIRS = frozenset({"glab-cli", "modules", "remotes", "worktrees"})
+# `NOTES_MERGE_WORKTREE/`: seen as an empty directory, mode 0700, in two placed Claude Code
+# clones on a runner host (2026-11-28), made again at the next session start after it was
+# removed by hand; not read in a binary (tsk-c55vrwabp6wc). With anything in it, it is a notes
+# merge in progress and refused as no plain clone's. `NOTES_MERGE_PARTIAL` and `NOTES_MERGE_REF`
+# were not seen and are not accepted.
+SANDBOX_EMPTY_DIRS = frozenset(
+    {"glab-cli", "modules", "remotes", "worktrees", "NOTES_MERGE_WORKTREE"}
+)
 CONFIG_MAX = 64 * 1024
 # More entries than this in `.git` are refused rather than listed on every git run.
 TREE_MAX = 20_000
