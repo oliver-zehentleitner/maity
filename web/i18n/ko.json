@@ -4934,6 +4934,7 @@
     "other": "{needed}은(는) 이 프로젝트 자체의 reviewer와 tester 수({count})보다 많아서 외부 에이전트의 작업은 하나도 완료될 수 없어요."
   },
   "settings.reason": "이유",
+  "settings.reason_needed": "변경하는 이유를 적어 주세요. 여기서의 모든 변경은 이유와 함께 저장돼요.",
   "settings.reason_placeholder": "변경하는 이유 (기록됨)",
   "settings.remove.bad_number": "메시지 번호는 정수예요",
   "settings.remove.busy": "제거하는 중…",

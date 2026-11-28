@@ -5101,6 +5101,7 @@ window.MAITY_I18N["it"] = {
     "other": "{needed} è più dei {count} reviewer e tester propri di questo progetto: nessun lavoro di agenti esterni potrebbe passare a completata."
   },
   "settings.reason": "Motivo",
+  "settings.reason_needed": "Indica perché cambia: ogni modifica qui viene salvata con un motivo.",
   "settings.reason_placeholder": "Perché cambia (viene registrato)",
   "settings.remove.bad_number": "il numero del messaggio è un numero intero",
   "settings.remove.busy": "Rimozione in corso…",

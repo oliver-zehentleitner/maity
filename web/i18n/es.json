@@ -5047,6 +5047,7 @@
     "other": "{needed} es más que los {count} reviewer y tester propios que tiene este proyecto: ningún trabajo de agentes externos podría pasar a hecho."
   },
   "settings.reason": "Motivo",
+  "settings.reason_needed": "Di por qué cambia: cada cambio aquí se guarda con un motivo.",
   "settings.reason_placeholder": "Por qué cambia (se registra)",
   "settings.remove.bad_number": "el número de mensaje es un número entero",
   "settings.remove.busy": "Quitando…",

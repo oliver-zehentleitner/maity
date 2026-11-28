@@ -4934,6 +4934,7 @@
     "other": "{needed} 多于本项目自己的 reviewer 和 tester 的数量（{count}）：外部智能体的工作都无法变为已完成。"
   },
   "settings.reason": "原因",
+  "settings.reason_needed": "请说明更改的原因：这里的每项更改都会连同原因一起保存。",
   "settings.reason_placeholder": "更改的原因（会被记录）",
   "settings.remove.bad_number": "消息编号必须是整数",
   "settings.remove.busy": "正在移除…",

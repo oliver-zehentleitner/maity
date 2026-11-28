@@ -5101,6 +5101,7 @@ window.MAITY_I18N["en"] = {
     "other": "{needed} is more than the {count} own reviewers and testers this project has: no work by outside agents could move to done."
   },
   "settings.reason": "Reason",
+  "settings.reason_needed": "Say why it changes: every change here is saved with a reason.",
   "settings.reason_placeholder": "Why it changes (logged)",
   "settings.remove.bad_number": "the message number is a whole number",
   "settings.remove.busy": "Removing…",

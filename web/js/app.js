@@ -1433,9 +1433,11 @@ window.Maity = window.Maity || {};
     };
     claimsSelect.addEventListener("change", update);
     update();
-    const maxInput = h("input", { id: "outside-claims-max", type: "number", min: "1", max: "2147483647", step: "1", placeholder: M.t("settings.outside_claims_max.none") });
+    const maxInput = h("input", { id: "outside-claims-max", type: "number", min: "1", max: "2147483647", step: "1", placeholder: M.t("settings.outside_claims_max.none"),
+      "aria-describedby": "outside-claims-error" });
     maxInput.value = max === null ? "" : String(max);
-    const reason = h("input", { id: "outside-claims-reason", required: true, placeholder: M.t("settings.reason_placeholder") });
+    const reason = h("input", { id: "outside-claims-reason", required: true, placeholder: M.t("settings.reason_placeholder"),
+      "aria-describedby": "outside-claims-error" });
     const error = h("p", { class: "field-error", id: "outside-claims-error", role: "alert" });
     const fieldError = (code) => (Object.hasOwn(OUTSIDE_CLAIMS_ERRORS, code || "") ? OUTSIDE_CLAIMS_ERRORS[code]() : null);
     return h("form", {
@@ -1444,22 +1446,37 @@ window.Maity = window.Maity || {};
       onsubmit: (e) => {
         e.preventDefault();
         error.textContent = "";
+        maxInput.removeAttribute("aria-invalid");
+        reason.removeAttribute("aria-invalid");
         const policy = {};
         const typed = maxInput.value.trim();
         // An unfinished number reads as "" with badInput: that is no wish to clear the limit.
         const bad = !!(maxInput.validity && maxInput.validity.badInput);
         const n = typed === "" && !bad ? null : Number(typed);
-        if (bad || (n !== null && (!Number.isSafeInteger(n) || n < 1 || n > 2147483647))) { error.textContent = fieldError("out_of_range"); maxInput.focus(); return; }
+        if (bad || (n !== null && (!Number.isSafeInteger(n) || n < 1 || n > 2147483647))) {
+          error.textContent = fieldError("out_of_range");
+          maxInput.setAttribute("aria-invalid", "true");
+          maxInput.focus();
+          return;
+        }
         if (lookingSelect.value !== looking) policy.looking_for_coders = lookingSelect.value;
         if (claimsSelect.value !== claims) policy.outside_claims = claimsSelect.value;
         if (n !== max) policy.outside_claims_max = n;
         if (!Object.keys(policy).length) return;
-        if (!reason.value.trim()) { reason.focus(); return; }
+        // novalidate turns the browser's own `required` off: the form says a missing reason itself.
+        if (!reason.value.trim()) {
+          error.textContent = M.t("settings.reason_needed");
+          reason.setAttribute("aria-invalid", "true");
+          reason.focus();
+          return;
+        }
         save({ policy, reason: reason.value.trim() }, { saved: M.t("settings.outside_claims.saved"), notSaved: M.t("settings.outside_claims.not_saved") }, (err) => {
           const fields = (err.details || {}).fields || {};
-          const said = fieldError((err.details || {}).reason) || fieldError(fields.outside_claims_max || fields["policy.outside_claims_max"]);
+          const atMax = fieldError(fields.outside_claims_max || fields["policy.outside_claims_max"]);
+          const said = fieldError((err.details || {}).reason) || atMax;
           if (!said) return false;
           error.textContent = said;
+          if (atMax && said === atMax) maxInput.setAttribute("aria-invalid", "true");
           return true;
         });
       },

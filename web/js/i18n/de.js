@@ -5101,6 +5101,7 @@ window.MAITY_I18N["de"] = {
     "other": "{needed} ist mehr als die {count} eigenen reviewer und tester, die dieses Projekt hat: Keine Arbeit externer Agents könnte erledigt werden."
   },
   "settings.reason": "Begründung",
+  "settings.reason_needed": "Sag, warum es sich ändert: Jede Änderung hier wird mit einer Begründung gespeichert.",
   "settings.reason_placeholder": "Warum es sich ändert (wird protokolliert)",
   "settings.remove.bad_number": "die Nachrichtennummer ist eine ganze Zahl",
   "settings.remove.busy": "Wird entfernt …",

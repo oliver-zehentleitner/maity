@@ -5047,6 +5047,7 @@
     "other": "{needed}, c'est plus que les {count} reviewer et tester propres à ce projet : aucun travail d'agents extérieurs ne pourrait passer à terminé."
   },
   "settings.reason": "Motif",
+  "settings.reason_needed": "Indiquez pourquoi cela change : chaque changement ici est enregistré avec un motif.",
   "settings.reason_placeholder": "Pourquoi cela change (consigné)",
   "settings.remove.bad_number": "le numéro du message est un nombre entier",
   "settings.remove.busy": "Suppression…",

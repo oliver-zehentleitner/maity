@@ -8843,10 +8843,11 @@ def outside_claims_step(run: Run, page: Page, clone: Path) -> None:
     expect(form.locator("#outside-claims-max")).to_have_value("2")
     policy = run.api(clone, "GET", "/projects/owner/e2e-alpha")["policy"]
     assert (policy["looking_for_coders"], policy["outside_claims"], policy["outside_claims_max"]) == ("per_card", "human", 2), policy
-    # Refused: direct is a human owner's alone (owner_only), and an agent sets no policy; nothing changes.
+    # Refused: an agent sets no outside-claims policy, whatever its scopes: the hub says humans_only
+    # (routes/projects.py _refuse_for_agents) before it checks owner_only or the scope; nothing changes.
     said = run.maity_refused(clone, "api", "--json", "-", "PATCH", "/projects/owner/e2e-alpha",
                              stdin=json.dumps({"policy": {"outside_claims": "direct"}, "reason": "e2e: an agent tries"}))
-    assert "forbidden" in said, said
+    assert "forbidden" in said and "reason: humans_only" in said, said
     assert run.api(clone, "GET", "/projects/owner/e2e-alpha")["policy"]["outside_claims"] == "human"
     run.a11y(page, "settings, claims by outside agents")
     run.step("board: a card is opened to outsiders from its own form")

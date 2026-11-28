@@ -5101,6 +5101,7 @@ window.MAITY_I18N["nl"] = {
     "other": "{needed} is meer dan de {count} eigen reviewer en tester die dit project heeft: geen werk van externe agents zou naar klaar kunnen."
   },
   "settings.reason": "Reden",
+  "settings.reason_needed": "Zeg waarom het verandert: elke wijziging hier wordt met een reden opgeslagen.",
   "settings.reason_placeholder": "Waarom het verandert (wordt gelogd)",
   "settings.remove.bad_number": "het berichtnummer is een geheel getal",
   "settings.remove.busy": "Verwijderen…",

@@ -5857,7 +5857,18 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "outside claims: a limit of 0 is refused before it is sent");
   byId("outside-claims-max").value = "2147483648";
   ocForm().dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
-  expect(!ocPatches.length, "outside claims: a limit above 2147483647 is refused before it is sent");
+  expect(!ocPatches.length && byId("outside-claims-max").attrs["aria-invalid"] === "true"
+    && byId("outside-claims-max").attrs["aria-describedby"] === "outside-claims-error",
+    "outside claims: a limit above 2147483647 is refused before it is sent, the field marked invalid and pointing at the error");
+  // novalidate turns the browser's `required` off: an empty or blank reason is said at the form, nothing sent.
+  for (const blank of ["", "   "]) {
+    byId("outside-claims-max").value = "3"; byId("outside-claims-reason").value = blank;
+    ocForm().dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+    expect(!ocPatches.length && text(byId("outside-claims-error")) === "Say why it changes: every change here is saved with a reason."
+      && !("aria-invalid" in byId("outside-claims-max").attrs) && byId("outside-claims-reason").attrs["aria-invalid"] === "true"
+      && byId("outside-claims-reason").attrs["aria-describedby"] === "outside-claims-error",
+      "outside claims: a reason " + JSON.stringify(blank) + " is said at the form, nothing sent " + text(byId("outside-claims-error")));
+  }
   byId("looking-for-coders-select").value = "all"; byId("outside-claims-max").value = "3"; byId("outside-claims-reason").value = "open the door";
   ocForm().dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
   expect(ocPatches.length === 1 && JSON.stringify(ocPatches[0]) === JSON.stringify({ policy: { looking_for_coders: "all", outside_claims: "direct", outside_claims_max: 3 }, reason: "open the door" }),
@@ -5919,7 +5930,17 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const ocSay = (call) => call.then(() => "ok", (e) => e.code + ":" + JSON.stringify(e.details));
   const ocOutside = [await ocSay(win.Maity.api.post("/projects/maintainer/maity/tasks", { title: "x", open_to_outsiders: false })),
     await ocSay(win.Maity.api.patch("/projects/maintainer/maity/tasks/" + ocCard.id, { title: "changed", open_to_outsiders: true }))];
+  // A card someone else created and the caller does not hold: the editor rule would refuse it (scope
+  // tasks:admin), but outside_trust comes first, as the hub checks it before it looks the card up.
+  const ocMeId = win.Maity.api.fixturesLive()["me.json"].member.id;
+  const ocOthers = (await win.Maity.api.get("/projects/maintainer/maity/tasks")).items
+    .find((x) => x.created_by !== ocMeId && !(x.claim && x.claim.holder === ocMeId));
+  const ocOthersWas = JSON.stringify(await win.Maity.api.get("/projects/maintainer/maity/tasks/" + ocOthers.id));
+  const ocOthersSaid = await ocSay(win.Maity.api.patch("/projects/maintainer/maity/tasks/" + ocOthers.id, { open_to_outsiders: true }));
   ocFx.trust = ocTrust;
+  expect(ocOthersSaid === 'forbidden:{"reason":"outside_trust"}'
+    && JSON.stringify(await win.Maity.api.get("/projects/maintainer/maity/tasks/" + ocOthers.id)) === ocOthersWas,
+    "fixture hub: trust outside naming open_to_outsiders on another's card is outside_trust, not the editor rule, and nothing changes " + ocOthersSaid);
   const ocTitle = ocCard.title;
   expect(JSON.stringify(ocAdmin) === JSON.stringify(['forbidden:{"reason":"owner_only"}', 'forbidden:{"reason":"owner_only"}', "ok"]),
     "fixture hub: an admin who is no owner is refused agent and direct (owner_only), human is taken " + JSON.stringify(ocAdmin));

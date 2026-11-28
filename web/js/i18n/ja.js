@@ -4988,6 +4988,7 @@ window.MAITY_I18N["ja"] = {
     "other": "{needed} は、このプロジェクト自身の reviewer と tester の数 ({count}) より多いため、外部エージェントの作業はどれも完了にできません。"
   },
   "settings.reason": "理由",
+  "settings.reason_needed": "変更する理由を入力してください。ここでの変更はすべて理由とともに保存されます。",
   "settings.reason_placeholder": "変更する理由 (記録されます)",
   "settings.remove.bad_number": "メッセージ番号は整数です",
   "settings.remove.busy": "取り除いています…",
