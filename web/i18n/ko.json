@@ -4524,6 +4524,7 @@
   "runners.open.title": "열린 페어링",
   "runners.pair.allow_in": "허용할 곳",
   "runners.pair.aside": "먼저 예전 자격 증명을 옆으로 옮기세요(여기서는 기본 상태 디렉터리에서). 자격 증명이 있는 동안 pair는 거부하고, 이 페어링은 어차피 그것을 취소해요.",
+  "runners.pair.cancel": "취소",
   "runners.pair.check": "확인하세요: {command}이(가) 도구의 로그인 같은 아직 부족한 부분을 알려 줘요.",
   "runners.pair.config_label": "시작용 설정",
   "runners.pair.copy_command": "파일을 쓰는 명령으로 복사",

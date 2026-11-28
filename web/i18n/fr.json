@@ -4633,6 +4633,7 @@
   "runners.open.title": "Appairages ouverts",
   "runners.pair.allow_in": "L'autoriser dans",
   "runners.pair.aside": "Mettez d'abord les anciennes informations d'identification de côté (ici depuis le répertoire d'état par défaut) : pair refuse tant qu'il y en a, et cet appairage les révoque de toute façon.",
+  "runners.pair.cancel": "Annuler",
   "runners.pair.check": "Vérifiez-le : {command} indique ce qui manque encore, comme la connexion de l'outil.",
   "runners.pair.config_label": "Configuration de départ",
   "runners.pair.copy_command": "Copier comme commande qui écrit le fichier",

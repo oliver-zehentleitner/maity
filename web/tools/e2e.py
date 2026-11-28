@@ -981,6 +981,7 @@ def main() -> int:
                     # Inside the same report: a failure in a later round shows its trace too (review of #997).
                     fixture_views(run, browser)
                     join_reports_layout(run, browser)
+                    runners_pair_layout(run, browser)
                     profile_public_link_layout(run, browser)
                     chat_height_views(run, browser)
                     chat_phone_views(run, browser)
@@ -2915,7 +2916,8 @@ def step_up_with_totp(run: Run, browser) -> tuple[str, int]:
     assert json.loads(Path(saved.value.path()).read_text()).get("exported_at"), "an empty export"
     expect(older.locator(".data-export")).to_contain_text("Your export was saved.")
     # Pairing a runner mints a credential (§2.8.4): the page asks, a recovery code answers, the line comes.
-    pairing.goto(run.base + "/runners")
+    # /runners/pair: the form open whether this hub has a runner or not (tsk-raghxwjf3e0e).
+    pairing.goto(run.base + "/runners/pair")
     pairing.locator("#pair-name").fill("e2e-step-up")
     pairing.get_by_role("button", name="Create the pairing line", exact=True).click()
     asked = pairing.locator("form.step-up")
@@ -5250,6 +5252,71 @@ def profile_public_link_layout(run: Run, browser) -> None:
                 context.close()
 
 
+RUNNERS_PAIR_MEASURE = """() => {
+  const button = document.querySelector("main .page-head-actions button.pair-open");
+  const slot = document.getElementById("pair-form-slot"), head = document.querySelector("main .page-head");
+  const r = (el) => { if (!el) return null; const b = el.getBoundingClientRect(); return [Math.round(b.left), Math.round(b.top), Math.round(b.width), Math.round(b.height)]; };
+  return { button: !!button && !!button.offsetParent, text: button ? button.textContent : null,
+           expanded: button ? button.getAttribute("aria-expanded") : null, controls: button ? button.getAttribute("aria-controls") : null,
+           open: !!slot && !!slot.offsetParent, focus: document.activeElement ? document.activeElement.id || document.activeElement.className : null,
+           head: r(head), button_box: r(button), theme: document.documentElement.getAttribute("data-theme") };
+}"""
+
+
+def runners_pair_layout(run: Run, browser) -> None:
+    """The Runners page's Pair a runner (tsk-raghxwjf3e0e) in fixture mode, at 1280 x 900 and
+    390 x 844, light and dark: with runners listed the form is closed and the button at the head
+    says collapsed; pressed, the form opens under the head, the button says expanded and the focus
+    is in the name field; Cancel closes it, the focus back on the button, and the head measures as
+    it did fresh (one change of state after loading, compared with a fresh fit). /runners/pair opens
+    it at once. Each state's page head and form by LINES_MEASURE, the page never wider than the
+    window, and a screenshot of each, closed and open."""
+    run.step("fixtures: Pair a runner closed and open at 1280 and 390 px, light and dark")
+    index = (WEB / "index.html").as_uri()
+    for width, height in ((1280, 900), (390, 844)):
+        for scheme in ("light", "dark"):
+            context = browser.new_context(viewport={"width": width, "height": height}, locale="en-US", color_scheme=scheme)
+            context.add_init_script(f"try {{ localStorage.setItem('maity.theme', '{scheme}'); }} catch (e) {{}}")
+            page = context.new_page()
+            errors: list[str] = []
+            page.on("pageerror", lambda err: errors.append(str(err)))
+            where = f"the Runners page at {width}x{height} {scheme}"
+            try:
+                page.goto("about:blank")
+                page.goto(f"{index}?lang=en#/runners")
+                expect(page.locator("main article.runner").first).to_be_visible()
+                button = page.locator("main .page-head-actions button.pair-open")
+                expect(button).to_be_visible()
+                fresh = page.evaluate(RUNNERS_PAIR_MEASURE)
+                lines = page.evaluate(LINES_MEASURE, "main .page-head")
+                assert not lines["problems"] and not errors, f"{where}, closed: {lines['problems'] + errors}"
+                assert fresh["theme"] == scheme, f"{where}: the theme is {fresh['theme']}"
+                assert (fresh["button"], fresh["text"], fresh["expanded"], fresh["controls"], fresh["open"]) == (
+                    True, "Pair a runner", "false", "pair-form-slot", False), f"{where}, closed: {fresh}"
+                run.shot(page, f"fixtures-runners-pair-{width}-{scheme}-closed")
+                button.click()
+                expect(page.locator("#pair-name")).to_be_focused()
+                opened = page.evaluate(RUNNERS_PAIR_MEASURE)
+                lines = page.evaluate(LINES_MEASURE, "main .page-head, main .pair-form-slot")
+                assert not lines["problems"] and not errors, f"{where}, open: {lines['problems'] + errors}"
+                assert (opened["expanded"], opened["open"], opened["focus"]) == ("true", True, "pair-name"), f"{where}, open: {opened}"
+                run.shot(page, f"fixtures-runners-pair-{width}-{scheme}-open")
+                page.locator("main .pair-form-slot").get_by_role("button", name="Cancel", exact=True).click()
+                expect(button).to_be_focused()
+                closed = page.evaluate(RUNNERS_PAIR_MEASURE)
+                assert (closed["expanded"], closed["open"]) == ("false", False), f"{where}, cancelled: {closed}"
+                assert (closed["head"], closed["button_box"]) == (fresh["head"], fresh["button_box"]), (
+                    f"{where}: the head after open and Cancel differs from a fresh one: {closed} vs {fresh}")
+                # Directly: the "+" menu's Runner leads to /runners/pair, the form open at once.
+                page.goto("about:blank")
+                page.goto(f"{index}?lang=en#/runners/pair")
+                expect(page.locator("#pair-name")).to_be_focused()
+                direct = page.evaluate(RUNNERS_PAIR_MEASURE)
+                assert (direct["expanded"], direct["open"]) == ("true", True) and not errors, f"{where}, /runners/pair: {direct} {errors}"
+            finally:
+                context.close()
+
+
 JOIN_REPORTS_MEASURE = """() => {
   const shown = (el) => !!el && !!el.offsetParent;
   const field = (sel) => { const el = document.querySelector(sel); return el && el.closest(".field"); };
@@ -5353,6 +5420,8 @@ def runners_step(run: Run, page: Page) -> None:
         "runners: pair a runner from the dashboard, exchange the line, rename, re-pair, revoke, remove"
     )
     expect(view).to_contain_text("No runner yet.")
+    # No runner yet: the form behind Pair a runner is open at once (tsk-raghxwjf3e0e).
+    expect(page.locator("main .page-head button.pair-open")).to_have_attribute("aria-expanded", "true")
     page.locator("#pair-name").fill("e2e-runner")
     page.get_by_role("button", name="Create the pairing line", exact=True).click()
     # Two ways (tsk-2k0jcaxfd0ja): the service on Linux is chosen first, the terminal's steps hidden.

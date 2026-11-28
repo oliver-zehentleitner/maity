@@ -14,7 +14,7 @@ The hub never starts anything itself. You install the runner, and its configurat
 
 ## Pair a runner
 
-In the dashboard, open **Runners** from the settings menu and fill in **Pair a runner**: a name for the machine's runner and the projects it is allowed in. Choose **Create the pairing line**. The steps that follow offer two ways, and the dashboard cannot tell which machine you mean, so you choose:
+In the dashboard, choose **Runner** in the header's **+** menu (or open **Runners** from the settings menu and press **Pair a runner** at the page's head) and fill in the form: a name for the machine's runner and the projects it is allowed in. Choose **Create the pairing line**. The steps that follow offer two ways, and the dashboard cannot tell which machine you mean, so you choose:
 
 - **As a service on Linux (recommended):** `sudo maity runner install` sets the runner up as a systemd service under a user of its own. [Below](#as-a-service-on-linux).
 - **In a terminal, to try it out:** `maity runner pair`, then `maity runner serve` in the foreground, as your own user. The only way on macOS, which has no service yet. [Below](#in-a-terminal).

@@ -168,7 +168,8 @@ window.Maity = window.Maity || {};
     // /settings/forge: the account's Forge access (§11.4, §16.11), where the hub's setup redirect lands.
     if (parts[0] === "settings" && parts[1] === "forge" && !parts[2]) return { scope: "account", args: ["forge"] };
     if (parts[0] === "account") return { scope: "account", args: parts.slice(1) };
-    if (parts[0] === "runners") return { scope: "runners" };
+    // /runners[/pair]: one's runners; /pair opens the pairing form at once (js/runners.js).
+    if (parts[0] === "runners") return { scope: "runners", args: parts.slice(1) };
     // /agents[/<id>]: one's agent profiles across projects (js/agents-page.js).
     if (parts[0] === "agents") return { scope: "agents", args: parts.slice(1) };
     if (parts[0] === "observe" && parts[2]) return { scope: "observe", slug: parts[1] + "/" + parts[2], args: parts.slice(3) };
@@ -2308,7 +2309,8 @@ window.Maity = window.Maity || {};
     });
     // "+": bring someone in, an agent or a person, pair a runner, or a new project (the maintainer,
     // 2026-10-31; the order and the runner, tsk-45fhe2yrwzb7): the agents page with its join, the
-    // invitations page, the runners page with its pairing form, the create form. Humans only.
+    // invitations page, the runners page with its pairing form open (/runners/pair, tsk-raghxwjf3e0e),
+    // the create form. Humans only.
     const add = ctx.me.kind === "human" ? M.menuButton({
       label: M.t("menu.add.label"),
       class: "add-menu",
@@ -2316,7 +2318,7 @@ window.Maity = window.Maity || {};
       items: () => [
         { label: M.t("menu.add.agent"), href: "/agents", current: ctx.scope === "agents" },
         { label: M.t("menu.add.user"), href: "/invite", current: ctx.scope === "invitations" },
-        { label: M.t("menu.add.runner"), href: "/runners", current: ctx.scope === "runners" },
+        { label: M.t("menu.add.runner"), href: "/runners/pair", current: ctx.scope === "runners" },
         // A new project too, since the row of tabs no longer has its own (tsk-hp9gq9rmrdq2).
         { label: M.t("menu.add.project"), href: "/new", current: ctx.scope === "new" },
       ],
@@ -3384,7 +3386,7 @@ window.Maity = window.Maity || {};
       } else if (where.scope === "instance-admin") {
         await M.views.instanceAdmin(ctx, root, where);
       } else if (where.scope === "runners") {
-        await M.views.runners(ctx, root);
+        await M.views.runners(ctx, root, where.args);
       } else if (where.scope === "invitations") {
         await M.views.invitations(ctx, root);
       } else if (where.scope === "agents") {

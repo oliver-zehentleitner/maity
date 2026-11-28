@@ -5,6 +5,9 @@
 // line shown once, with the starter configuration and the steps that make
 // it start), lists them in plain words, and renames, revokes, re-pairs and
 // removes them. What a runner advertises is data and rendered as text.
+// Pair a runner is one button at the head that opens the pairing form, as Join an agent opens
+// its panel (tsk-raghxwjf3e0e): closed by default, open at once at /runners/pair (the "+"
+// menu's Runner, the project's "Pair one" link) and while no runner is paired yet.
 "use strict";
 
 window.Maity = window.Maity || {};
@@ -345,7 +348,8 @@ window.Maity = window.Maity || {};
 
   // ---- the view --------------------------------------------------------------
 
-  M.views.runners = async function (ctx, root) {
+  // args: ["pair"] (/runners/pair) opens the pairing form at once, its name field focused.
+  M.views.runners = async function (ctx, root, args) {
     const [runners, enrollments, projects] = await Promise.all([
       M.api.getAll("/runners"),
       M.api.getAll("/runners/enrollments"),
@@ -518,9 +522,11 @@ window.Maity = window.Maity || {};
       append(panel, pairSteps(enrollment, configFor, () => { waitingFor = null; clear(panel); }));
     }
 
+    let pairName = null; // the form's name field, where the focus goes when it opens
     function pairForm() {
       const name = h("input", { id: "pair-name", required: true, pattern: NAME_PATTERN, maxlength: "31", placeholder: M.t("runners.pair.name_placeholder"),
         autocomplete: "off", spellcheck: "false", "aria-describedby": "pair-name-rule" });
+      pairName = name;
       const ttl = h("select", { id: "pair-ttl" },
         [900, 600, 300].map((v) => h("option", { value: String(v) }, M.t("runners.pair.minutes", { count: v / 60 }))));
       ttl.value = "900";
@@ -548,8 +554,34 @@ window.Maity = window.Maity || {};
       boxes.length ? h("fieldset", { class: "pair-projects" }, h("legend", null, M.t("runners.pair.allow_in")),
         boxes.map(({ p, box }) => h("label", { class: "check", for: box.id }, box, " " + p.name))) : null,
       h("label", { for: "pair-ttl" }, M.t("runners.pair.ttl")), ttl,
-      h("button", { type: "submit" }, M.t("runners.pair.submit")));
+      h("div", { class: "actions" },
+        h("button", { type: "button", class: "pair-cancel", onclick: () => closePair(true) }, M.t("runners.pair.cancel")),
+        h("button", { type: "submit" }, M.t("runners.pair.submit"))));
     }
+
+    // Pair a runner at the head: a disclosure button for the form under it (aria-expanded,
+    // aria-controls). Opened by the button, the focus goes to the name; Cancel and a second
+    // press close it, the focus back on the button. What is typed stays across a close.
+    const formSlot = h("div", { class: "pair-form-slot", id: "pair-form-slot" }, pairForm());
+    const pairOpen = h("button", { type: "button", class: "primary pair-open", "aria-expanded": "false", "aria-controls": "pair-form-slot" },
+      M.t("runners.pair.title"));
+    function openPair(focus) {
+      formSlot.hidden = false;
+      pairOpen.setAttribute("aria-expanded", "true");
+      if (!focus) return;
+      // On a page the router has not attached yet (a direct /runners/pair), the focus waits
+      // until it is in the document, as js/join.js's focusSoon does.
+      const name = pairName;
+      if (name.isConnected === false) window.setTimeout(() => { if (name.isConnected !== false) name.focus(); }, 0);
+      else name.focus();
+    }
+    function closePair(refocus) {
+      formSlot.hidden = true;
+      pairOpen.setAttribute("aria-expanded", "false");
+      if (refocus) pairOpen.focus();
+    }
+    pairOpen.addEventListener("click", () => (formSlot.hidden ? openPair(true) : closePair(false)));
+    formSlot.hidden = true;
 
     function drawRunners(items) {
       clear(list);
@@ -587,12 +619,20 @@ window.Maity = window.Maity || {};
       drawEnrollments(e.items);
     }
 
-    append(root, h("h2", null, M.t("runners.title")),
+    append(root, M.pageHead({ title: M.t("runners.title"), actions: [pairOpen] }),
       h("p", { class: "muted" }, M.t("runners.intro")),
-      pairForm(), panel, stepSlot, status.el, pending, list);
+      formSlot, panel, stepSlot, status.el, pending, list);
+    // Asked for (/runners/pair): open, the name focused. No runner yet: open too, as the project's
+    // Agents opens its join panel without an agent of one's own; the empty state names what a
+    // runner is but not how to get one (web/context/views.md). The focus stays where the page
+    // puts it then: nothing was pressed.
+    const asked = !!(args && args[0] === "pair");
+    if (asked || !runners.items.some((r) => !r.removed_at)) openPair(false);
     await readLines(runners.items);
     drawRunners(runners.items);
     drawEnrollments(enrollments.items);
+    // After the last read, so the timer runs once the router has attached the page.
+    if (asked) openPair(true);
     // Presence and capabilities emit no events: re-read them (docs/api.md §15.1).
     // One periodic read at a time: a slow one is not overtaken by the next tick,
     // which would leave every answer discarded and the page old.

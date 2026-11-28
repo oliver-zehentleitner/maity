@@ -4524,6 +4524,7 @@
   "runners.open.title": "未完了のペアリング",
   "runners.pair.allow_in": "許可するプロジェクト",
   "runners.pair.aside": "まず古い認証情報を脇へ移します (ここでは既定の状態ディレクトリから)。認証情報がある間 pair は拒否し、このペアリングはいずれにせよそれを失効させます。",
+  "runners.pair.cancel": "キャンセル",
   "runners.pair.check": "確認します: {command} が、ツールのログインなど、まだ足りないものを教えてくれます。",
   "runners.pair.config_label": "初期設定",
   "runners.pair.copy_command": "ファイルを書き出すコマンドとしてコピー",
