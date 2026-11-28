@@ -181,6 +181,10 @@ def settle(
     proposal = of(request)
     if proposal is None:
         return
+    if outcome == "go" and proposal.get("role_gone") is not None:
+        # The project role it names was removed while it waited, and the name now means a
+        # built-in role nobody consented to (the steward revision, 20261125120000).
+        raise ApiError(409, "role_unknown", "the project has no such role any more")
     # The asking instance rides on its session's credential (§6.17).
     credential = (
         None

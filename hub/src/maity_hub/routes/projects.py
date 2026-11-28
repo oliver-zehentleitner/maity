@@ -64,7 +64,7 @@ from maity_hub.ids import new_id
 from maity_hub.models import SLUG_PATTERN, Name, Strict, markdown, title
 from maity_hub.namespace import ProjectRoute
 from maity_hub.onboarding import OnboardingIn
-from maity_hub.scopes import in_admin_team
+from maity_hub.scopes import OUTSIDE, in_admin_team
 from maity_hub.views import confirmed_by_of, member_view, principal_id, project_view
 
 router = APIRouter(route_class=ProjectRoute)
@@ -116,6 +116,18 @@ class PolicyIn(Strict):
     # `{"owners_of": [handle, …]}`, checked in `_apply_policy` so each refusal is named.
     own_approvals: Any = None
     own_agents: Any = None
+    # §6.1, an outsider's claim: two choices, and `null` or an integer ≥ 1, checked in
+    # `_apply_policy` so that a bool or a string is named `out_of_range` as for `own_approvals`.
+    # The two choices take anything here, so that `null` and a value that is no string are
+    # `unknown` as the contract's rows say, not a skipped field or a `string_type`.
+    looking_for_coders: Any = None
+    outside_claims: Any = None
+    outside_claims_max: Any = None
+
+
+# Choices of the policy whose `null` in a body is `unknown` (§6.1 rows), checked atomically
+# with the rest of the PATCH in `_apply_policy`.
+NEVER_NULL_CHOICES = ("looking_for_coders", "outside_claims")
 
 
 class AbsenceIn(Strict):
@@ -671,6 +683,11 @@ def _apply_policy(
     if "keep_the_why" in change.model_fields_set and change.keep_the_why is None:
         # Only `required` or `optional` (§6.1): a null would clear the human's value.
         errors["policy.keep_the_why"] = "unknown"
+    for name in NEVER_NULL_CHOICES:
+        # Only the row's choices (§6.1): an explicit null is `unknown` too, never a skipped
+        # field that lets the rest of the PATCH apply. A non-string is already `unknown` above.
+        if name in change.model_fields_set and getattr(change, name) is None:
+            errors[f"policy.{name}"] = "unknown"
     if "agent_owners" in change.model_fields_set and change.agent_owners is None:
         # Never null again once set (§6.1): a stored `anyone` is the outsiders' opt-in, and
         # `members` closes it; a null would quietly fall back to the unset reading.
@@ -708,6 +725,17 @@ def _apply_policy(
             errors["own_agents"] = checked
         else:
             proposed["own_agents"] = checked
+    if "outside_claims_max" in change.model_fields_set:
+        cap = change.outside_claims_max
+        # `null` (no cap) or an integer from 1 to the column's width; a bool is no number (§6.1).
+        if cap is not None and (
+            isinstance(cap, bool)
+            or not isinstance(cap, int)
+            or not 1 <= cap <= policy.OUTSIDE_CLAIMS_MAX_MAX
+        ):
+            errors["outside_claims_max"] = "out_of_range"  # named plain, as own_approvals
+        else:
+            proposed["outside_claims_max"] = cap
     if change.on_runner_revoke == "keep" and instance_rule == "stop_floor":
         # The operator made stop a floor (§15.3, §16): no project keeps its agents.
         errors["policy.on_runner_revoke"] = "stop_floor"
@@ -914,6 +942,7 @@ def list_projects(request: Request, caller: AnyCaller) -> JSONResponse:
     settings = settings_of(request)
     with engine_of(request).begin() as conn:
         agent = caller.kind == "agent"
+        outside_in: set[str] = set()
         isolated_in: set[str] = set()
         if agent:
             # Every project the instance is attached to, an isolated one included (§6.1,
@@ -922,6 +951,7 @@ def list_projects(request: Request, caller: AnyCaller) -> JSONResponse:
             query = select(t.project).where(
                 t.project.c.id.in_([r.project_id for r in attached_rows])
             )
+            outside_in = {r.project_id for r in attached_rows if r.trust == OUTSIDE}
             isolated_in = {r.project_id for r in attached_rows if r.isolated_since is not None}
         else:
             query = (
@@ -931,7 +961,7 @@ def list_projects(request: Request, caller: AnyCaller) -> JSONResponse:
             )
         rows = conn.execute(query.order_by(t.project.c.slug)).all()
         names = namespace.full_names(conn, [r.id for r in rows])
-        full = [r for r in rows if r.id not in isolated_in]
+        full = [r for r in rows if r.id not in isolated_in | outside_in]
         shown = images.views(conn, [r.id for r in full])
         aliases = namespace.aliases_by(conn, [r.id for r in full])
         confirmed = confirmed_by_of(conn, full)
@@ -949,6 +979,9 @@ def list_projects(request: Request, caller: AnyCaller) -> JSONResponse:
                         "isolated": True,
                     }
                 )
+                continue
+            if r.id in outside_in:
+                items.append({**_outside_view(conn, r, request), "isolated": False})
                 continue
             view = _serve_restricted(
                 conn,
@@ -1158,11 +1191,12 @@ def project_body(
 ) -> dict[str, Any]:
     """`GET /projects/{owner}/{slug}`'s answer (§6.1), also the `project` part of
     `GET /bootstrap` (§5.4), which passes no `mine`: the caller's membership is read here, so
-    an outsider reads no part of it (§2.3). An outsider's answer is `_outside_view`."""
+    an outsider reads no part of it (§2.3). An outsider's answer is `_outside_view`, and so is
+    an agent's with trust `outside` (`access.reads_from_outside`, §2.3 "Outside")."""
     if mine is None:
         mine = membership(conn, caller, slug)
     mine.require("project:read")
-    if isinstance(mine, access.OutsideReader):
+    if isinstance(mine, access.OutsideReader) or access.reads_from_outside(mine):
         return _outside_view(conn, mine.project, request)
     return _view(conn, mine.project, request, mine)
 
@@ -1735,6 +1769,11 @@ HUMANS_ONLY_POLICY = {
     "outside_roles",
     "own_approvals",  # set by a human with project:admin (§6.1)
     "own_agents",  # set by a human with trust owner (§6.1, checked in `_authorise_patch`)
+    # An outsider's claim (§6.1): a human with project:admin; `outside_claims` `agent` and
+    # `direct` a human with trust owner (checked in `_authorise_patch`).
+    "looking_for_coders",
+    "outside_claims",
+    "outside_claims_max",
     "keep_the_why",  # whether the project requires Keep the Why (§6.23)
     "keep_the_why_defaults",
 }
@@ -1824,6 +1863,21 @@ def _authorise_patch(mine: Membership, body: ProjectPatch, given: set[str]) -> N
     named = body.policy.model_fields_set if "policy" in given and body.policy else set()
     if "own_agents" in named and (mine.trust != "owner" or mine.kind != "human"):
         raise ApiError(403, "forbidden", "own_agents is set by an owner", {"reason": "owner_only"})
+    # So is letting an agent, or nobody, confirm an outsider's claim (§6.1 `outside_claims`):
+    # a body that names `agent` or `direct`, the stored value too. `human` back is any
+    # `project:admin` human's (the lead's ruling of 2026-11-25, Q9).
+    if (
+        "outside_claims" in named
+        and body.policy is not None
+        and body.policy.outside_claims in policy.OUTSIDE_CLAIMS_OWNER_ONLY
+        and (mine.trust != "owner" or mine.kind != "human")
+    ):
+        raise ApiError(
+            403,
+            "forbidden",
+            "an outsider's claim without a human's confirmation is set by an owner",
+            {"reason": "owner_only"},
+        )
     # Launch is the owner's go (§6.1): an admin human is refused too.
     moves_to_launch = body.state == "launch" and mine.project.state != "launch"
     if moves_to_launch and (mine.trust != "owner" or mine.kind != "human"):

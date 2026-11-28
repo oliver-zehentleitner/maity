@@ -131,7 +131,7 @@ def _bridge_row(engine: Engine, bridge: factory.Agent) -> Any:
         return conn.execute(select(t.bridge).where(t.bridge.c.bridge == bridge.membership_id)).one()
 
 
-@pytest.mark.parametrize("meanwhile", ["ended", "isolated", "removed"])
+@pytest.mark.parametrize("meanwhile", ["ended", "isolated", "removed", "outside"])
 def test_a_wait_for_an_agent_reads_nothing_once_the_bridge_may_not(
     meanwhile: str,
     owner: flow.Human,
@@ -154,7 +154,7 @@ def test_a_wait_for_an_agent_reads_nothing_once_the_bridge_may_not(
                 values = (
                     {"isolated_since": clock.now(), "isolated_reason": "x", "isolated_by": "x"}
                     if meanwhile == "isolated"
-                    else {"active": None}
+                    else {"trust": "outside"} if meanwhile == "outside" else {"active": None}
                 )
                 conn.execute(
                     update(t.membership)

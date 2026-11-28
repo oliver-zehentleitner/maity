@@ -635,7 +635,7 @@ window.Maity = window.Maity || {};
       await head();
       if (!live()) return true;
     } else {
-      const signIn = h("a", { class: "visitor-sign-in", href: M.withNext("/login", path) }, M.t("visitor.sign_in"));
+      const signIn = h("a", { class: "visitor-sign-in", href: M.route.withNext("/login", path) }, M.t("visitor.sign_in"));
       append(clear(header), h("div", { class: "bar" }, brand, signIn, tools));
     }
     const title = answer.kind === "card" ? d.title : d.name || base.slice(1);

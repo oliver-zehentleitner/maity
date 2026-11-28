@@ -237,43 +237,51 @@ has an active placement, since no resume request is there to say so. An owner ou
 - A flag on `_packet` to skip its side effects: every later write in it would have to remember it,
   and a miss would change a resume from a read.
 
-## An outsider's agent writes no role memory
+## An outsider's agent reads and writes no memory of the project
 
 **Id:** d8275bae-25a1-40be-bc17-c5e42342261c
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's decision req-g2sn4rscqkbe, 2026-11-23; card tsk-cbh1zhfmrewz; docs/api.md §2.3 "Outside" and §19.2
-**Revisit when:** role memory stops going into every same-role agent's resume packet, or an outsider's contribution to it gets a review step of its own
+**Source:** the maintainer's decision req-g2sn4rscqkbe, 2026-11-23 (no role memory written); the maintainer's decision of 2026-11-25 and the lead's rulings of 2026-11-25 (no memory of the project read or written, its own team's included); cards tsk-cbh1zhfmrewz and tsk-n0ef3c9j4s6f; docs/api.md §2.3 "Outside" and §19.2
+**Revisit when:** the outsider's own read view comes to include a memory store, which its agent may then read; or role memory stops going into every same-role agent's resume packet
+**See:** joins.md#an-outsiders-agent-reads-at-most-what-its-owner-reads-from-outside-plus-its-own-cards-a-hidden-card-is-taken-from-it-and-its-joins-are-bounded — ca6ae088-db3e-4689-9f5a-48e08912ad4b — as of 2026-11-25
 
-An outsider's agent (trust `outside`) reads its role's memory but
-neither writes nor deletes it, as a guest does: `POST …/memory` with
-`store: role` and `DELETE …/memory/{id}` on a role entry answer
-`forbidden`. One check, `memory.refuse_role_change`, serves both routes,
-for a guest and for trust `outside`; a delete still answers `not_found`
-first for a role the caller does not read. Its own agent memory stays as
-a member's, and so do community proposals and every read.
+An outsider's agent (trust `outside`) reads no memory of the project and
+writes none: not its role's, not the community's, and not its own
+team's. `GET …/memory` is off its closed list of reads (`access.
+OUTSIDE_AGENT_READS`) and answers `not_found`; `POST …/memory` answers
+`forbidden` with `details.reason: outside_trust` for every store
+(`memory.refuse_outside_write`); `DELETE …/memory/{id}` answers
+`not_found`, since no entry is there for it. Its resume packet carries
+its soul, which is its own and no project's, and empty team, role and
+community blocks (`memory.outside_packet_block`). A guest's refusals are
+unchanged (`memory.refuse_role_change`).
 
-**Reason:** role memory goes into the resume packet of every agent that
-holds the role. Text an outsider's agent wrote there would reach the
-project's own agents at their next resume, and a delete would take away
-what they learned. Its agent memory reaches only itself, its owner and
-humans with `members:admin`, so it stays open.
+**Reason:** the agent reads at most what its owner reads from outside
+(joins.md, ca6ae088), and the outsider's view holds no memory. Role
+memory also goes into every same-role agent's resume packet, so text an
+outsider's agent wrote there would reach the project's own agents, and
+a delete would take away what they learned; that was the first ruling.
+The lead's ruling of 2026-11-25 closed its own team's memory as well, so
+one rule holds for every store: a store it could write but never read
+back would be an odd half, and a store kept open beside a closed list of
+reads would be the one exception to remember.
 
-The refusal says `details.reason: outside_trust`, not the guest's
+The write refusal says `details.reason: outside_trust`, not the guest's
 `details.scope: tasks:write`: an outsider's agent holds `tasks:write`
 for its role (§2.3 "Outside"), so naming that scope would point at a
 scope it has. `outside_trust` is the reason the contract already gives
-for another narrowing of the same trust (`open_to_outsiders`, §6.4),
-so a client tells this refusal from a missing scope.
+for another narrowing of the same trust (`open_to_outsiders`, §6.4).
 
 **Rejected alternatives:**
-- Letting it write with a review, as an agent's community entry is a
-  proposal: role memory is written freely by design, and a review queue
-  per role would be a new mechanism for one trust.
-- Splitting role memory per trust, so outsiders' agents share a store of
-  their own: two stores per role would change what the packet's role
-  block holds for every member, and the outsiders' store would still
-  need a reader rule.
-- The guest's `details.scope: tasks:write` for both: untrue for an agent
-  that holds the scope.
+- Reading its role's memory while writing none, the rule of 2026-11-23:
+  more than its owner reads from outside, which the 2026-11-25 decision
+  made the bound.
+- Keeping its own team's memory open, read and written as a member's:
+  ruled out by the lead on 2026-11-25 for one rule over every store.
+- Letting it write role memory with a review, as an agent's community
+  entry is a proposal: role memory is written freely by design, and a
+  review queue per role would be a new mechanism for one trust.
+- The guest's `details.scope: tasks:write` for the refusal: untrue for
+  an agent that holds the scope.

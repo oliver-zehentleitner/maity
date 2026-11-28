@@ -1013,7 +1013,7 @@ def _membership_row(engine: Engine, world: World) -> Any:
 def test_isolated_and_held_members_are_not_in_an_outsiders_member_reads(
     world: World, make_client: ClientFactory, migrated: Engine
 ) -> None:
-    """As the public page names them (§16.9, `public_project_views.members`): an isolated
+    """As the public page names them (§16.9, `public_members.members`): an isolated
     agent and one under a moderation hold on its profile are in no member list an outsider
     reads, `GET …/members/{id}` answers `not_found` for them, no edge names them and no
     count counts them; a member reads them as before."""

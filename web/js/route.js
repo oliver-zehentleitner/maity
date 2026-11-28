@@ -171,8 +171,10 @@ window.Maity = window.Maity || {};
       // So are the other pages the hub draws itself at an address the dashboard also answers:
       // `/explore` and a landing variant `/for/<slug>` (§16.11). The hub decides per request
       // whether they are its page or the shell; a route change would draw the dashboard's view
-      // of an unknown address instead.
-      if (hubDrawn(to)) return;
+      // of an unknown address instead. Signed in, bare `/explore` is the dashboard's own Explore
+      // tab (§16.9, "Explore, signed in"), where the hub answers a session with the shell: a route
+      // change draws the same, without the page load; `?as=public` stays the hub's page.
+      if (hubDrawn(to) && !ownExplore(to)) return;
       const anchored = splitAnchor(to);
       if (anchored) {
         e.preventDefault();
@@ -219,6 +221,8 @@ window.Maity = window.Maity || {};
   // where it serves them (the public projects, §16.9; a landing variant, §16.7.2), the shell
   // otherwise. Unlike a hub path they stay routes, so a sign-in's next and an href keep them.
   const hubDrawn = (value) => typeof value === "string" && /^\/(?:explore(?:[?#]|$)|for\/[^/?#]+(?:[?#]|$))/.test(value);
+  // `/explore` itself while the page knows a session (js/api.js): the dashboard's Explore tab.
+  const ownExplore = (value) => value === "/explore" && !!(M.api && M.api.session && M.api.session());
 
   // Leave for the start page: a page load the hub answers, with the current entry replaced, for
   // the one who just signed out (the landing page while it is on). In fixture mode, with no hub,
@@ -233,5 +237,13 @@ window.Maity = window.Maity || {};
   // An anchored route's href: the route as `href` writes it, the place after it.
   const anchoredHref = (value) => { const x = splitAnchor(value); return x ? href(x.path) + "#" + x.anchor : null; };
 
-  M.route = { fixture, isRoute, isAnchored, anchoredHref, isHubPage, current, href, go, load, startPage, hubDrawn, listen, layer, dropFragment, jump, seqTarget };
+  // A link to sign in or register that comes back to `next`: a query of its own (the
+  // language) kept, ?next= after it, and a place stays last, where a browser reads it.
+  function withNext(value, next) {
+    const cut = value.indexOf("#");
+    const before = cut < 0 ? value : value.slice(0, cut);
+    return before + (before.includes("?") ? "&" : "?") + "next=" + encodeURIComponent(next) + (cut < 0 ? "" : value.slice(cut));
+  }
+
+  M.route = { fixture, isRoute, isAnchored, anchoredHref, isHubPage, current, href, go, load, startPage, hubDrawn, listen, layer, dropFragment, jump, seqTarget, withNext };
 })(window.Maity);

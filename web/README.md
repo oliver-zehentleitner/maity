@@ -300,9 +300,15 @@ project does not list and anyone in a read-along view are plain text.
 Every role picker (a member's form, an invitation, a join, a member's own
 agent) offers the roles of `docs/api.md` §2.3 from one list (`js/trust.js`):
 coder, reviewer, tester, designer, writer, ops, proxy, manager, red team,
-blue team, purple team and expert, each by its label, with what the role does as
+blue team, purple team, expert and steward, each by its label, with what the role does as
 a hint under the picker; each picker keeps its own rule of what it may
-offer.
+offer. Every picker drops the steward where the project's memory provider
+is `none` (`M.trust.offered`); a member that already is a steward keeps
+its role. For a steward, Join shows the Expert for and Sources the hub
+fills (`context/`), and Manage shows both fields editable, prefilled with
+those defaults while they are empty. Settings → Way of working has a
+**Keep the Why steward** section for a human admin, which sets
+`policy.steward_writes` with a reason.
 
 The dashboard and the hub ship together: the page never asks the hub's
 machine form whether it serves a route, and a 404 or 405 from a route it

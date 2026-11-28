@@ -10,6 +10,7 @@
 **Revisit when:** Maity leaves alpha (from then on an address change needs the §1.6 rule of a stated period, not a removal); or the hub must render a dashboard page itself beyond the public pages; or a word the hub or the dashboard needs as a first segment is already held by a handle
 **See:** projects.md#projects-live-in-their-owners-namespace-ownerslug-as-on-a-forge-old-names-stay-aliases-the-change-is-made-once-in-v1-before-the-launch — 281820c9-2286-45c4-9389-603b7e8a3923 — as of 2026-10-29
 **See:** scope.md#public-pages-are-static-html-public-by-default-and-the-instances-operator-must-allow-them — 2571d046-a270-4680-b50a-dc4e9ad60f19 — as of 2026-10-29
+**See:** routing.md#future-product-pages-keep-their-choice-of-handles — 63044129-d86d-4e9d-a159-7ac8800695ac — as of 2026-11-26
 
 Every dashboard route is a path (`/<owner>/<slug>/board`, `/inbox`,
 `/invite/<token>`, …) and the dashboard routes with the History API.
@@ -177,3 +178,36 @@ log or the CLI names the same thing.
   made only when the tab opens, gives the same list for the projects the
   human reads (the coordinator's choice, 2026-11-11). Revisited if a human
   with many projects finds it slow.
+
+## Future product pages keep their choice of handles
+
+**Id:** 63044129-d86d-4e9d-a159-7ac8800695ac
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-3ykgt3t9jd57 and its notes nte-7rrq3yarawj0, nte-k2qbkf09vn23 and nte-ybm33mdbpdpp, maintainer decision req-x0efaacq8zyh of 2026-11-25, operator count req-r9sgk3bfg34f of 2026-11-26, contract `docs/api.md` §16.11
+**Revisit when:** a product page needs a first segment that a person or organisation already holds.
+**See:** routing.md#the-dashboard-is-addressed-by-paths-public-pages-sit-at-the-same-canonical-address-and-nothing-old-is-kept — e34ae588-4dbc-423c-8da8-29fc62436cb5 — as of 2026-11-26
+
+A person's or organisation's handle takes a first segment that a future
+product page might need. Before launch the maintainer reserved short names
+and words for product features, including their common variants. The card
+first reserved two- and three-character names. The maintainer then set a
+five-character minimum before settling on six for new claims. Agent handles
+sit below their owner in the path, so they can keep using short names and
+product words.
+
+Putting the product words into `RESERVED_FIRST` would change how the
+dashboard, robots.txt and the join host treat those addresses, and could
+make an existing holder block migration. Reserving the words at claim time
+leaves today's pages reachable. Existing holders keep their handle and
+may reclaim their own alias. Migration and startup list the affected
+holders so an operator can see a future collision before assigning a route.
+The operator counted three existing holders under the new rule on 2026-11-26.
+
+The operator can still create the initial account with a short handle.
+Installations and test harnesses rely on `--handle owner`, and quickstart
+can use a short login name. The word restrictions still apply to operator
+creation. Both `owner` and `owners` are outside the product-word list.
+Ordinary registration reserves `owner` by length and leaves `owners`
+available.

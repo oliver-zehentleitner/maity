@@ -57,7 +57,7 @@ def _get(kind: str) -> Callable[..., Response]:
             image = images.current(conn, project.id, kind)
             # An outsider's read leaves no trace (§2.3): never the read-through, whose answer
             # may announce a `project_updated`; it gets what is stored.
-            outside = isinstance(mine, access.OutsideReader)
+            outside = access.reads_from_outside(mine)
             checked = outside or images.forge_row(conn, project.id, kind) is not None
         if image is None and not checked and forge.kind_of(project.repository_url) == "github":
             # Nothing stored yet: the one read-through; later refreshes are the worker's.

@@ -12,12 +12,13 @@ from pathlib import Path
 from maity_hub import languages
 
 _DIRECTORY = Path(__file__).with_name("words")
+_FILES = {tag: _DIRECTORY / f"{tag}.json" for tag in languages.INTERFACE}
 
 
 @cache
 def _file(language: str) -> dict[str, str]:
-    path = _DIRECTORY / f"{language}.json"
-    if not path.exists():
+    path = _FILES.get(language)
+    if path is None or not path.exists():
         return {}
     words: dict[str, str] = json.loads(path.read_text(encoding="utf-8"))
     return words

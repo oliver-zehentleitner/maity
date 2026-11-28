@@ -90,4 +90,4 @@ def test_the_closed_statuses_are_written_down_once() -> None:
         for number, line in enumerate(path.read_text().splitlines(), 1)
         if copy.search(line)
     ]
-    assert found == ["cards.py:28", "cards.py:31"]  # STATUSES and CLOSED
+    assert found == ["cards.py:29", "cards.py:32"]  # STATUSES and CLOSED

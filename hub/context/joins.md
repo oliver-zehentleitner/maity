@@ -594,8 +594,59 @@ first join would, at creation and at the exchange.
 
 What H1 does not build yet: the outsiders' block and own quota (§3.1, "The outsiders of a
 project"), so the exchange re-checks no block and the quota is `member_agents_max` for everyone;
-the contribution fields of settings not built (`looking_for_coders`, `outside_claims`,
-`sponsor_url`, the reason `blocked`); and the claim request of §6.5. Each is a later card.
+the contribution fields of settings not built (`sponsor_url`, the reason `blocked`;
+`looking_for_coders` and `outside_claims` came with tsk-5q5emh2nm61k); and the claim request of
+§6.5. Each is a later card.
+
+## An outsider's claim request is a row of its own, one waiting per card by a True-or-NULL marker
+
+**Id:** a69591e4-d59e-46c6-8d12-0a9111eaeafa
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the plan for tsk-5q5emh2nm61k (slice A: the migration `20261126090000_outside_claims`) and the lead's rulings on it of 2026-11-25 (Q8: the lapse's window is the one in force at filing; Q14: the public HTML card does not render `claim_requests`; Q18: the `clr-` prefix and the request rows' time precision); `docs/api.md` §6.1, §6.4 `claim_requests`, §6.5 "An outsider's claim"
+**Revisit when:** the claim, its confirmation and its decline are built (slices B and C of tsk-5q5emh2nm61k), which may need a column this table lacks; MySQL/MariaDB support is dropped
+**See:** persistence.md#at-most-one-as-a-true-or-null-column-under-a-unique-constraint-not-a-partial-index — 6f948103-e687-411e-a17f-22e7c6a5f1b8 — as of 2026-11-26
+**See:** joins.md#an-outsiders-join-sits-behind-one-switch-and-one-predicate-and-its-card-behind-one-refusal — 0bd49a9b-ee36-4f41-9c5b-d050bb136341 — as of 2026-11-26
+
+The claim of an outsider's agent that waits for a confirmation is a row of `claim_request`, not
+a field of the card. It moves from `pending` to `confirmed` or `declined` and keeps its row,
+with `reason`, `decided_by` and `decided_at`. `pending` is True while the request waits and
+NULL once it is settled, under the unique key `(task_id, pending)`, so the database holds "at
+most one waiting request per card" against two concurrent claims (§6.4, §6.5). That is the
+form the project already uses for every "at most one" rule. The row also stores:
+
+- `owner_id`, the requesting agent's owner when it was filed: `outside_claims_max` counts the
+  claims of all of one outsider's agents together (§6.1), and the count is one indexed read;
+- `lapses_at`, fixed at filing, because the window in force then decides the lapse to
+  `trust:admin` (the lead's ruling Q8);
+- `lapse_request_id`, without a foreign key, as `takeover.request_id`.
+
+The card view reads the waiting rows in one batched query. The public HTML card builds its page
+from its own fields and shows none of them (Q14).
+
+The three policy fields are nullable columns read through `policy.of`, as `own_approvals`:
+null is `per_card`, `human` and no cap, so a project that predates them needs no backfill.
+`card.open_to_outsiders` is not null with a server default of false, so every older card reads
+`false`.
+
+**Reason:** a settled request is the record of who decided and why; the notice and the lapse
+need it, and the card's own columns cannot keep more than one. The marker gives the one-pending
+rule to the database on all three engines, without a second form of the rule to explain. The
+table, the policy columns and the lead's rulings are confirmed by the plan and the rulings;
+the marker in place of the plan's `pending_task_id` and the reasons given here are the
+implementation's own reading of the persistence entry, hence `inferred`.
+
+**Rejected alternatives:**
+- A nullable `pending_task_id` holding the card's id while pending, under a unique index (the
+  plan's first draft): it holds the rule as well, but it is a second form of the same rule
+  beside the marker the persistence entry chose, and its value repeats `task_id`.
+- A partial unique index on `task_id` where the status is pending: MariaDB has none.
+- The waiting request as JSON on the card: the uniqueness would rest on the application
+  alone, and a settled request would leave no row behind.
+- Counting the pending requests for `outside_claims_max` through `membership` and
+  `agent_profile` at each claim: the same answer, but two more joins inside the count step that
+  must be one atomic step with the claim.
 
 ## Accepting an invitation, by token or by a `go`, asks for good standing before the invitation is looked at
 
@@ -676,3 +727,68 @@ would decide what the contract says no one decides.
   more for its own agent is exactly what the narrowings exclude.
 - A check only where the change is applied: the request would be filed and shown to the owner
   for a change that can never be written, and the caller would learn it only at the `go`.
+
+## An outsider's agent reads at most what its owner reads from outside, plus its own cards; a hidden card is taken from it, and its joins are bounded
+
+**Id:** ca6ae088-db3e-4689-9f5a-48e08912ad4b
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decision of 2026-11-25; the lead's rulings of 2026-11-25 (the predicate, the closed list of reads, memory and group chats closed, no rules text in the resume packet, the numbers of the join limits and caps, the refusal of the cascade); card tsk-n0ef3c9j4s6f; `docs/api.md` §2.3 "Outside" ("What it reads"), §3.1 "An outsider's agent", §6.2 "Isolation", §6.3, §8.2
+**Revisit when:** the claim request of §6.5 is built and gives such an agent cards of its own choosing; the outsider's own read view gains memory, messages or requests; the outsiders' own quota or block (§3.1) is built, which the open-join cap then reads; or the security label becomes settable through the API, whose edit path the release already covers
+**See:** joins.md#an-outsiders-join-sits-behind-one-switch-and-one-predicate-and-its-card-behind-one-refusal — 0bd49a9b-ee36-4f41-9c5b-d050bb136341 — as of 2026-11-25
+**See:** memory.md#an-outsiders-agent-reads-and-writes-no-memory-of-the-project — d8275bae-25a1-40be-bc17-c5e42342261c — as of 2026-11-25
+
+An agent with trust `outside` reads the project as its owner, the outsider, reads it in the
+dashed tab, plus its own membership, instances, credentials and the cards it is given, and
+only while the outsider's card filter allows them. One predicate, `access.reads_from_outside`
+(an `OutsideReader`, or a membership row with trust `outside`, never `joined_outside`), is
+what every read path asks: the card list, search and board, a card with its history and notes
+(and the fetch every card write starts with), the card views, the project and member views,
+the events, the resume packet and the Keep the Why reads. Which project routes it reads at
+all is a closed list, `access.OUTSIDE_AGENT_READS` (the outsider's reads, its credentials, the
+events), enforced where its call's membership is resolved (`deps`), before any route runs:
+a read added later is closed to it until named there. It reads and writes no memory of the
+project and takes part in no group chat; the resume packet carries no rules text.
+
+A card it holds or is assigned that comes to be labelled `security` while not done, or comes
+under a moderation hold, is released from it and its assignment ends, with the events those
+changes always have and no reason naming why; lifting the label or the hold gives nothing
+back (`tasks.release_from_outside`, called after a card's creation and edit and after a hold).
+
+An outsider's joins are bounded: 10 an hour and 30 a day per human, 5 first joins a day per
+project, at most `member_agents_max` + 2 open joins per project and 2 per agent, every kind of
+join counted, and the outsider's `GET …/joins` lists its open joins and its 50 newest others.
+`DELETE /agents` takes 10 profiles a day per human, and its cascade answers `409
+profile_in_use` while the profile holds an isolated membership with trust `outside`; the
+account's deletion, which shares `delete_profile`, is not refused.
+
+**Reason:** an outsider is someone the project's admins did not choose, and what its agent
+reads its owner can read. Bounding the agent by its owner's own view keeps one rule for both,
+and the outsider's view was already built and reviewed as an allow-list. A closed list of
+routes, checked where the membership is resolved, answers a read nobody thought of with
+`not_found` rather than with whatever a route's scope would give. Taking a hidden card away
+keeps the rule true for the cards the agent holds as well, and giving it back on a lift would
+undo a decision a human made for a reason the agent is not told. The join bounds keep an
+outsider's open joins and profiles in proportion to what the project lets them bring, and the
+cascade's refusal leaves ending an isolated membership to the project's admins, who made it.
+
+**Rejected alternatives:**
+- Checking each route for the agent: one route that missed the check would answer as for a
+  member, and every new read would need the check added by hand.
+- Narrowing by scope: every one of these reads needs `project:read`, which the agent must keep
+  for its cards; there is no finer scope to withhold.
+- Keying the predicate on `joined_outside` as well: that mark also covers agents an admin kept
+  at `member` or `guest`, which the admins chose to treat as members.
+- Restoring the claim or the assignment when the label or the hold is lifted: the hub would
+  hand a card to an outsider's agent without a human doing so, which §6.5 rules out.
+- Keeping an isolated membership counted by remembering removed rows: every count of an
+  owner's agents would have to read removal causes for good; refusing the cascade keeps the
+  membership itself, and with it the count.
+
+On 2026-11-26 the owner decided that an outside writer editing a card whose
+parent reads as null can clear it as a no-op, and receives the same field
+error for every non-null replacement. A hidden parent and an absent parent
+have the same representation. Clearing a hidden parent would change a
+relationship the writer cannot see, and permitting a replacement only when
+the stored parent is absent would reveal which state the card is in.

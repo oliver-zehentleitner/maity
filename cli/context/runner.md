@@ -1830,6 +1830,30 @@ real boundary. Rejected because the owner chose to accept the residual risk
 and offer the harness now, with the separate-OS-user mitigation, rather than
 block every opencode placement until that work lands.
 
+## OpenCode placements disable automatic snapshots
+
+**Id:** 2c9195fa-ddc0-485e-b083-754bc0db14f0
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Verification:** uncorroborated
+**Source:** card tsk-27rm0ay2ntnx, operator journal diagnosis and the OpenCode 2.3.0 and 2.4.0 snapshot and Git source
+**Revisit when:** OpenCode isolates snapshot initialization from a placement's pinned Git common directory
+
+The runner sets `snapshot: false` for interactive and supervised OpenCode
+placements. Five stopped placements had `core.worktree` in their local
+configuration. OpenCode's snapshot capture initializes a separate Git store
+with the placement's working tree and inherits the runner's pinned
+`GIT_COMMON_DIR`. Git initialization can therefore write the working-tree
+setting into the placement's common configuration. The journal establishes
+the refused key; the writer is inferred from the source.
+
+Disabling automatic snapshot capture gives up OpenCode's snapshot-based
+undo for placement changes. Clearing `core.worktree` automatically would
+edit a clone an agent wrote and hide the evidence when its value points
+somewhere unexpected. Operators can correct the confirmed self-reference
+in a stopped clone. The runner continues to refuse the key.
+
 ## The opencode adapter fails closed on the model
 
 **Id:** 7c23704d-d02f-4cbf-80ca-494119f8fa5c
@@ -2206,7 +2230,7 @@ plain clone's top-level entries, each a file or a directory as git
 makes it (so no `commondir`, `config.worktree`, submodules or object
 alternates, nothing in `info/` but `exclude` and `refs` (an empty
 `config.worktree`, `config.lock` or alternates file, and empty
-`glab-cli`, `modules`, `remotes` and `worktrees` directories that Claude
+`glab-cli`, `modules`, `remotes`, `worktrees` and `NOTES_MERGE_WORKTREE` directories that Claude
 Code's sandbox leaves, pass as placeholders), and no symlink anywhere,
 since git follows them past every check) and `.git/config`, at most
 64 KiB, holds nothing but a plain clone's keys (core basics, origin, branch tracking,
@@ -3651,11 +3675,11 @@ message says are no boundary.
 **Id:** b4a8030d-3b24-4b76-81cc-a84b0ca84c11
 **Type:** decision
 **Status:** needs-review
-**Evidence:** confirmed
-**Source:** CLI hardening task, the boundary and the clone root chosen by the coordinator, 2026-11-04; a prefixed `maity` call (a command, a variable, `PYTHONPATH`, PATH before it) checked with Claude Code 2.1.318 and git 2.47.3 on the maintainer's laptop, 2026-11-04 (`claude -p` in a temporary clone with the runner's settings, no hub; markers in a `denyWrite` directory): refused by the runner's permission rules, kept in the sandbox with permissions open, and `excludedCommands` matched the plain command only; a placement refused at its next start over `.git/config.worktree`, 2026-11-10, and the lead's choice to accept the sandbox's placeholders while empty, with the runner deleting nothing in the clone, 2026-11-10; Claude Code 2.1.321's sandbox (bubblewrap) leaving them in a scratch clone, 2026-11-10 (`ls -la .git` of a plain clone of the same repository before, of the clone after a session that wrote none of them); the `.git/glab-cli`, `.git/modules` and `.git/worktrees` guards read in the list of protected paths of Claude Code 2.1.321's binary and seen empty after every session start with 2.1.323 on the runner's host (tsk-ydxv7x37fg08, 2026-11-13); card tsk-estwtzbae972 (an empty `.git/config.lock` the sandbox holds to keep `.git/config` unwritable, which refused a placement's own `maity report`/`checkpoint`; the lock's mechanism confirmed by `test_adapters.py` and `test_session_identity.py`, which leave an empty `config.lock`), 2026-11-18; PR #1954 review, 2026-11-18, correcting the reason: git never reads, adopts or commits a pre-existing `config.lock` (it writes `.git/config` through a lock it creates itself with `O_CREAT|O_EXCL` and renames only that one into place), so refusing a non-empty lock is a fail-safe default — accept only the known-inert placeholder shape — not a guard against git applying the lock; card tsk-rasfq0wt751a (security rating S226), 2026-11-20: one helper decides whether a session is placed, an empty or malformed id refused
+**Evidence:** inferred
+**Source:** CLI hardening task, the boundary and the clone root chosen by the coordinator, 2026-11-04; a prefixed `maity` call (a command, a variable, `PYTHONPATH`, PATH before it) checked with Claude Code 2.1.318 and git 2.47.3 on the maintainer's laptop, 2026-11-04 (`claude -p` in a temporary clone with the runner's settings, no hub; markers in a `denyWrite` directory): refused by the runner's permission rules, kept in the sandbox with permissions open, and `excludedCommands` matched the plain command only; a placement refused at its next start over `.git/config.worktree`, 2026-11-10, and the lead's choice to accept the sandbox's placeholders while empty, with the runner deleting nothing in the clone, 2026-11-10; Claude Code 2.1.321's sandbox (bubblewrap) leaving them in a scratch clone, 2026-11-10 (`ls -la .git` of a plain clone of the same repository before, of the clone after a session that wrote none of them); the `.git/glab-cli`, `.git/modules` and `.git/worktrees` guards read in the list of protected paths of Claude Code 2.1.321's binary and seen empty after every session start with 2.1.323 on the runner's host (tsk-ydxv7x37fg08, 2026-11-13); card tsk-estwtzbae972 (an empty `.git/config.lock` the sandbox holds to keep `.git/config` unwritable, which refused a placement's own `maity report`/`checkpoint`; the lock's mechanism confirmed by `test_adapters.py` and `test_session_identity.py`, which leave an empty `config.lock`), 2026-11-18; PR #1954 review, 2026-11-18, correcting the reason: git never reads, adopts or commits a pre-existing `config.lock` (it writes `.git/config` through a lock it creates itself with `O_CREAT|O_EXCL` and renames only that one into place), so refusing a non-empty lock is a fail-safe default — accept only the known-inert placeholder shape — not a guard against git applying the lock; card tsk-rasfq0wt751a (security rating S226), 2026-11-20: one helper decides whether a session is placed, an empty or malformed id refused; card tsk-c55vrwabp6wc and its note, 2026-11-28: two placements on a runner host refused over an empty `.git/NOTES_MERGE_WORKTREE` directory, removed by hand, and seen made again empty (mode 0700, born in the same second as the session's `info/exclude`) by the next session start in one of those clones (`stat` and `ls -la .git` from inside that session); the Claude Code binary was not readable from that session, so its list of protected paths was not checked
 **See:** runner.md#sandboxed-agents-git-redirects-are-pinned-other-clones-and-secrets-unreadable — ea36c196-f8e6-43ae-bc47-49c8d5379a65 — as of 2026-11-04
 **See:** report.md#what-maity-hands-to-git-and-gh-is-checked-first-and-gits-transports-are-fixed — 4f4e8ada-9e3b-47bc-8a9e-d44daf025512 — as of 2026-11-04
-**Revisit when:** agents under the runner need a git configuration key a plain clone has not, the runner starts sessions without `GIT_COMMON_DIR` or `.git/maity`, someone needs submodules, Git LFS, worktrees, sparse checkout, partial clones or other repository format extensions under the runner, a maity command under the runner starts to show what git reads from the clone's objects to someone other than the agent, a sandbox stops denying the agent `.git/maity` or leaves other entries in a clone, or puts anything in the ones it leaves, maity's git under the runner needs to write, a harness's sandbox starts maity outside it when a command line sets variables or a PATH in front of it, or the runner's git moves after a session started
+**Revisit when:** agents under the runner need a git configuration key a plain clone has not, the runner starts sessions without `GIT_COMMON_DIR` or `.git/maity`, someone needs submodules, Git LFS, worktrees, sparse checkout, partial clones or other repository format extensions under the runner, a maity command under the runner starts to show what git reads from the clone's objects to someone other than the agent, a sandbox stops denying the agent `.git/maity` or leaves other entries in a clone, or puts anything in the ones it leaves, Claude Code's list of protected `.git` paths is read in a binary and does or does not name `NOTES_MERGE_WORKTREE` (or names `NOTES_MERGE_PARTIAL` or `NOTES_MERGE_REF`), maity's git under the runner needs to write, a harness's sandbox starts maity outside it when a command line sets variables or a PATH in front of it, or the runner's git moves after a session started
 
 In a session the runner started (`MAITY_PLACEMENT` set), every git
 maity itself starts first checks the clone the same way `gc` does
@@ -3745,7 +3769,20 @@ and the next start (tsk-ydxv7x37fg08). `modules/` is accepted from the
 list without having been seen: it is the same guard, and the check
 should not hang on which of the listed paths one release happens to
 make. With anything in them, `modules/` is refused as submodules and
-`worktrees/` as worktrees, as before. Empty means an empty regular
+`worktrees/` as worktrees, as before. It accepts an empty
+`NOTES_MERGE_WORKTREE/` as well. On 2026-11-28 two Claude Code placements
+on a runner host failed to start (`workspace_in_use / not_a_plain_clone`)
+over an empty `.git/NOTES_MERGE_WORKTREE` directory, mode 0700, next to the
+known placeholders. After it was removed by hand, it came back empty at the
+next session start, in the same second as that start's `info/exclude`
+(tsk-c55vrwabp6wc). It has not been read in a Claude Code binary: the
+binary was out of reach of the session that made the change. That it is
+one more protected path's guard is inferred from its shape and timing.
+Only that observed shape is accepted, an empty directory at that one name.
+An empty file named `NOTES_MERGE_WORKTREE` is refused, and so are
+`NOTES_MERGE_PARTIAL` and `NOTES_MERGE_REF`, which were never seen. With
+anything in it, `NOTES_MERGE_WORKTREE/` is a `git notes merge` in progress
+and is refused as no plain clone's. Empty means an empty regular
 file or directory: a symbolic link, a FIFO, a socket or a device anywhere
 in `.git` is refused, under any name, and so is a directory in `.git` that
 cannot be listed, since unlisted it would look empty. Any of them with
@@ -3763,7 +3800,11 @@ nothing git does: an empty `config.worktree` is not even read without
 an `extensions.worktreeConfig` the configuration check refuses, an
 empty `alternates` names no object store, and an empty `remotes/` names
 no remote, and empty `glab-cli/`, `modules/` and `worktrees/` hold no
-glab configuration, no submodule and no linked worktree. The check also
+glab configuration, no submodule and no linked worktree. An empty
+`NOTES_MERGE_WORKTREE/` holds no note: without `NOTES_MERGE_PARTIAL` and
+`NOTES_MERGE_REF`, which the check refuses, no notes merge is in progress
+(inferred from what a notes merge writes; git's own handling of the empty
+directory was not run). The check also
 accepts, while empty, a `config.lock`: Claude Code's sandbox holds an
 empty, read-only `.git/config.lock` so that `.git/config` stays
 unwritable — it is the lockfile git makes to write `.git/config`, and
@@ -3809,6 +3850,12 @@ every call can run that way.
 - Deleting the sandbox's `config.lock` before a start: as with the other
   placeholders, the runner changes nothing in an agent's clone, and the
   sandbox makes the lock again on the next session.
+- Accepting `NOTES_MERGE_PARTIAL` and `NOTES_MERGE_REF` too, or
+  `NOTES_MERGE_WORKTREE` in either shape, on the guess that the sandbox
+  guards the whole notes-merge state: only the empty
+  `NOTES_MERGE_WORKTREE/` was seen (tsk-c55vrwabp6wc), and the check
+  accepts only shapes the sandbox is known to leave. A name it is later
+  seen to leave is added then, as `NOTES_MERGE_WORKTREE` was.
 - Accepting any `config.lock` content (tolerating a non-empty lock): git
   never reads, adopts or commits a pre-existing `config.lock` (it writes
   `.git/config` through a lock it creates itself with `O_CREAT|O_EXCL`
@@ -3935,15 +3982,17 @@ non-directory in that place, and anything else, is left.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** review of #1663, round 5 (a `.git` exchanged with a decoy under bwrap with the runner's deny list); review of #1683 (a learned private name and a decoy's clean filter under bwrap); reproduction on main 5abda036 for tsk-er1nymh4te1h, 2026-11-12: a decoy `.git` whose `maity/git` named a script made maity run it outside the sandbox (7 calls on `maity checkpoint`'s path); under Claude Code 2.1.322's own sandbox `mv .git` failed with EBUSY, because Claude Code bind-mounts the clone's `.git` itself
+**Source:** review of #1663, round 5 (a `.git` exchanged with a decoy under bwrap with the runner's deny list); review of #1683 (a learned private name and a decoy's clean filter under bwrap); reproduction on main 5abda036 for tsk-er1nymh4te1h, 2026-11-12: a decoy `.git` whose `maity/git` named a script made maity run it outside the sandbox (7 calls on `maity checkpoint`'s path); under Claude Code 2.1.322's own sandbox `mv .git` failed with EBUSY, because Claude Code bind-mounts the clone's `.git` itself; card tsk-er1nymh4te1h, the lead's decision of 2026-11-25 (the device added to the pin, the `.git` entry left writable), after a code reading of main e0ea4cf5 found the pin comparing the inode alone
 **See:** runner.md#under-the-runner-maitys-own-git-runs-only-in-the-runners-clone-and-only-while-it-is-plain — b4a8030d-3b24-4b76-81cc-a84b0ca84c11 — as of 2026-11-12
-**Revisit when:** a harness's sandbox denies renaming the clone's `.git` through a setting the runner sets, the runner starts sessions without setting `MAITY_GIT_INODE` or `MAITY_GIT_PRIVATE`, Codex's maity starts running outside its sandbox, maity's state directory starts reading `.git` through a descriptor, or git can be given a repository by descriptor instead of by path
+**Revisit when:** a harness's sandbox denies renaming the clone's `.git` through a setting the runner sets, the runner starts sessions without setting `MAITY_GIT_DEVICE`, `MAITY_GIT_INODE` or `MAITY_GIT_PRIVATE`, Codex's maity starts running outside its sandbox, maity's state directory starts reading `.git` through a descriptor, or git can be given a repository by descriptor instead of by path
 
-At a session's start the runner records the inode of the clone's `.git`
-(`MAITY_GIT_INODE`, read on the agents' side with `ls -di` where the
-runner cannot read it itself). Before maity starts git there, it opens
-the clone's root, then `.git` from it once, without following a link,
-and refuses a directory with another inode. It copies the refs (and,
+At a session's start the runner records the device and inode of the
+clone's `.git` (`MAITY_GIT_DEVICE`, `MAITY_GIT_INODE`; read on the
+agents' side with `stat`, GNU's `-c` or else BSD's and macOS's `-f`,
+where the runner cannot read them itself). Before maity starts git
+there, it opens the clone's root, then `.git` from it once, without
+following a link, and refuses a directory with another device or
+inode. It copies the refs (and,
 for Codex, reads the recorded git; for the others it is read from the
 runner's directory since 818828af) through that descriptor, so a `.git` renamed after
 the check is not read. git's own repository for the run (its
@@ -3952,10 +4001,13 @@ directory for the agent, which the sandbox hides (`MAITY_GIT_PRIVATE`);
 for Codex, whose maity runs inside its sandbox with the agent's own
 rights, the runner sets the value `clone`, and it stays in `.git/maity`,
 made through the descriptor. A directory inside the clone, a link or a
-relative path is refused. Without the inode or that variable maity runs
-no git: a session started by an older runner needs a restart. On
-Windows (local mode) no directory opens, so the inode is compared by
-name. The check of the clone (`_inspect`) and the objects
+relative path is refused. Without the device, the inode or that
+variable maity runs no git: a session started by an older runner needs
+a restart. A `.git` renamed or replaced is a different case: the pair is
+compared at every call, so maity refuses only as long as it stays so,
+and runs git again without a restart once the original directory is
+back. On Windows (local mode) no directory opens, so device and
+inode are compared by name. The check of the clone (`_inspect`) and the objects
 and index git reads still go through the name `.git`: under an exchange
 the check reads the replacement and passes on only a plain clone's keys,
 none of which starts a program, and objects and the index are data.
@@ -3967,14 +4019,30 @@ writable. A directory of the session's own named `.git` then held a
 rename today with a mount of its own, which the runner neither asks for
 nor checks, so an update of Claude Code could reopen it unnoticed.
 
+The device is compared too since tsk-er1nymh4te1h: an inode number names
+a directory only on its own file system, and the rest of maity already
+compares the pair where it checks that a name still holds the file it
+opened (`inclone`, the scratch operations, the log capture). The child
+card that brought the pin (tsk-g779xysypp4c) had named device and inode;
+the inode alone shipped because `ls -di` prints no device. `stat` prints
+both, at the cost of two spellings (GNU's `-c`, BSD's and macOS's `-f`).
+
 **Rejected alternatives:**
 - Denying writes to `.git`: the whole directory turns read-only, and
   commit, fetch and push write refs, the index, objects and logs there.
+- Denying writes to the `.git` entry itself, in the clone's root
+  (tsk-er1nymh4te1h), so that it cannot be renamed: a recursive deny on
+  `.git` blocks writes to everything under it, which breaks commit and
+  fetch (the alternative above), but a deny of the entry alone was never
+  tried in a real sandbox, so its effect on git is unknown
+  (unverified). Not chosen now for that reason; the pin already keeps
+  maity outside the sandbox off a renamed or replaced `.git`.
 - Making `.git` a mount point in the sandbox settings (a rename then
   fails with EBUSY): the settings cannot ask for it.
-- Recording the device too: `ls -di` prints only the inode on every
-  system, and a decoy cannot come from another file system, since a
-  directory cannot be renamed across one.
+- Recording the inode without the device (as shipped with #1683, until
+  tsk-er1nymh4te1h): `ls -di` prints only the inode on every system, and
+  a directory cannot be renamed across file systems. Given up because
+  the pair is what identifies a directory, and `stat` reads it.
 - Falling back to the name when the variable is missing: the fallback
   would be the hole again, for every session older than the runner.
 - git's own repository under a random name in `.git/maity`: git opens
@@ -4845,7 +4913,8 @@ Rejected as well: `MAITY_*` as a wildcard (the eighth round's first list,
 message 162185; review A1269 and message 162361). The runner, its
 supervisor and the placement set `MAITY_` variables that decide what
 maity trusts: `MAITY_PLACEMENT` switches on the placed session's rules,
-`MAITY_GIT_INODE` names the `.git` maity accepts, `MAITY_GIT_PRIVATE`
+`MAITY_GIT_DEVICE` and `MAITY_GIT_INODE` name the `.git` maity accepts
+(the device since tsk-er1nymh4te1h), `MAITY_GIT_PRIVATE`
 where git's private repository and the runner's records are,
 `MAITY_STATE_DIR` the state directory and with it the credential and the
 identity, `MAITY_SUPERVISOR` the session's mode at the hub,
@@ -5147,8 +5216,9 @@ last name with `O_NOFOLLOW` and `O_NONBLOCK` and reads only a regular file
 with one link. Reason: maity runs outside the sandbox, and any name maity
 looks up twice can point elsewhere the second time. This covers every
 directory and file below the clone's root. `.git` itself is the one
-`clonecheck.opened_git` checked against the inode the runner recorded at
-the start (#1683): the walk compares with that descriptor, and the
+`clonecheck.opened_git` checked against the device and inode the runner
+recorded at the start (#1683 pinned the inode, tsk-er1nymh4te1h added
+the device): the walk compares with that descriptor, and the
 runner's record is read through it, never through the name `.git` again
 (round 5 had exchanged `.git` for a decoy). Round 3 swapped a
 directory between a check and an open by name. Round 4 exchanged a
@@ -5184,8 +5254,10 @@ own `PATH`, where `maity gh` looks it up at each call (the entry
 Closed gap (review of #1663, round 5): under the harness's sandbox, code
 that can write the clone's root could exchange `.git` with a directory
 of its own, and with it the record that names gh. Since #1683
-(tsk-er1nymh4te1h) the runner records `.git`'s inode at launch and maity
-opens `.git` once from the root's descriptor, refusing a different one;
+(tsk-er1nymh4te1h) the runner records `.git`'s inode at launch (and its
+device since a later change on the same card), and maity opens `.git`
+once from the root's descriptor, refusing a directory with another
+device or inode;
 `maity gh` reads the record and compares the walk through that
 descriptor.
 
@@ -6097,9 +6169,9 @@ as the clone's. Walking down from the anchor refuses that swap.
   killed `sudo` leaves them waiting.
 - `dd` with `iflag=nofollow,nonblock`: macOS's `dd` has no `iflag`
   (aa29acab).
-- Comparing `.git`'s inode with the one seen at the listing (as
-  `MAITY_GIT_INODE` does for git's own runs): it covers `.git` alone,
-  not the other directories on the way to a log or the limit file, and
+- Comparing `.git`'s device and inode with those seen at the listing (as
+  `MAITY_GIT_DEVICE` and `MAITY_GIT_INODE` do for git's own runs): it
+  covers `.git` alone, not the other directories on the way to a log or the limit file, and
   leaves a window between the comparison and the open.
 - Walking from `/` without following any link: refuses ordinary
   configured paths that run through a link (`/home` on some systems,

@@ -415,7 +415,7 @@ nav.views a:focus-visible { outline-offset: -2px; }
 /* The tabs menu is drawn as the row's last tab (the owner, 2026-11-10, tsk-qa2r972wjsws): the tabs'
    pill, padding, size, colour and gap, on the tabs' line. It stays a menu button (no role=tab, no view
    behind it) and stands outside nav.switcher, so a drag or Alt+Shift+Arrow never moves it and on a phone
-   it keeps the row's right end while the tabs scroll. Its gap to the last tab is the tabs' own: the
+   it stays after the scrolling tabs, before the Explore link where present. Its gap to the last tab is the tabs' own: the
    negative margin cancels the row's column gap, and nav.switcher's end padding (the drop line's room) remains. */
 .switcher-row .tabs-menu-box { align-self: flex-start; margin-top: 8px; padding-bottom: 2px; margin-inline-start: calc(-1 * var(--switcher-row-gap)); }
 .tabs-menu-box .menu-button.tabs-menu { min-width: 0; min-height: 0; padding: 8px 10px; border: 1px solid var(--border);
@@ -486,7 +486,13 @@ nav.views a:focus-visible { outline-offset: -2px; }
 /* Positioned, so its visually-hidden words stay inside it: a session tab is not draggable, and
    only a[draggable="true"] is positioned above (390 px was 125 px wider without it). */
 .switcher a.outsider { border-style: dashed; position: relative; }
-.switcher .outsider-tab { display: inline-flex; align-items: center; gap: 2px; flex: none; }
+/* With its star, the box draws the dashed pill around both, star right of the name (tsk-q8s9dfjmjsxy). */
+.switcher .outsider-tab { display: inline-flex; align-items: center; gap: 0; flex: none;
+  border: 1px dashed var(--border); border-radius: 999px; padding-inline-end: 2px; }
+.switcher .outsider-tab > a.outsider { border: 0; padding-inline-end: 4px; }
+.switcher .outsider-tab:has(> a.outsider[aria-current="page"]) { border-color: var(--accent); background: var(--surface-2); }
+.switcher .outsider-tab > a.outsider[aria-current="page"] { background: transparent; }
+.switcher .outsider-tab > a.drop-after::after { inset-inline-end: -32px; }
 .switcher .tab-star { display: inline-flex; align-items: center; justify-content: center; min-width: 24px; min-height: 24px;
   padding: 0; border: 1px solid transparent; border-radius: 999px; background: transparent; color: var(--accent); cursor: pointer; }
 .switcher .tab-star:hover { border-color: var(--border); background: var(--surface-2); }
@@ -497,6 +503,31 @@ nav.views a:focus-visible { outline-offset: -2px; }
 .switcher .tab-star.unstarred { color: var(--muted); }
 .switcher .tab-star.unstarred .icon-fill { fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linejoin: round; }
 .switcher .tab-star.unstarred:hover { color: var(--accent); }
+/* Explore (js/app.js exploreLink, exploreTab; docs/api.md §16.9, "Explore, signed in"). The link stands
+   at the row's right end, after the tabs menu; in a row with it the tabs shrink and scroll instead of
+   wrapping, so the menu stays right after the last tab and the link at the end (tsk-r6bk2py3ezwg). */
+.switcher-row:has(> .explore-link) { flex-wrap: nowrap; }
+.switcher-row:has(> .explore-link) .switcher { max-width: none; }
+.switcher-row .explore-link { flex: none; align-self: flex-start; display: inline-flex; align-items: center; gap: 6px; margin-top: 8px;
+  margin-inline-start: auto; padding: 3px 10px; border: 1px solid transparent; border-radius: 999px; color: var(--muted);
+  text-decoration: none; font-size: 0.88rem; white-space: nowrap; }
+.switcher-row .explore-link:hover { color: var(--text); border-color: var(--border); }
+/* The Explore tab: a tab like the others, with its own × beside the link (a link holds no other control). */
+.switcher .explore-tab-box { display: inline-flex; align-items: center; gap: 2px; flex: none; }
+.switcher .tab-close { display: inline-flex; align-items: center; justify-content: center; min-width: 24px; min-height: 24px;
+  padding: 0; border: 1px solid transparent; border-radius: 999px; background: transparent; color: var(--muted); cursor: pointer; }
+.switcher .tab-close:hover { color: var(--text); border-color: var(--border); background: var(--surface-2); }
+.switcher .tab-close:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.explore-link .icon-fill, .switcher .explore-tab .icon-fill, .switcher .tab-close .icon-fill { fill: currentColor; }
+/* The Explore tab's page: one card per project, each one link. */
+.explore-list { list-style: none; margin: 16px 0 0; padding: 0; display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(min(16rem, 100%), 1fr)); }
+.explore-card { display: flex; align-items: center; gap: 10px; padding: 12px; border: 1px solid var(--border); border-radius: var(--radius);
+  color: var(--text); text-decoration: none; min-width: 0; }
+.explore-card:hover { border-color: var(--accent); }
+.explore-name { display: flex; flex-direction: column; min-width: 0; flex: 1 1 auto; }
+.explore-name strong, .explore-name small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.explore-name small { color: var(--muted); }
+.explore-mark { flex: none; padding: 0 6px; border: 1px solid var(--border); border-radius: 999px; color: var(--muted); font-size: 0.8rem; }
 /* The tabs menu marks the dashed tabs as such: the same dashed edge, small, after the name. */
 .tabs-menu-box .outsider-mark { margin-inline-start: 6px; padding: 0 6px; border: 1px dashed var(--border); border-radius: 999px;
   color: var(--muted); font-size: 0.8rem; }
@@ -1151,7 +1182,7 @@ pre.paste-line { white-space: pre-wrap; margin: 4px 0; }
 
 /* Two panes, like a messenger: the chats left, the open one right. On a
    phone the list is one screen and the chat another. */
-.chat-layout { --chat-h: calc(100dvh - 140px); display: grid; grid-template-columns: minmax(16rem, 24rem) minmax(0, 1fr); gap: 20px; align-items: start; }
+.chat-layout { --chat-h: calc(100dvh - 140px); --chat-min: 0px; display: grid; grid-template-columns: minmax(16rem, 24rem) minmax(0, 1fr); gap: 20px; align-items: start; }
 .chat-list-pane h2 { margin-top: 0; }
 .chat-list, .cross-chat-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
 /* Cross-project chats (§9.5): a list of their own under the project chats. */
@@ -1200,16 +1231,29 @@ pre.paste-line { white-space: pre-wrap; margin: 4px 0; }
 .avatars .dot { position: absolute; right: -2px; bottom: -2px; box-shadow: 0 0 0 2px var(--bg); }
 /* The open chat is a column of the screen's height (--chat-h, set by the
    view): its header and the composer stay, only the history scrolls. */
-.chat-layout.open .chat-pane { display: flex; flex-direction: column; height: var(--chat-h); min-height: 0; }
+/* Never shorter than its heading and composer (--chat-min, js/chat.js fit; tsk-ftrkm6wda8yq): only the
+   history shrinks; in the page's flow, where --chat-h comes out too small, the page scrolls rather than
+   cut the composer (full screen pins the pane and scrolls nothing, below). */
+.chat-layout.open .chat-pane { display: flex; flex-direction: column; height: var(--chat-h); min-height: var(--chat-min); }
 .chat-layout.open .chat-pane .messages { position: relative; flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; margin-bottom: 8px; padding-right: 4px; }
 .chat-layout.open .chat-pane .compose { flex: none; }
 .chat-layout.open .chat-list-pane { max-height: var(--chat-h); overflow-y: auto; }
 /* Full screen (js/chat.js fullScreen, tsk-fnch2yxp2kk1): the open chat covers the window, over the
    header, the list and the product line, on the page's own ground; the page under it does not
-   scroll. Its column is the window's height, whatever --chat-h says for the page. */
+   scroll. Its column is what is seen: the visual viewport, which js/chat.js writes while full (a
+   phone's keyboard shrinks it, 100dvh not: tsk-ftrkm6wda8yq), else the window. */
 html.chat-full body { overflow: hidden; }
-html.chat-full .chat-pane.chat-full-pane { position: fixed; inset: 0; z-index: 20; height: 100dvh; margin: 0;
+html.chat-full .chat-pane.chat-full-pane { --chat-full-top: 0px; --chat-full-h: 100dvh; position: fixed; inset: auto 0;
+  top: var(--chat-full-top); height: var(--chat-full-h); min-height: 0; z-index: 20; margin: 0;
   padding: 8px 12px; box-sizing: border-box; background: var(--bg); }
+/* What is seen above a keyboard can be shorter than the heading, the composer and its field at their
+   rows (tsk-ftrkm6wda8yq, 390 x 300): the history takes only the room left (basis 0, so it gives up all
+   of it first), then the field gives way down to one line; the composer's head and Send's row keep
+   theirs. While there is room, the history grows and the field keeps its rows. */
+html.chat-full .chat-pane.chat-full-pane .messages { flex: 1 1 0; }
+html.chat-full .chat-pane.chat-full-pane .compose { display: flex; flex-direction: column; flex: 0 1 auto; min-height: 0; }
+html.chat-full .chat-pane.chat-full-pane .compose > * { flex: none; }
+html.chat-full .chat-pane.chat-full-pane .compose > textarea { flex: 0 1 auto; min-height: 44px; }
 .chat-back { display: none; }
 .chat-none { margin-top: 3rem; text-align: center; }
 /* The pane being left, until the next one is drawn. */
@@ -1455,8 +1499,12 @@ a.button { display: inline-block; padding: 6px 14px; border-radius: var(--radius
 @media (max-width: 600px) {
   main { --main-pad: 12px; }
   /* The row wraps by the tabs' full width, so the tabs menu fell to a line of its own. Here the tabs
-     take the room the menu leaves and scroll; the menu keeps the row's right end (tsk-2a56j80p3p9h). */
+     take the room the menu leaves and scroll; the menu keeps the row's end, or the spot just before the
+     Explore link where it is shown (tsk-2a56j80p3p9h). */
   .switcher-row .switcher { flex: 1 1 0; }
+  /* Explore's link keeps its compass and its name for a screen reader, so the tabs keep their room. */
+  .switcher-row .explore-link { position: relative; min-width: 24px; min-height: 24px; padding: 3px 6px; }
+  .switcher-row .explore-link .explore-link-words { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   /* Two lines (tsk-dradpje67ak1): the tabs scroll in theirs, and the block is a line of its own under them,
      where the keyboard reaches it after them (no flex order: what is seen and Tab's order stay one). */
   .views-row { flex-wrap: wrap; }
@@ -1493,6 +1541,10 @@ a.button { display: inline-block; padding: 6px 14px; border-radius: var(--radius
   .send-with-keys { display: contents; }
   .send-keys { display: none; }
   .send-with-keys > button { flex: 1 1 100%; justify-self: stretch; }
+  /* A chat composer keeps Send in its row, at the end (tsk-ftrkm6wda8yq): a row of its own was the
+     composer's last line, and a phone's open keyboard left it out. */
+  .compose-actions > button, .compose-actions .send-with-keys > button { flex: 0 0 auto; min-height: 44px; }
+  .compose-actions > button[type="submit"], .compose-actions .send-with-keys > button { margin-inline-start: auto; }
   .runner-actions .separated { margin-inline-start: 0; }
   .toolbar h2 { flex-basis: 100%; }
   .profiles { grid-template-columns: 1fr; }

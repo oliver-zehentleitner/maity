@@ -58,7 +58,7 @@ from maity_hub.models import Strict, Written, markdown, title
 from maity_hub.namespace import ProjectRoute
 from maity_hub.policy import CLOSED_STATES, REASON_STATES, keep_the_why_effective
 from maity_hub.routes.members import AREA
-from maity_hub.scopes import in_admin_team, role_tokens
+from maity_hub.scopes import OUTSIDE, in_admin_team, role_tokens
 from maity_hub.views import (
     human_paused,
     paused,
@@ -117,6 +117,9 @@ class TaskCreate(Written):
     kind: str = "task"
     label: str | None = None
     needs: str | None = None
+    # §6.4: a boolean, checked by hand after the trust (`_open_to_outsiders`), so that a
+    # caller with trust `outside` is refused whatever the value.
+    open_to_outsiders: Any = None
     area: str | None = None
     status: str = "open"
     assigned_to: str | None = None
@@ -136,6 +139,7 @@ class TaskPatch(Written):
     body: str | None = markdown(default=None)
     label: str | None = None
     needs: str | None = None
+    open_to_outsiders: Any = None  # §6.4, as on `TaskCreate`
     area: str | None = None
     status: str | None = None
     approve: Literal["review", "test"] | None = None  # §6.4, under `reviewer_and_tester`
@@ -270,11 +274,12 @@ def _card(conn: Connection, card_id: str) -> Any:
 
 def _project_card(conn: Connection, mine: Membership | access.OutsideReader, card_id: str) -> Any:
     query = select(t.card).where(t.card.c.id == card_id, t.card.c.project_id == mine.project.id)
-    if isinstance(mine, access.OutsideReader):
+    if access.reads_from_outside(mine):
         from maity_hub import public_cards  # the public pages' modules, as `access` reads them
 
         # A not-done `security` card or one under a hold, as on the Board (§2.3), decided in
-        # the statement that reads the row (`public_cards.outside_clause`).
+        # the statement that reads the row (`public_cards.outside_clause`). Also the card a
+        # write of an agent with trust `outside` reads first: `not_found` for it as well.
         query = query.where(public_cards.outside_clause())
     row = conn.execute(query).first()
     if row is None:
@@ -287,7 +292,7 @@ def of_read_card(query: Any, mine: Membership | access.OutsideReader, card_id: A
     notes), for `mine`: for an outsider it reads nothing once the card is one the outsider
     does not read, decided in that statement (`public_cards.outside_card`), not only when
     `_project_card` read the card before it (READ COMMITTED)."""
-    if not isinstance(mine, access.OutsideReader):
+    if not access.reads_from_outside(mine):
         return query
     from maity_hub import public_cards  # the public pages' modules, as `access` reads them
 
@@ -574,6 +579,26 @@ def _check_label(label: str | None) -> None:
         raise invalid({"label": "unknown"})
 
 
+def _open_to_outsiders(mine: Membership, given: set[str], value: Any) -> bool | None:
+    """`open_to_outsiders` of a `POST …/tasks` or `PATCH …/tasks/{id}` body (§6.4): None when
+    the body does not name it. A caller with trust `outside` never sets it: a body that names
+    it, whatever the value, is `forbidden` `outside_trust`, before anything is written, so no
+    outsider opens cards to outsiders (§2.3 "Outside"). Otherwise a value that is not a
+    boolean is `invalid`."""
+    if "open_to_outsiders" not in given:
+        return None
+    if mine.trust == OUTSIDE:
+        raise ApiError(
+            403,
+            "forbidden",
+            "a card is opened to outsiders by the project's own members",
+            {"reason": "outside_trust"},
+        )
+    if not isinstance(value, bool):
+        raise invalid({"open_to_outsiders": "bool_type"})
+    return value
+
+
 def _check_needs(project: Any, needs: str | None) -> None:
     """The role a card is for (§6.4): it routes nothing, so it only has to be a role."""
     if needs is not None and needs not in (*cards.NEEDS, *project_roles.names(project)):
@@ -695,7 +720,7 @@ def list_tasks(
         # Keys first: the order's columns of every card the filters let through, the full
         # rows only for the page (tsk-ybc2ma72dzvq, hub/context/persistence.md).
         query = select(*KEYS).where(t.card.c.project_id == mine.project.id)
-        if isinstance(mine, access.OutsideReader):
+        if access.reads_from_outside(mine):
             from maity_hub import public_cards  # the public pages' modules, as `access` reads them
 
             # A not-done `security` card or one under a hold is in no list an outsider reads,
@@ -941,7 +966,7 @@ def _views(
         return []
     ids = [row.id for row in keys]
     full = select(t.card).where(t.card.c.id.in_(ids))
-    if isinstance(mine, access.OutsideReader):
+    if access.reads_from_outside(mine):
         from maity_hub import public_cards  # the public pages' modules, as `access` reads them
 
         full = full.where(public_cards.outside_clause())
@@ -1022,6 +1047,7 @@ CREATED = (
     "body",
     "label",
     "needs",
+    "open_to_outsiders",
     "status",
     "area",
     "assigned_to",
@@ -1051,6 +1077,63 @@ def create_task(slug: str, body: TaskCreate, request: Request, caller: AnyCaller
     return response
 
 
+def _check_visible_edges(conn: Connection, mine: Membership, body: TaskCreate | TaskPatch) -> None:
+    if not access.reads_from_outside(mine):
+        return
+    from maity_hub import public_cards
+
+    edges = {
+        "parent": [body.parent] if body.parent else [],
+        "depends_on": body.depends_on or [],
+        "ships_with": body.ships_with or [],
+        "related": body.related or [],
+    }
+    referenced = {card_id for targets in edges.values() for card_id in targets}
+    if not referenced:
+        return
+    visible = set(
+        conn.scalars(
+            select(t.card.c.id).where(
+                t.card.c.id.in_(referenced),
+                t.card.c.project_id == mine.project.id,
+                public_cards.outside_clause(),
+            )
+        )
+    )
+    for field, targets in edges.items():
+        if not visible.issuperset(targets):
+            if field == "parent":
+                raise invalid({"parent": "unknown_task"})
+            raise invalid(
+                {field: "unknown_task"}, "an edge names a card that is not in this project"
+            )
+
+
+def _edge_patch(conn: Connection, mine: Membership, card_id: str, body: TaskPatch) -> TaskPatch:
+    """A replacement edits the part of each relation the caller could see in its GET."""
+    if not access.reads_from_outside(mine):
+        return body
+    from maity_hub import public_cards
+
+    fields = {field for field in public_cards.EDGE_FIELDS if getattr(body, field) is not None}
+    if not fields:
+        return body
+    e = t.card_edge.c
+    hidden = conn.execute(
+        select(e.kind, e.to_card).where(
+            e.from_card == card_id,
+            e.kind.in_(fields),
+            ~public_cards.outside_card(e.to_card),
+        )
+    )
+    updated: dict[str, list[str]] = {}
+    for field, target in hidden:
+        if field not in updated:
+            updated[field] = list(getattr(body, field))
+        updated[field].append(target)
+    return body.model_copy(update=updated) if updated else body
+
+
 def create_card(
     conn: Connection,
     caller: Caller,
@@ -1066,6 +1149,7 @@ def create_card(
     observation of its one link, read before the transaction."""
     mine = membership(conn, caller, slug)
     mine.require("tasks:write")
+    open_to_outsiders = _open_to_outsiders(mine, body.model_fields_set, body.open_to_outsiders)
     if body.kind not in cards.KINDS:
         raise invalid({"kind": "unknown"})
     if body.kind == "setup":
@@ -1080,6 +1164,7 @@ def create_card(
     _check_area(body.area)
     mine = _locked(conn, mine)
     mine.require("tasks:write")  # again, on the row read under the lock
+    _check_visible_edges(conn, mine, body)
     _check_needs(mine.project, body.needs)
     state = _require_open_project(mine, body.reason)
     _refuse_paused(conn, mine.id, mine.instance)  # a paused agent opens no new work
@@ -1143,6 +1228,7 @@ def create_card(
                     mentions=found,
                     label=body.label,
                     needs=body.needs,
+                    open_to_outsiders=bool(open_to_outsiders),
                     status=status,
                     parent=body.parent,
                     area=body.area,
@@ -1173,7 +1259,12 @@ def create_card(
         )
     view = task_view(conn, card, fg)
     # One history entry for the creation, with the card's fields as created (§6.15).
-    fields = [name for name in CREATED if name in view and view[name] not in (None, [])]
+    # `open_to_outsiders` only when set: `false` is every card's default, as an unset label.
+    fields = [
+        name
+        for name in CREATED
+        if name in view and view[name] is not None and view[name] != [] and view[name] is not False
+    ]
     entry = history.created(
         conn, card_id, {name: view[name] for name in fields}, caller.actor(mine.id)
     )
@@ -1195,9 +1286,16 @@ def create_card(
     if body.parent is not None:
         _touch_parents(conn, mine, caller, {body.parent}, fg)
     _ping(conn, mine, caller, card, found, "body", before=[])
+    released = release_from_outside(conn, card_id, caller.actor(mine.id))
     releases.recheck(conn, mine.project.id, fg)  # a release may be ready from the start
-    watching = bool(card_watches.watching(conn, [card_id], mine.id))  # by its dependencies
-    return idempotency.Outcome(201, "task", card_id, {**view, "watching": watching})
+    if released or access.reads_from_outside(mine):
+        visible = task_views(conn, [_card(conn, card_id)], fg, mine)
+        if not visible:
+            return idempotency.Outcome(204, None, None, {})
+        view = visible[0]
+    else:
+        view["watching"] = bool(card_watches.watching(conn, [card_id], mine.id))
+    return idempotency.Outcome(201, "task", card_id, view)
 
 
 def _refuse_imported_twice(conn: Connection, mine: Membership, forge_url: str) -> None:
@@ -1223,9 +1321,9 @@ def patch_task(
     slug: str, card_id: str, body: TaskPatch, request: Request, caller: AnyCaller
 ) -> JSONResponse:
     fg = reader_of(request)
-    given = body.model_fields_set
 
     def action(conn: Connection) -> idempotency.Outcome:
+        given = body.model_fields_set
         mine = membership(conn, caller, slug)
         # An arbiter without `tasks:write`, an expert, still moves its contract's state
         # (§2.3 "The expert", §6.8); every other edit needs the scope, checked first.
@@ -1235,6 +1333,8 @@ def patch_task(
         mine = _locked(conn, mine)
         if given != {"contract"}:
             mine.require("tasks:write")  # again, on the row read under the lock
+        # Before every other check of the body: never a trust-`outside` caller's (§6.4).
+        open_to_outsiders = _open_to_outsiders(mine, given, body.open_to_outsiders)
         card = _project_card(conn, mine, card_id)
         new_assignee: int | None = None
         if "assigned_to" in given and body.assigned_to:
@@ -1287,6 +1387,17 @@ def patch_task(
             review_move and body.status == "done" and cards.two_signatures(mine.project)
         ):
             raise invalid({"approve": "not_applicable"})
+        if "parent" in given and access.reads_from_outside(mine):
+            from maity_hub import public_cards
+
+            if card.parent is None or not conn.scalar(
+                select(public_cards.outside_card(card.parent))
+            ):
+                if body.parent is not None:
+                    raise invalid({"parent": "no_visible_parent"})
+                given = given - {"parent"}
+        _check_visible_edges(conn, mine, body)
+        edge_patch = _edge_patch(conn, mine, card.id, body)
         values: dict[str, Any] = {}
         parent = body.parent if "parent" in given else card.parent
         wanted_status = body.status if body.status is not None else card.status
@@ -1308,7 +1419,7 @@ def patch_task(
                 card.id,
                 kind=card.kind,
                 parent=parent,
-                depends_on=body.depends_on,
+                depends_on=edge_patch.depends_on,
                 fields=graph_fields,
             )
         if "parent" in given:
@@ -1329,6 +1440,9 @@ def patch_task(
         if "needs" in given:
             _check_needs(mine.project, body.needs)
             values["needs"] = body.needs
+        if open_to_outsiders is not None:
+            # Set like `label`, by whoever edits the card; `false` declines nothing (§6.4).
+            values["open_to_outsiders"] = open_to_outsiders
         if "area" in given:
             _check_area(body.area)
             values["area"] = body.area
@@ -1345,24 +1459,26 @@ def patch_task(
             values["release_data"] = _patched_release(mine, card, body.release)
         if body.contract is not None:
             values["contract"] = _patched_contract(conn, mine, card, body.contract)
-        if body.depends_on is not None:
+        if edge_patch.depends_on is not None:
             _refuse_closed_release(card)
         before = (
             cards.edges(conn, card.id)
-            if body.depends_on is not None
-            or body.ships_with is not None
-            or body.related is not None
+            if edge_patch.depends_on is not None
+            or edge_patch.ships_with is not None
+            or edge_patch.related is not None
             else None
         )
-        depends_changed = body.depends_on is not None and cards.set_depends_on(
-            conn, mine.project.id, card.id, body.depends_on
+        depends_changed = edge_patch.depends_on is not None and cards.set_depends_on(
+            conn, mine.project.id, card.id, edge_patch.depends_on
         )
         partners: set[str] = set()
-        if body.ships_with is not None:
-            partners = cards.set_ships_with(conn, mine.project.id, card.id, body.ships_with)
+        if edge_patch.ships_with is not None:
+            partners = cards.set_ships_with(conn, mine.project.id, card.id, edge_patch.ships_with)
         related: set[str] = set()
-        if body.related is not None:
-            related = cards.set_symmetric(conn, mine.project.id, card.id, body.related, "related")
+        if edge_patch.related is not None:
+            related = cards.set_symmetric(
+                conn, mine.project.id, card.id, edge_patch.related, "related"
+            )
         if "status" in given and body.status is not None and body.status != card.status:
             if body.status not in cards.STATUSES:
                 raise invalid({"status": "unknown"})
@@ -1370,7 +1486,7 @@ def patch_task(
                 moderation.refuse_held(conn, "card", card.id, "remove")
             cards.check_transition(conn, mine, card, body.status)
             if body.status == "done":
-                cards.refuse_open_dependencies(conn, card.id)
+                cards.refuse_open_dependencies(conn, card.id, mine)
                 _refuse_unready(conn, card, fg, values.get("release_data"))
             signed = _signatures(conn, mine, card, body)
             if signed is not None:
@@ -1496,12 +1612,130 @@ def patch_task(
             ticker.on_release_done(
                 conn, mine.project, _card(conn, card.id), caller.actor(mine.id), mine.principal_id
             )
+        # A label, a status or an assignment that hides the card from an agent with trust
+        # `outside` that holds it or is assigned it ends both (§2.3 "Outside").
+        release_from_outside(conn, card.id, caller.actor(mine.id))
         releases.recheck(conn, mine.project.id, fg)
-        return idempotency.Outcome(
-            200, "task", card.id, task_view(conn, _card(conn, card.id), fg, mine)
-        )
+        return _edited_outcome(conn, card.id, fg, mine)
 
     return idempotency.run(engine_of(request), request, caller, action)
+
+
+def _edited_outcome(
+    conn: Connection, card_id: str, fg: Forge, mine: Membership
+) -> idempotency.Outcome:
+    """A committed change can move the resulting card outside the writer's view (§6.4)."""
+    visible = task_views(conn, [_card(conn, card_id)], fg, mine)
+    if not visible:
+        return idempotency.Outcome(204, None, None, {})
+    return idempotency.Outcome(200, "task", card_id, visible[0])
+
+
+def release_from_outside(conn: Connection, card_id: str, actor: Actor) -> bool:
+    """A card an agent with trust `outside` holds or is assigned that it no longer reads (§2.3
+    "Outside", §6.5): a `security` card not done, or one under a moderation hold
+    (`public_cards.outside_clause`). Its claim is released and its assignment ends, under the
+    project's lock, each as such a change always is: `task_released` with no reason, as any
+    release, and the `task_updated` of an assignment taken off. Taking the label or the hold
+    off later gives neither back. Called by every write that may hide a card from such an
+    agent: a card's creation and edit, a hold on it. True when anything changed."""
+    from maity_hub import public_cards  # the public pages' modules, as `access` reads them
+
+    seen = case((public_cards.outside_clause(), 1), else_=0).label("seen")
+    project_id = conn.scalar(select(t.card.c.project_id).where(t.card.c.id == card_id))
+    if project_id is None:
+        return False
+    project = lock_project(conn, project_id)
+    found = conn.execute(select(t.card, seen).where(t.card.c.id == card_id)).first()
+    if found is None or found.seen:
+        return False
+    parties = [m for m in (found.claim_holder, found.assigned_to) if m is not None]
+    if not parties:
+        return False
+    outside = set(
+        conn.execute(
+            select(t.membership.c.id).where(
+                t.membership.c.id.in_(parties), t.membership.c.trust == OUTSIDE
+            )
+        ).scalars()
+    )
+    if not outside:
+        return False
+    card = found
+    changed = False
+    if card.claim_holder in outside:
+        before = card
+        old_holder = (card.claim_holder, card.claim_instance)
+        conn.execute(
+            update(t.card)
+            .where(t.card.c.id == card.id)
+            .values(
+                claim_holder=None,
+                claim_instance=None,
+                claim_session_id=None,
+                claim_since=None,
+                lease_until=None,
+                status="open" if card.status not in cards.CLOSED else card.status,
+                status_before_block=None,
+                blocked_by_request=None,
+                updated_at=clock.now(),
+                changed_by_credential=None,
+                changed_via=None,
+            )
+        )
+        card = _card(conn, card.id)
+        emit(
+            conn,
+            project.id,
+            "task_released",
+            audience(conn, card, old_holder),
+            {"holder": None, "lease_until": None, "project_state": project.state, "reason": None},
+            actor=actor,
+            subject=("task", card.id),
+        )
+        if card.status != before.status:
+            status_moved(conn, card, project.state, actor)
+        takeovers.reconcile(conn, card.id, actor, decided=False)
+        changed = True
+    if card.assigned_to in outside:
+        before = card
+        unassigned = {"assigned_to": None, "assigned_instance": None}
+        conn.execute(
+            update(t.card)
+            .where(t.card.c.id == card.id)
+            .values(
+                **unassigned,
+                updated_at=clock.now(),
+                changed_by_credential=None,
+                changed_via=None,
+            )
+        )
+        card = _card(conn, card.id)
+        entries = history.record(
+            conn,
+            before,
+            unassigned,
+            actor,
+            shown={"assigned_to": (principal_id(conn, before.assigned_to), None)},
+        )
+        seq = emit(
+            conn,
+            project.id,
+            "task_updated",
+            audience(conn, card, before.assigned_to),
+            {
+                "assigned_to": None,
+                "id": card.id,
+                "fields": ["assigned_to"],
+                "history": entries,
+                "project_state": project.state,
+            },
+            actor=actor,
+            subject=("task", card.id),
+        )
+        history.stamp(conn, entries, seq)
+        changed = True
+    return changed
 
 
 def cancel_by_moderation(conn: Connection, card_id: str, actor: Actor, fg: Forge) -> None:
@@ -1596,6 +1830,14 @@ def _ping(
     )
 
 
+def _require_visible_to_assignee(conn: Connection, card_id: str, target: Any) -> None:
+    if target.trust == OUTSIDE:
+        from maity_hub import public_cards
+
+        if not conn.scalar(select(public_cards.outside_card(card_id))):
+            raise not_found()
+
+
 # --- claims and leases (§6.5) ----------------------------------------------------------
 
 
@@ -1638,6 +1880,7 @@ def claim(
         # An outsider's agent claims nothing itself (§6.5, "Until the claim request is built"):
         # after the scope, the project's state and the card's existence, before its state.
         outsiders.refuse_taking(holder_row, mine)
+        _require_visible_to_assignee(conn, card.id, holder_row)
         _refuse_paused(conn, holder_id, instance)  # also when an admin claims on its behalf
         if card.claim_holder is not None:
             raise _already_claimed(conn, card)
@@ -1960,6 +2203,7 @@ def assign(
             _require_assigner(conn, mine, assignee, card.assigned_to, card.claim_holder)
         availability.refuse_coordinator_out(conn, mine, "new assignments")  # after the right
         assignee_row = conn.execute(select(t.membership).where(t.membership.c.id == assignee)).one()
+        _require_visible_to_assignee(conn, card.id, assignee_row)
         takes = card.claim_holder is not None and card.claim_holder != assignee
         if body.instance is not None:
             instances.require_active(conn, assignee_row, body.instance, "instance")
@@ -2245,7 +2489,7 @@ def report(
                 )
             # Closing by report is a review too: not of another instance's work (§6.18).
             cards.refuse_same_team_review(mine, card)
-            cards.refuse_open_dependencies(conn, card.id)
+            cards.refuse_open_dependencies(conn, card.id, mine)
             _refuse_unready(conn, card, fg)
         # Every report clears the signatures; under `reviewer_and_tester` a `done` fills at
         # most the caller's own on the new revision and never closes (§6.4, §6.6). A caller
@@ -2381,13 +2625,13 @@ def report(
             ticker.on_release_done(
                 conn, mine.project, card, caller.actor(mine.id), mine.principal_id
             )
+        if card.status != status_before:
+            release_from_outside(conn, card.id, caller.actor(mine.id))
         releases.recheck(conn, mine.project.id, fg)
-        return idempotency.Outcome(
-            200, "task", card.id, task_view(conn, _card(conn, card.id), fg, mine)
-        )
+        return _edited_outcome(conn, card.id, fg, mine)
 
     response = idempotency.run(engine_of(request), request, caller, action)
-    if response.status_code == 200 and request.app.state.probe is not None:
+    if response.status_code in (200, 204) and request.app.state.probe is not None:
         request.app.state.probe.report_stored(card_id)  # after the commit, never awaited
     return response
 

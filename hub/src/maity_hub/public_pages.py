@@ -24,13 +24,14 @@ from fastapi import Request, Response
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import Connection, Engine, delete, insert, literal, select
 
-from maity_hub import clock, worker_runs
+from maity_hub import clock, render, worker_runs
 from maity_hub import tables as t
 from maity_hub.auth import caller as auth_caller
 from maity_hub.config import Settings
 from maity_hub.db import xact_lock
 from maity_hub.deps import engine_of, origin_of, settings_of
 from maity_hub.errors import not_found, rate_limited
+from maity_hub.mail.address import take_lock
 from maity_hub.ratelimit import Limiter
 
 log = logging.getLogger(__name__)
@@ -81,6 +82,32 @@ def stamped(digest: str) -> str:
 
 def etag_of(body: str) -> str:
     return '"' + hashlib.sha256(body.encode()).hexdigest() + '"'
+
+
+def _target_lock(conn: Connection, name: str) -> None:
+    """Hold the lock of one target's pages (`public_page:{kind}:{target_id}`) until the
+    transaction ends, on every engine (tsk-pwqhg0d0tznn, hub/context/public-pages.md): a render
+    that read the target before a takedown writes its page before the takedown's delete, never
+    after it. PostgreSQL: the advisory lock of `xact_lock`. MySQL/MariaDB, where `xact_lock` is
+    a no-op and one process still renders from several threads: the target's row of
+    `public_page_lock`, locked `FOR UPDATE`. The row is looked for first, since it exists for
+    every target rendered before: one locking read, without the failed insert in a savepoint
+    (and the shared lock its duplicate check takes) of `take_lock`, which makes only a row not
+    there yet, as it makes the per-address lock's. Released at commit or rollback, never left
+    on a pooled connection; a wait past `innodb_lock_wait_timeout` fails the transaction (1205,
+    not retried), which then rolls back: it writes nothing and takes no stored page off.
+    SQLite: nothing to take, it writes one transaction at a time."""
+    if conn.dialect.name in ("mysql", "mariadb"):
+        key = hashlib.sha256(name.encode()).hexdigest()
+        held = conn.execute(
+            select(t.public_page_lock.c.digest)
+            .where(t.public_page_lock.c.digest == key)
+            .with_for_update()
+        ).first()
+        if held is None:
+            take_lock(conn, t.public_page_lock, key)
+        return
+    xact_lock(conn, name)
 
 
 def put(
@@ -294,6 +321,42 @@ class Page:
     indexed: bool = True  # false: `noindex` and out of the sitemap (§16.9)
 
 
+def page(
+    hub: Settings,
+    path: str,
+    title: str,
+    content: str,
+    inputs: Sequence[str],
+    view: str,
+    data: dict[str, Any],
+    *,
+    indexed: bool = True,
+    styled: bool = False,
+) -> Page:
+    """The `Page` of one address from its `content` (the kinds' common ending): the document in
+    the frame's markup with the canonical link on the hub's public address, `lastmod` now, and
+    `inputs` as the digest of what the page was made from: `path`, the `inputs` given (what
+    shows in the page besides its `content`, the name for one) and `content`, joined by NUL.
+    `styled` is for a page not in the dashboard's design (`render.page_document`)."""
+    digest = hashlib.sha256("\x00".join((path, *inputs, content)).encode())
+    return Page(
+        path=path,
+        body=render.page_document(
+            lang="en",
+            title=title,
+            canonical=f"{hub.public_url.rstrip('/')}{path}",
+            content=content,
+            indexed=indexed,
+            styled=styled,
+        ),
+        inputs=digest.hexdigest(),
+        lastmod=clock.now(),
+        view=view,
+        data=data,
+        indexed=indexed,
+    )
+
+
 class Targets(Protocol):
     """Which targets of a kind exist, by id in order; with `among`, only those of these ids,
     by the same rule: a keyed read for one candidate instead of the whole list."""
@@ -355,9 +418,10 @@ def refresh(
     rendered one of them, which this process never replaces. A render that fails takes
     the target's pages off: nothing stale is served for the sake of a bug. `fresh`: also
     replaced when only the HTML differs, as after a new version rendering the same inputs
-    (`startup`). Under a lock per target, so two processes rendering it together (every pod
-    at its start, a change and the worker) write it one after the other."""
-    xact_lock(conn, f"public_page:{kind}:{target_id}")
+    (`startup`). Under a lock per target (`_target_lock`), so two processes or threads rendering
+    it together (every pod at its start, a change, the worker and the snapshot thread) write it
+    one after the other, and a takedown waits for a render that read the target before it."""
+    _target_lock(conn, f"public_page:{kind}:{target_id}")
     existing = {
         row.path: row
         for row in conn.execute(
@@ -468,7 +532,7 @@ def touch(
         # running writes its page before this delete, not after it; in one order, so two writers
         # cannot each wait for the other.
         for other, other_id in sorted(set(targets)):
-            xact_lock(conn, f"public_page:{other}:{other_id}")
+            _target_lock(conn, f"public_page:{other}:{other_id}")
             remove(conn, other, other_id)
     _render_after_commit(conn, hub, targets)
 
@@ -540,7 +604,7 @@ def render_all(
         # cards), and a batch held here could close a cycle with it.
         for target_id in sorted(gone):
             with engine.begin() as conn:
-                xact_lock(conn, f"public_page:{kind.name}:{target_id}")
+                _target_lock(conn, f"public_page:{kind.name}:{target_id}")
                 if not kind.targets(conn, [target_id]):  # keyed: one candidate, not every target
                     remove(conn, kind.name, target_id)
     if skipped:

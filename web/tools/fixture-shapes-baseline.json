@@ -107,6 +107,7 @@
  "GET /projects/{project}/tasks": [
   ".items[].approvals: the fixture leaves it out",
   ".items[].assigned_instance: the fixture leaves it out",
+  ".items[].claim_requests: the fixture leaves it out",
   ".items[].cover: the fixture leaves it out",
   ".items[].imported_from: the fixture leaves it out",
   ".items[].jour_fixe: the fixture leaves it out",
@@ -114,12 +115,14 @@
   ".items[].mentions[].instance: the fixture leaves it out",
   ".items[].mentions[].name: the fixture leaves it out",
   ".items[].needs: the fixture leaves it out",
-  ".items[].notes: the fixture leaves it out"
+  ".items[].notes: the fixture leaves it out",
+  ".items[].open_to_outsiders: the fixture leaves it out"
  ],
  "GET /projects/{project}/tasks/{task}": [
   ".approvals: the fixture leaves it out",
   ".assigned_instance: the fixture leaves it out",
   ".children: the fixture leaves it out",
+  ".claim_requests: the fixture leaves it out",
   ".cover: the fixture leaves it out",
   ".imported_from: the fixture leaves it out",
   ".jour_fixe: the fixture leaves it out",
@@ -128,11 +131,13 @@
   ".mentions[].name: the fixture leaves it out",
   ".needs: the fixture leaves it out",
   ".notes: the fixture leaves it out",
+  ".open_to_outsiders: the fixture leaves it out",
   ".rank: the fixture leaves it out"
  ],
  "GET /projects/{project}/tasks?status=all": [
   ".items[].approvals: the fixture leaves it out",
   ".items[].assigned_instance: the fixture leaves it out",
+  ".items[].claim_requests: the fixture leaves it out",
   ".items[].cover: the fixture leaves it out",
   ".items[].imported_from: the fixture leaves it out",
   ".items[].jour_fixe: the fixture leaves it out",
@@ -140,7 +145,8 @@
   ".items[].mentions[].instance: the fixture leaves it out",
   ".items[].mentions[].name: the fixture leaves it out",
   ".items[].needs: the fixture leaves it out",
-  ".items[].notes: the fixture leaves it out"
+  ".items[].notes: the fixture leaves it out",
+  ".items[].open_to_outsiders: the fixture leaves it out"
  ],
  "GET /requests": [
   ".items[].action: the fixture leaves it out",
@@ -186,11 +192,13 @@
  "POST /projects/{project}/tasks": [
   ".approvals: the fixture leaves it out",
   ".assigned_instance: the fixture leaves it out",
+  ".claim_requests: the fixture leaves it out",
   ".cover: the fixture leaves it out",
   ".imported_from: the fixture leaves it out",
   ".jour_fixe: the fixture leaves it out",
   ".links: the fixture leaves it out",
   ".notes: the fixture leaves it out",
+  ".open_to_outsiders: the fixture leaves it out",
   ".rank: the fixture leaves it out",
   ".watching: the fixture leaves it out"
  ]

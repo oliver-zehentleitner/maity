@@ -244,6 +244,7 @@ window.Maity = window.Maity || {};
       return i.presence === "online" ? M.t("join.instance.online", { label: i.label || i.id, cards })
         : M.t("join.instance.seen", { label: i.label || i.id, ago: formatAgo(i.last_seen_at, M.api.now()), cards });
     };
+    let stewardField = null; // drawn with the role picker below
     // An agent already here: the membership's fields, which its join and its start on a runner
     // leave out, are shown as they are, off, where they always stand, with the way to Manage
     // (tsk-6w4qckma672q). What was typed for another agent comes back when one is chosen again.
@@ -348,6 +349,8 @@ window.Maity = window.Maity || {};
       reportsOptions();
       takeOverOptions();
       showMembership(m);
+      // Shown only for a new membership whose role is steward.
+      if (stewardField) stewardField.hidden = !!m || role.value !== "steward";
       // Reports to stands in one place: the new membership's boss, or the boss of the agent
       // already here, which its owner changes here (a PATCH before the join or the start).
       if (reportsField) reportsField.hidden = !!m;
@@ -416,7 +419,7 @@ window.Maity = window.Maity || {};
     const fillRoles = () => {
       const wanted = shownMember ? shownMember.role : role.value || fallback;
       const offered = outside ? outside.roles.slice()
-        : (own ? M.trust.MEMBER_ROLES : M.trust.ROLES.filter((r) => r !== "proxy" || (ctx.isOwner && trust.value === "admin")))
+        : M.trust.offered(ctx, own ? M.trust.MEMBER_ROLES : M.trust.ROLES.filter((r) => r !== "proxy" || (ctx.isOwner && trust.value === "admin")))
           .concat(ownRoles.map((x) => x.name));
       // A membership's role shown although this form would not give it.
       if (shownMember && wanted && !offered.includes(wanted)) offered.push(wanted);
@@ -435,12 +438,27 @@ window.Maity = window.Maity || {};
       if (!subagentsTouched) subagents.checked = SUBAGENT_ROLES.includes(role.value);
       english.disabled = !subagents.checked;
     };
+    // A steward's "Expert for" and "Sources" (§2.3 "The steward", §6.2): a join names neither,
+    // and the hub fills them for the steward; they are shown as they will be, and changed in
+    // the member's Manage once it joined.
+    stewardField = h("div", { class: "field wide join-steward", hidden: true },
+      h("p", { class: "join-steward-for" }, h("strong", null, M.t("members.expert.for.label")), " ", h("code", null, M.trust.STEWARD_EXPERT_FOR)),
+      h("p", { class: "join-steward-sources" }, h("strong", null, M.t("members.expert.sources.label")), " ", h("code", null, M.trust.STEWARD_SOURCES.join(", "))),
+      h("p", { class: "hint" }, M.t("join.steward.hint")));
+    const followSteward = () => {
+      const m = agentSelect.value ? memberOf(agentSelect.value) : null;
+      stewardField.hidden = !!m || role.value !== "steward";
+    };
+    agentSelect.addEventListener("change", followSteward);
     subagents.addEventListener("change", () => { subagentsTouched = true; followRole(); });
     role.addEventListener("change", followRole);
+    role.addEventListener("change", followSteward);
+    trust.addEventListener("change", followSteward);
     trust.addEventListener("change", fillRoles);
     trust.addEventListener("change", followRole);
     fillRoles();
     followRole();
+    followSteward();
     const subagentsField = h("div", { class: "field wide join-subagents" },
       h("div", { class: "join-offer" }, subagents, " ", h("label", { for: "join-subagents" }, M.t("join.subagents.label"))),
       h("p", { class: "hint", id: "join-subagents-hint" }, M.t("join.subagents.hint")),
@@ -979,6 +997,7 @@ window.Maity = window.Maity || {};
         membershipNote,
         outside ? null : h("div", { class: "field" }, h("label", { for: "join-trust" }, M.t("members.edit.trust")), trust),
         h("div", { class: "field" }, h("label", { for: "join-role" }, M.t("members.edit.role")), role, roleHelp),
+        stewardField,
         reportsField,
         memberReportsField,
         outside ? h("p", { class: "hint field wide join-outside-hint" }, M.t("join.field.outsider_hint"))

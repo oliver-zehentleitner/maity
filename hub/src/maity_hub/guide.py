@@ -83,6 +83,14 @@ ROLE: dict[str, str] = {
         "or the contract's §. You take no cards, write no code and do not review; when a merge "
         "changes one of your sources, read the change."
     ),
+    "steward": (
+        "You keep the project's reasoning complete: answer why questions from `context/` and "
+        "name the entry of each answer. After each merge, check for a decision without an entry"
+        " and ask its author; follow up on open entries until each is done or someone has said "
+        "why not, and send your lead a short status. Every member writes its own entries: ask, "
+        "with a note on the card first, do not write them for others, and never take or change "
+        "another member's card."
+    ),
     "manager": (
         "You lead the members who report to you: you hand out and take back their cards, set "
         "their areas and pause them, within your reach only; you carry their questions up to your"
@@ -140,6 +148,12 @@ DESCRIPTION: dict[str, str] = {
         "line, or §): the requests addressed to it or to `role:expert` (§7). It takes no cards, "
         "writes no code and does not review; a merge that changes one of its declared sources "
         "(`expert_sources`, §6.2) wakes it (§17.3; below)"
+    ),
+    "steward": (
+        "keeps the project's reasoning complete: answers why questions across `context/` with "
+        "the source, the requests addressed to it or to `role:steward` (§7), and follows up on "
+        "what is open until each item is done or someone has said why not; every member still "
+        "writes its own entries, and the steward is no substitute for that (below)"
     ),
 }
 

@@ -86,7 +86,7 @@ window.Maity = window.Maity || {};
   // where optional; a group an object or absent; each list a list of
   // objects whose own fields hold the same; lines and counters lists. What
   // the values say is the hub's to check; only their kind decides here.
-  const isObject = (x) => !!x && typeof x === "object" && !Array.isArray(x);
+  const { isObject } = M.jsonIo;
   function fieldsOk(fields, obj) {
     return fields.every((x) => {
       const v = obj[x.key];
@@ -718,9 +718,9 @@ window.Maity = window.Maity || {};
       hint: M.t("jsonio.legal.hint", { page: key }),
       body: () => draft,
       load: async (data, io) => {
-        const langs = M.jsonIo.isObject(data) && Object.hasOwn(data, key) ? data[key] : data;
-        const tags = M.jsonIo.isObject(langs) ? Object.keys(langs) : [];
-        if (!tags.length || tags.length > 10 || !tags.every((t) => LANG.test(t) && M.jsonIo.isObject(langs[t])
+        const langs = isObject(data) && Object.hasOwn(data, key) ? data[key] : data;
+        const tags = isObject(langs) ? Object.keys(langs) : [];
+        if (!tags.length || tags.length > 10 || !tags.every((t) => LANG.test(t) && isObject(langs[t])
           && typeof langs[t].title === "string" && typeof langs[t].markdown === "string")) {
           io.fail(M.t("jsonio.not_loaded"), { message: M.t("jsonio.legal.shape") });
           return false;
@@ -739,7 +739,7 @@ window.Maity = window.Maity || {};
         status.done();
         append(status.el, h("span", { class: "ok" }, M.t("jsonio.loaded")));
         // A file of several pages loads only this one (a PATCH changes one page): the others named.
-        const others = PAGES.map(([k]) => k).filter((k) => k !== key && M.jsonIo.isObject(data) && Object.hasOwn(data, k));
+        const others = PAGES.map(([k]) => k).filter((k) => k !== key && isObject(data) && Object.hasOwn(data, k));
         if (others.length) append(status.el, " ", h("span", { class: "muted" }, M.t("jsonio.legal.others", { pages: M.fmt.list(others) })));
         return true;
       },

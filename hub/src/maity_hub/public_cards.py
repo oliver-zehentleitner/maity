@@ -17,32 +17,46 @@ A public project's outsider reading the member routes (§2.3) reads the cards by
 
 from __future__ import annotations
 
-import hashlib
-from collections.abc import Collection
+from collections.abc import Collection, Sequence
 from typing import Any
 
-from sqlalchemy import Connection, and_, case, func, or_, select
+from sqlalchemy import Connection, Select, and_, case, func, or_, select
 
-from maity_hub import clock, moderation, namespace, public_design, public_pages, render
+from maity_hub import clock, moderation, namespace, public_design, public_pages
 from maity_hub import tables as t
 from maity_hub.cards import CLOSED
+from maity_hub.chunks import chunks
 from maity_hub.config import Settings
-from maity_hub.public_project_views import _holder, members
+from maity_hub.public_members import holder_data, members
 from maity_hub.public_projects import served
 
 KIND = "card"
 
 
 def shown(card: Any) -> bool:
-    """Whether the card itself may stand on a public page: a `security` card only once it is
-    done (§16.9). The project and the hold are checked by the caller."""
+    """Whether the card itself may stand on a public page (§16.9): every card but one labelled
+    `security`, in any case, that is not `done`; no label and the empty label are not
+    `security`. The project and the hold are checked by the caller.
+
+    The rule on a row already read (the card's page, the snapshot's ticker); `shown_clause`
+    is its twin for a query, and the two change together: `tests/test_public_board_rule.py`
+    holds them to the same answer on every status and label of its matrix."""
     return (card.label or "").lower() != "security" or card.status == "done"
 
 
 def shown_clause(card: Any = t.card) -> Any:
     """`shown` as a condition on `card` (the table or an alias of it), for a query of cards:
-    what the Board's columns leave out (`public_project_views.board_rows`), and what a public
-    project's outsider does not read through the member routes either (§2.3)."""
+    what the Board's columns leave out (`public_project_views.board_rows`, which reads it
+    rather than a rule of its own), and what a public project's outsider does not read through
+    the member routes either (§2.3, `outside_clause`).
+
+    The same answer as `shown`, spelled for SQL: `done`, or no label (NULL is named, since
+    `lower(NULL) != 'security'` is NULL, not true), or a label that lowered is not `security`;
+    never NULL itself (`status` is NOT NULL, and a NULL `label` is the second term), so its
+    negation is exactly the rest. The two agree on the labels the hub writes: its card routes
+    accept only `cards.LABELS` (`fix`, `feature`, `chore`) or none, so no blank and nothing
+    outside ASCII, which the parity test checks on the engine it runs on; beyond those an
+    engine's `lower` or comparison may differ from Python's."""
     c = card.c
     return or_(c.status == "done", c.label.is_(None), func.lower(c.label) != "security")
 
@@ -136,10 +150,11 @@ def outside_views(conn: Connection, views: list[dict[str, Any]]) -> list[dict[st
     referenced: set[str] = set()
     for view in views:
         for name in EDGE_FIELDS:
-            referenced.update(view[name])
-        if view["parent"]:
+            if isinstance(view.get(name), list):
+                referenced.update(view[name])
+        if isinstance(view.get("parent"), str):
             referenced.add(view["parent"])
-        if view["release"]:
+        if isinstance(view.get("release"), dict) and not view["release"].get("redacted"):
             referenced |= _release_ids(view["release"])
     c = t.card.c
     seen = case((outside_clause(), 1), else_=0).label("seen")
@@ -149,7 +164,7 @@ def outside_views(conn: Connection, views: list[dict[str, Any]]) -> list[dict[st
         )
     ).all()
     kept = {row.id for row in rows if row.seen}
-    hidden = {row.id for row in rows if not row.seen and row.id in referenced}
+    hidden = referenced - kept
     children = {card: {"open": 0, "total": 0} for card in own}
     for row in rows:
         if row.seen and row.parent in children:
@@ -161,11 +176,13 @@ def outside_views(conn: Connection, views: list[dict[str, Any]]) -> list[dict[st
             continue
         view = dict(view)
         for name in EDGE_FIELDS:
-            view[name] = [card for card in view[name] if card not in hidden]
-        if view["parent"] in hidden:
+            if isinstance(view.get(name), list):
+                view[name] = [card for card in view[name] if card in kept]
+        if isinstance(view.get("parent"), str) and view["parent"] in hidden:
             view["parent"] = None
-        view["children"] = children[view["id"]]
-        if view["release"]:
+        if "children" in view:
+            view["children"] = children[view["id"]]
+        if isinstance(view.get("release"), dict) and not view["release"].get("redacted"):
             view["release"] = _release_without(view["release"], hidden)
         shaped.append(view)
     return shaped
@@ -231,19 +248,19 @@ def render_card(conn: Connection, hub: Settings, card_id: str) -> list[public_pa
         "title": card.title,
         "status": card.status,
         "label": card.label,
-        "holder": _holder(person, gone) if card.claim_holder is not None else None,
+        "holder": holder_data(person, gone) if card.claim_holder is not None else None,
         "body": body,
         "notes": [
             {
                 "id": note.id,
-                "author": _holder(*author(note)),
+                "author": holder_data(*author(note)),
                 "body": None if note.redacted else note.body or "",
                 "state": note.state,
                 "created_at": clock.rfc3339(note.created_at),
                 "redacted": bool(note.redacted),
                 "edited": (
                     {
-                        "by": _holder(*editor(note)),
+                        "by": holder_data(*editor(note)),
                         "at": note.edited["at"],
                         "reason": note.edited.get("reason"),
                     }
@@ -256,21 +273,15 @@ def render_card(conn: Connection, hub: Settings, card_id: str) -> list[public_pa
     }
     # The HTML in the dashboard's design, from `data` alone (`public_design.page`).
     content = public_design.page(KIND, data, path)
-    digest = hashlib.sha256("\x00".join((path, project.name, content)).encode())
     return [
-        public_pages.Page(
-            path=path,
-            body=render.page_document(
-                lang="en",
-                title=f"{card.title} ({card.id}) · {project.name}",
-                canonical=f"{hub.public_url.rstrip('/')}{path}",
-                content=content,
-                styled=False,
-            ),
-            inputs=digest.hexdigest(),
-            lastmod=clock.now(),
-            view="card",
-            data=data,
+        public_pages.page(
+            hub,
+            path,
+            f"{card.title} ({card.id}) · {project.name}",
+            content,
+            (project.name,),
+            KIND,
+            data,
         )
     ]
 
@@ -284,36 +295,77 @@ def of_project(conn: Connection, project_id: str) -> list[str]:
     )
 
 
-def naming(conn: Connection, project_id: str, principal_id: str) -> list[str]:
-    """The cards of one project whose page names a member (`render_card`): as its claim holder,
-    a note's author or a note's latest editor, under any membership the principal held there."""
-    c, n, m = t.card.c, t.card_note.c, t.membership.c
-    held = select(m.id).where(
-        m.project_id == project_id, or_(m.agent_id == principal_id, m.human_id == principal_id)
-    )
-    ids = set(conn.execute(held).scalars())
-    if not ids:
-        return []
-    found = set(
-        conn.execute(
-            select(c.id).where(c.project_id == project_id, c.claim_holder.in_(ids))
+def held_or_noted_by(
+    conn: Connection, who: Collection[int] | Select[Any], where: Sequence[Any] = ()
+) -> set[str]:
+    """The cards whose page names one of the memberships `who` as its claim holder or as the
+    author of a note (`render_card`), among the cards that meet every condition of `where`
+    (on `t.card`: which project's cards count).
+
+    `who` is either a frozen set of membership ids (`naming`: the principal's memberships
+    in that project, already read once) or a SELECT of ids (`pages_of_member`: the person's
+    active memberships, re-evaluated in each of the two statements as the former joins were).
+    A frozen collection is cut at `chunks.CHUNK`. A SELECT is used as a subquery, with no
+    bound list to cut. No statements when a frozen collection is empty."""
+    c, n = t.card.c, t.card_note.c
+
+    def once(part: Any) -> set[str]:
+        held = conn.execute(select(c.id).where(c.claim_holder.in_(part), *where)).scalars()
+        noted = conn.execute(
+            select(n.card_id).join(t.card, c.id == n.card_id).where(n.author.in_(part), *where)
         ).scalars()
-    )
-    found |= set(
-        conn.execute(
-            select(n.card_id)
-            .join(t.card, c.id == n.card_id)
-            .where(c.project_id == project_id, n.author.in_(ids))
-        ).scalars()
-    )
-    # The editor is in JSON: the few edited notes of the project are matched here.
+        return set(held) | set(noted)
+
+    if isinstance(who, Select):
+        return once(who)
+    if not who:
+        return set()
+    found: set[str] = set()
+    for part in chunks(who):
+        found |= once(part)
+    return found
+
+
+def edited_by(conn: Connection, who: Collection[int], where: Sequence[Any] = ()) -> set[str]:
+    """The cards among those meeting `where` with a note whose latest editor is one of the
+    memberships `who` (a frozen set: `naming`'s ids, or `pages_of_member`'s mine).
+
+    The editor is in JSON (`card_note.edited["by"]`), whose comparison differs between the
+    engines in SQL: the edited notes of those cards are read once for this `where`, and
+    matched here, as a Python set. The caller cuts a large IN list in `where` (the projects)
+    at `chunks.CHUNK`, so a further membership chunk does not scan the notes again. No
+    statement when `who` is empty."""
+    if not who:
+        return set()
+    n = t.card_note.c
     edited = conn.execute(
         select(n.card_id, n.edited)
-        .join(t.card, c.id == n.card_id)
-        .where(c.project_id == project_id, n.edited.is_not(None))
+        .join(t.card, t.card.c.id == n.card_id)
+        .where(n.edited.is_not(None), *where)
     )
-    found |= {row.card_id for row in edited if row.edited["by"] in ids}
-    return sorted(found)
+    return {row.card_id for row in edited if row.edited["by"] in who}
+
+
+def naming(conn: Connection, project_id: str, principal_id: str) -> list[str]:
+    """The cards of one project whose page names a member (`render_card`): as its claim holder,
+    a note's author or a note's latest editor, under any membership the principal held there,
+    active or not (a removed member's cards are the ones to take the name off). Sorted by id.
+
+    The memberships are read once; an empty set returns here (one statement). The same ids
+    then go to the holder, the authors and the latest editors."""
+    m = t.membership.c
+    ids = set(
+        conn.execute(
+            select(m.id).where(
+                m.project_id == project_id,
+                or_(m.agent_id == principal_id, m.human_id == principal_id),
+            )
+        ).scalars()
+    )
+    if not ids:
+        return []
+    here = (t.card.c.project_id == project_id,)
+    return sorted(held_or_noted_by(conn, ids, here) | edited_by(conn, ids, here))
 
 
 def targets(conn: Connection, among: Collection[str] | None = None) -> list[str]:

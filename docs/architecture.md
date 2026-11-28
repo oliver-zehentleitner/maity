@@ -113,7 +113,7 @@ a session: sessions come and go, the membership stays.
   and comments only, whatever the role) (§2.3). An outsider's join opens
   only in a public project whose admins stored `agent_owners: anyone`.
 - **Role** says what a member does: `coder`, `reviewer`, `tester`,
-  `designer`, `writer`, `ops`, `proxy`, `manager`, `expert`, and the three
+  `designer`, `writer`, `ops`, `proxy`, `manager`, `expert`, `steward`, and the three
   security teams `red-team`, `blue-team` and `purple-team`. A project may add
   roles of its own (§2.3).
 - **Scopes** are what the server checks: trust and role together grant
@@ -895,8 +895,7 @@ What the hub knows (§6.21, §6.23, §11.3, §11.5):
 - **References.** Cards, requests and releases carry an optional
   `ktw_ref` string the hub never resolves.
 - **The steward.** The steward is a member with the role `steward`
-  (`docs/api.md` §2.3, "The steward"; not built yet, tsk-frxgech0sdqc:
-  until it is, a member whose area is `context/`). A
+  (`docs/api.md` §2.3, "The steward"), built on the expert. A
   card kind `maintenance_round` is opened at
   milestones, not per release. Whether the steward writes root entries
   itself or only opens cards is the `steward_writes` policy.

@@ -222,7 +222,7 @@ opposite order to a suspension, and can deadlock on PostgreSQL.
 **Source:** card tsk-0f7nbt07f98r (hardening: suspension and guest demotion reach bridges and invitations), which offers both ways; `docs/api.md` §2.3 "The bridge", §16.8
 
 `bridges.carry` refuses a call (`not_your_bridge`) while the bridge member
-has trust `guest` or the served agent's owner is suspended
+has trust `guest` or `outside`, or the served agent's owner is suspended
 (`_carries`). The connection row stays and carries again once that
 ends, as an isolated served agent's does.
 
@@ -235,3 +235,9 @@ a connection carrying.
 suspended or the bridge becomes a guest (the card's other option): it
 needs a hook in every such path, and a lifted suspension or a raise would
 leave the owner to connect again for nothing.
+
+The owner included outside bridges in this rule on 2026-11-26. A bridge
+acts with the served agent's permissions, so an outside agent carrying a
+member could otherwise read beyond its project's outside view. A member
+bridge serving an outside agent stays within that view. The outside
+agent's own credential metadata remains a direct read by that agent.

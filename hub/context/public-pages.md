@@ -804,7 +804,8 @@ without the card history and the member and card fields the contract opens to an
 **Revisit when:** the login is no longer the way a mail link goes on after a sign-in
 
 The pages themselves worked; the shell around them does not know visitors and shows the login. So `/explore`,
-which the landing page's button named and nothing served, is now a page for everyone, a slash at the end of a
+which the landing page's button named and nothing served, is now a page for every visitor (a signed-in human
+gets the shell there since 2026-11-25, b723d46b), a slash at the end of a
 page's address leads to the page, and the join host keeps `/<owner>/<slug>…`. A dashboard address under a
 public project stays the login and links the page. A signed-in non-member first went to `?as=public`; since
 2026-11-02 they read the same view in the app at the same address (70c80e4f), and since 2026-11-03 the
@@ -1152,6 +1153,102 @@ events on it because a member's name stands on the card pages they hold, which i
 - Narrowing by the `changed` fields of the event: 721bcdfa rejected an allowlist of shown fields, and the cost
   is in the number of pages, not in which field changed.
 
+## The cards that name a member are found by one pair of readers, each caller keeping its own selection
+
+**Id:** 955cf355-ba91-43a9-85a5-3b4363056049
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-qq4y8kw23jrz, point 10 of the clean-up audit of rendering and stored public pages (tsk-hgnbapyw7hnh, read at 80647565) and the lead's go for a local implementation of 2026-11-27; review A2805 of 2026-11-28 (statement counts when mine is not empty, and when the editor's project mapping is read); `public_cards.naming`, `public_projects.pages_of_member`
+**See:** public-pages.md#a-member-change-takes-off-and-renders-only-the-card-pages-that-name-that-member — fe966f9c-3557-4473-a0d6-14aa4d714a43 — as of 2026-11-27
+**Revisit when:** a card page names a member in a further way (an assignee, a reviewer), or a membership's project is made to agree with its card's project by a constraint
+
+`public_cards.naming` (the card pages to take off and render for one member's change) and
+`public_projects.pages_of_member` (the same for a person) each had their own queries for the cards whose page names
+a membership: as claim holder, as the author of a note, or as the latest editor of a note. They now share two
+readers in `public_cards`: `held_or_noted_by` and `edited_by`. The two callers do not share one membership-id
+strategy: `naming` still freezes its membership ids once, and `pages_of_member` still freezes mine for the editor
+while holder and author re-read memberships. That is not the same as when the editor's project mapping is read,
+which is described with `pages_of_member` below.
+
+`naming` reads the principal's memberships in the one project, active or not, and returns if that set is empty.
+The same ids then go to the holder, the authors and the latest editors of that project's cards. A frozen
+collection is cut at `chunks.CHUNK`. On a one-chunk set this is one statement when empty (the membership read)
+and four when not (ids, holder, authors, edited notes).
+
+`pages_of_member` keeps the former order of statements: the public projects first, then mine (the person's and
+their agents' active memberships in a project with a page), then the editors of cards in those projects, then
+holder and author. The membership selection for the editor is still frozen at mine, as it already was. The
+project mapping that filters the edit scan is not read at the same moment as before: the former editor SQL
+re-read `project_id` for those frozen membership ids during the edit scan. The new code reads `id` and
+`project_id` together in the mine statement and uses those stored project ids, even on a one-chunk set. Neither
+the former subquery nor the new mine read re-checks active, owner or project visibility at that point. A normal
+membership removal keeps the row and its `project_id` (it only clears `active`), and no supported project move
+or hard deletion was found, so the lists agree on unchanged data; this is a documentation distinction, not a
+change of which pages are selected. Holder and author take a SELECT of the person's active memberships (any
+project) as a subquery, re-evaluated in each of those two statements as the former joins were, for cards of a
+project with a page. There is no frozen holding set and no extra statement to load one. When mine is not empty
+the statement count is four plus one edited-notes statement per distinct-project chunk: five on a one-chunk set
+(projects, mine, one edited-notes read, holder, authors), and nine when ten distinct projects are cut at
+`CHUNK=2`. When mine is empty the edited-notes read is skipped, so the path is four statements; the former
+query always ran that read and was five.
+
+`edited_by` matches the editor in Python from one read of the edited notes for a given card filter; a further
+membership chunk does not scan the notes again, a further project chunk (the card filter) does.
+
+When an IN list is split into more than one chunk, each chunk is a new statement and, under PostgreSQL READ
+COMMITTED, a new snapshot, where the former query used one statement and one snapshot for the whole list.
+For `naming` that is a further holder statement and a further author statement per extra membership chunk
+(the edited notes stay one read). For `pages_of_member` that is a further edited-notes statement per extra
+project-id chunk (holder and author stay one statement each, with no bound list). No membership read happens
+between those chunks: `naming`'s ids are already frozen, and `pages_of_member`'s editor project ids already
+come from the mine rows. A concurrent change of a card or a note between those chunks can make a later chunk
+see a different world than an earlier one. The default `chunks.CHUNK` is 500, so this window only opens when a principal has hundreds of memberships
+in one project (`naming`) or a person is in hundreds of public projects (the editor's project list). It is
+accepted because an uncut IN list hits the engine's limit on bound parameters, and a window of the same class
+already stood between the successive statements of both former callers (holder then author; mine then edited
+notes then holder then author). A test holds the ordered statement kinds and the counts with a lowered CHUNK,
+and the bound-parameter cap on a fresh SQLite connection.
+
+The result is the same list as before on an unchanged data set, in the same order (naming sorted, the person's
+pages the projects first and the cards by id); the pages that need a render, the order and the public routes are
+unchanged. The existing removal query-count gates are unchanged.
+
+**Reason:** the two copies of the queries and of the JSON scan could drift: a removal of a member's pages depends on
+`naming` finding every card that names them, and a person's pages on `pages_of_member`, so a rule changed in one
+place would leave a name on a public page or render pages for nothing, and nothing would fail. The editor stays a
+Python match of one read of the edited notes, since the JSON comparison is not portable in SQL across the engines
+and a read per membership or per chunk of membership ids would scan every edited note again. `naming` still
+freezes its ids once, as it already did, so a concurrent removal cannot make its later statements see a different
+set than the first read. `pages_of_member` still freezes the editor's membership selection at mine, as it already
+did, and still lets holder and author re-read memberships, as its former joins did. The editor's project ids now
+come from that same mine read, rather than from a second lookup of `project_id` for the frozen ids during the
+edit scan, which is the distinction above. The IN lists are cut at `chunks.CHUNK` so a person with many agent
+memberships does not pass the engine's limit on bound parameters (`mine` was such a list, and `naming`'s frozen
+ids can be, once former rows of the same principal are counted). A first cut on this card froze a holding set for `pages_of_member` as well and described that as
+what both callers already did; that was inaccurate for this caller, whose former holder and author joins
+re-read memberships in each statement, and it added a sixth statement and moved those two snapshot boundaries.
+The hybrid form restores that caller's former order, and the one-chunk cost when mine is not empty (five
+statements). A test holds these statement counts, the ordered kinds, and the former lists.
+
+**Rejected alternatives:**
+- One list of membership ids for both callers, as the audit proposed first: the person's queries do not select the
+  same way for holder or author as for editor (a membership of theirs in a project without a page still names a
+  card of a project with one, the editor only counts in a project with a page and for that project's cards), and the
+  card's project is not implied by a membership id, since the tables do not tie a holder, an author or an editor to
+  the card's project. With the data the hub writes the two selections agree; a test holds the shared form to the
+  former queries on a world where they differ, so that unifying them is a decision of its own.
+- Passing the memberships as a subquery in both callers, including `naming`: it moved `naming`'s snapshot
+  (each statement would re-read memberships) and raised the empty path from one statement to three. A
+  concurrent removal could then make `naming` disagree with its former result.
+- Freezing a holding set for `pages_of_member` as well (the first cut after the subquery form): it moved the
+  holder and author snapshot boundaries (those statements no longer re-evaluated memberships as the former
+  joins did) and raised the one-chunk non-empty path from five statements to six.
+- Comparing the editor in SQL with the engine's JSON operators: the three engines differ, and the page's own rule
+  (`render_card`) reads the JSON in Python.
+- Folding the cards each caller already hands to `_dependents` into the same change: the card is only the shared
+  collection; which pages a change touches, snapshot batching and Explore stay as they are.
+
 ## A person can keep their online status off the public pages; their projects' pages then neither name nor count them
 
 **Id:** 54823a3a-96be-4484-9689-8059201b1bb3
@@ -1323,9 +1420,10 @@ the policy admits only `'self'`.
 point 5; contract `docs/api.md` §16.9
 **See:** public-pages.md — 3ebf3861-2939-45c2-a459-1949ddcf1cef — as of 2026-11-14
 
-`public_projects.team_details` adds to each entry of `people` and `agents` the picture, the membership's role and,
-for an agent, the harness. The picture follows the member's own page: a person's only while `public_profile` is on,
-an agent's always. The role is the one the Team tab shows, and the harness is `public_agents.latest_session` over the
+`public_projects.team_details` adds to each entry of `people` and `agents` the membership's role and, for an
+agent, the harness; `render_project` adds the picture, read once for the page with the other members' (entry
+`5fc710f7-f9c3-4622-91bb-146baab12f57`, below). The picture follows the member's own page: a person's only
+while `public_profile` is on, an agent's always. The role is the one the Team tab shows, and the harness is `public_agents.latest_session` over the
 agent's page's projects, the value its own page shows. `online.named` and the agent page's `owner` take the
 picture by the same rule. `members` is the length of the Team tab's list, both the members it names and those it only
 counts, and stands next to `statistics`, not inside it. Each ticker entry gets `merge`: `{pr, title, author,
@@ -1481,3 +1579,317 @@ drift apart, as the badge had already drifted from the page, which is the bug th
 
 The extraction and its reason are confirmed (the agreed plan); the rejected alternative is inferred, since the plan
 names none for this point, and it sets the entry's Evidence.
+
+## The page kinds end in one function, `public_pages.page`; the digest inputs stay as each kind had them
+
+**Id:** 1516e07e-b4ed-47d9-8c97-4cbe9e81295e
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the clean-up audit of the rendering and stored public pages (card tsk-hgnbapyw7hnh, items 8, 14, 17) and the card tsk-ahf9z6r8x8pa that carries it out; `public_pages.page`
+**See:** public-pages.md#the-hub-renders-the-public-project-pages-in-the-dashboards-design-as-a-pure-function-of-their-data-one-stylesheet-home-a-format-guard — 5262b6b7-c4bf-472e-9a05-06f1a139a177 — as of 2026-11-25
+
+The renderers of the person, agent, organisation, project, project-view and card kinds each ended with the same
+four steps: the canonical address from the hub's public URL, a SHA-256 over a NUL-joined tuple, `render.page_document`
+and a `Page` with `lastmod` now. They are `public_pages.page(hub, path, title, content, inputs, view, data, indexed,
+styled)` now: `inputs` is what the kind hashes besides the path and the content (the display name, or the project's
+name; the person page adds `on` or `off` for its switch), so every digest is the one the kind had: keeping the digest
+avoids a digest-driven rewrite and keeps the existing lastmod when the digests match; the startup render still runs.
+The organisation page keeps `styled=True`, the one kind still on the inline stylesheet.
+The three other places that built an agent page's address use `public_agents.path_of`, and a kind named
+beside its constant (`organisation`, `person`) uses the constant. The Board, Team, Organisation and Why pages
+register `public_projects.targets` as their own: the views follow the project's page, so the targets are the same
+query, and a second copy could drift from it.
+
+**Reason:** a change to the frame's arguments (a `lang`, a robots rule, the title form) is one place instead of six, and
+a kind that differs from the rest (the organisation page's `styled=True`) shows in its call instead of hiding in a copy.
+
+**Rejected alternative:** a helper that hashes the path, the name and the content itself, so that the kinds pass no
+`inputs`. The person page's switch is in its digest and its `indexed` follows it. Keeping the digest avoids a
+digest-driven rewrite and keeps the existing lastmod when the digests match; the startup render still runs. A
+digest that changed for every kind would not skip that startup render; it would only add a digest-driven rewrite
+and a new lastmod. Nothing is gained by that in a change that is meant to change no output.
+
+The audit's item 13 (the person page's statistics filter by hand over `STAT_LABELS`) no longer exists on `main`: the
+person page's figures come from `public_design`, and `public_projects.stat_labels` is gone, so nothing was changed for it.
+
+## The public pages name their members by one rule: pictures, one read of the members per render, one link, one card, one monogram, one figure list
+
+**Id:** 5fc710f7-f9c3-4622-91bb-146baab12f57
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the clean-up audit of the rendering and stored public pages (card tsk-hgnbapyw7hnh, round 3) and the card tsk-3q4kjw4dn610 that carries it out; the diff of every stored page, its `data` and the answers of the public routes on one world before and after
+**See:** public-pages.md#a-projects-page-data-names-its-members-with-picture-role-and-harness-a-new-picture-renders-it-at-once — 0e401fc9-0080-4289-8488-cb4a6fb5ad8f — as of 2026-11-25
+
+Each of these was written twice or more, and each copy could drift from the one the pages are drawn by.
+
+- **Pictures.** The one rule is `public_projects.member_pictures` (a person's only while `public_profile` is on, an
+  agent's always); the Team and Organisation tabs and the members view an outsider reads reach it through
+  `public_project_views.shown_pictures`. `public_snapshot.online` had a second copy that read `public_profile`
+  again, which `Person.profile_on` already holds; it takes the pictures now. `render_project` reads the members
+  once (`public_project_views.members`) and hands that read to `online`, to `shown_pictures` (the pictures of
+  `people`, `agents` and `online.named` are one read) and to the Members figure (`len`), where it read them twice and
+  asked the pictures twice. `team_details` no longer adds the picture, only the role and the harness. The shown
+  members of `members` and the humans and agents of `team` are the same set (the same served rule, an isolated agent
+  in neither), so no entry changes.
+- **Names the views share.** `public_project_views.shown_data`, `holder_data` and `pictured` are public: the
+  snapshot and the card pages imported them with a leading underscore.
+- **Monogram.** `public_design.monogram(name, slug)` only; the project card on `/explore` passes its slug
+  (the last segment of the full name). The second function of `public_projects` is gone.
+- **Link or plain.** `public_design.linked(page, inner, cls, plain, attrs, plain_attrs)` replaces the six places that
+  chose between a link to a route and a plain element. The fallback element stays what each place had (`span` for a
+  name, a face and an organisation node, `div` for a card), and so do the attributes.
+- **Member card.** `member_inner` (the picture, the name, the `@handle`, the facts) is the one markup; `member_card`
+  adds the dot and the link for the Overview, the Team tab and a person's agents (`team_card` and `agent_cards` only
+  say what the facts are), and the organisation node uses `member_inner` and `linked`.
+- **Figures.** `public_design.COUNTERS`, `MEDIANS`, `STAT_KEYS` (both, in the order `public_agents.statistics`
+  writes the totals) and `PERSON_FIGURES` (the first three counters) are the only lists. `public_projects.STAT_LABELS`
+  is gone: its English words were read nowhere, the pages take theirs from `visitor.stat.<key>`. The two counters
+  `public_agents.statistics` always fills (`cards_done`, `handovers`) stay named in place: they are a rule of that
+  function, not a figure set.
+
+**Reason:** the page's rules (who is named, which picture, which element) change in one place, and a kind that differs
+from the others shows in a call (`plain="div"`, a different pixel size) instead of in a copy that was not changed with
+the rest.
+
+**Rejected alternative:** one fallback element for every link (a `span` for the cards too), and one card builder with a
+switch for each place's shape. The first changes the HTML of every stored project and person page, which every page
+digest hashes, so each would be rewritten and dated again; the second needs five switches for the organisation node
+(the size, the class, the role after the name, the fallback, no facts) and hides what differs. A module for
+`shown_data` and `holder_data` was left out: they read `Person`, and stay beside it. A picture read for the page in
+`team()` itself was left out too: `team` is also the source of the names, owners and statistics.
+
+A mechanical change: the stored pages, their `data` and the public routes' answers on one world (people, agents, an
+organisation, a second project, cards, an online agent, a profile switched off) are the same before and after.
+
+## Who a public page names lives in one module; `team` is the shown members of that read
+
+**Id:** cc4685d4-6489-4858-bd5e-cb0f490e853f
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the clean-up audit of the rendering and stored public pages (card tsk-hgnbapyw7hnh, items 7, 9 and 11) and the card tsk-mtyyaqj39c22 that carries it out; the lead's scope on that card; the diff of every stored page, its `data` and the answers of the public routes on one world before and after; reviews A2755 and A2756 of PR #2246 (the handle order under a PostgreSQL locale), and a run of the team tests on a PostgreSQL database with a locale that weighs the hyphen last; reviews A2757 and A2758 (a membership change between the members read and the order read), and regression tests that fail with the earlier form; reviews A2770 and A2771 (what the shared read does and does not fix, the order of missing profiles)
+**See:** public-pages.md#the-public-pages-name-their-members-by-one-rule-pictures-one-read-of-the-members-per-render-one-link-one-card-one-monogram-one-figure-list — 5fc710f7-f9c3-4622-91bb-146baab12f57 — as of 2026-11-25
+
+Who a page names, and how it writes their name, lives in `public_members`: `Person`, `members`,
+`person_data`, `shown_data`, `holder_data`, `pictured` and `shown_pictures`, under the public
+names they already had. The snapshot, the card pages, the outsider's members view and the
+project page import them from there. A module for them was left out of the earlier clean-up
+because `Person` stayed in `public_project_views`; they move together now.
+
+`team` is those `members` shows, split by human, each list in the order the database's
+`ORDER BY handle` gives their own rows, read as ids for exactly those principals. Hidden
+members (a hold, an account not served) stay in `members` unnamed; `team` drops them. An
+isolated agent is in neither. `render_project` reads the members once and hands that read to
+`team`, to the pictures and to who is online, so who the page names, who the Members figure
+counts and whose pictures and presence are looked up cannot come from two membership reads.
+The shared read is a shared membership selection, not a snapshot of the page: the roles
+(`team_details`), the profile order, the pictures, the online state and the statistics are
+later reads, each as the database has it when it runs (`public_snapshot.online` reads the
+memberships again by the shared ids).
+
+The order read does not filter the memberships again. Under READ COMMITTED (and on MariaDB,
+where the render's `xact_lock` is no lock) a member can leave, or an agent be isolated,
+between `members` and `team`; a second membership read then lacked a principal the first one
+named, and `team` failed with a `KeyError`, taking the project's page offline (reviews A2757,
+A2758 of PR #2246). Now `team` names exactly the shown members of the read it is given, even
+one that changed since: who is named stays the shared selection, and the member change
+renders the page again (its own `touch`). Every member of the read comes back once, two
+memberships of one principal together at its handle; those whose profile row is gone
+meanwhile have no handle and follow the others, grouped by principal in the order each
+principal first appears, each group in its own order (missing principals A and B, input A1,
+B1, A2: A1, A2, B1), not the input's person order. `agent_statistics` still reads which
+agents count itself, so an agent isolated after the read is named but has no counters on
+that render: the statistics rightly leave it out.
+
+The audit's item 7, a set-based `served` over lists, is already on `main` as `served_of` /
+`served_among` / `standing_of` (since #2077). The landing page's count, the organisation
+page, a person's listed projects and an agent's memberships already pass their rows to
+`served_of`. The landing page only counts the served projects; `memberships` returns the
+rows and their membership ids and reads no names. The full names are read once, with
+`namespace.full_names`, by the callers that show them: the organisation page, a person's
+listed projects and an agent's page. `/explore` is left as it is, because #2227 and #2233
+rewrite it, and a follow-up after they merge is smaller.
+
+**Reason:** the rule for who is named changes in one place, and `team` cannot drift from the
+members the views use. The set-based served rule already had one function; renaming it would
+add a second name for the same thing. The order stays the database's because the change is
+mechanical: PostgreSQL compares text by its locale (persistence.md), and a locale such as
+`en_US.utf8` weighs a hyphen last (`aaaa-a`, `aaaaaa`, `aaaa-b`), where Python, SQLite and
+MySQL's binary tables compare code points (`aaaa-a`, `aaaa-b`, `aaaaaa`). A handle may hold a
+hyphen, so a Python sort would reorder `people` and `agents` on such a database and render
+every affected project page with a new digest.
+
+For the order of an earlier read, two other forms were in contention. The ordered
+intersection of a second membership read with the members shown would not fail, but drops
+from the names whoever changed in between, while the Members figure and who is online of the
+same render still come from the first read: one page from two reads. Reading visibility and
+order in one statement, by ordering `members` itself by handle, changes the order of the read
+its other users (the Team tab, the snapshot) iterate. Catching the `KeyError` would only move
+the failure to a silent guess.
+
+**Rejected alternative:** rewrite `/explore` in the same change, or introduce `served_projects`
+beside `served_of`. The first collides with #2227 and #2233; the second is a new name for a
+function that already exists. Reintroducing the old private names (`_shown`, `_holder`) when
+moving the helpers was left out: they are already public, and a move should not rename them
+back. Sorting `team` in Python by code point, as the Team tab's `members_data` does, was left
+out too: it is the cross-engine order, but it changes the pages on a PostgreSQL database with
+a locale, which this change was not to do; making the project page's order bytewise is a
+decision of its own.
+
+A mechanical change: the stored pages, their `data` and the public routes' answers on one
+world (people, agents, an organisation, a second project, cards, an online agent, a profile
+switched off) are the same before and after. A test compares `team` with the row-wise form
+on hyphenated handles of people and of several agents; on a PostgreSQL database with such a
+locale it fails for a Python sort and passes for the database's order.
+
+## A signed-in `/explore` is the shell, and `GET /public/explore` lists the projects the same for everyone
+
+**Id:** b723d46b-9810-4de0-b29c-0f1ad1f72c48
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-r6bk2py3ezwg (a signed-in Explore inside the dashboard, on the maintainer's design of 2026-11-25); the lead's decision of 2026-11-25 on the plan for it (the route, the reads, the cache rule, two pull requests); contract `docs/api.md` §16.9 "Explore, signed in", §16.11; `routes.pages.explore` and `read_explore`, `public_projects.explore_rows`
+**See:** public-pages.md#a-visitor-on-the-way-to-a-public-page-never-ends-at-the-login — 439a36e9-c05c-4c87-a3d3-1cd2ff5061d7 — as of 2026-11-25
+**Revisit when:** the dashboard's Explore needs something per reader that `GET /me` does not carry, or a shared cache in front of the hub stops honouring `Vary: Cookie`
+
+`/explore` answers a request with a live session, unless it asks `?as=public`, with the app shell (`no-cache`,
+`Vary: Cookie`, as every shell), and the dashboard draws Explore there as a tab of its own. A visitor, and anyone
+with `?as=public`, gets the page as before. The dashboard reads its list from `GET /public/explore`,
+`{"projects": [{name, full_name}]}`, the same answer for everyone (`public, max-age=60`, an `ETag`, no
+`Vary: Cookie`), from `public_projects.explore_rows`, the one listing the page draws as well. Whether the reader
+is a member of a listed project or has starred it, the dashboard takes from `GET /me`; a project's id for a new
+star from `GET /projects/{owner}/{slug}`, which an outsider reads (§2.3). The star stays in the dashed tab, not
+on the list. While a maintenance window runs the route decides, as `/` does: a visitor gets the 503 page, a
+signed-in reader the shell, whose app shows the full page; the middleware no longer refuses `/explore` for everyone.
+
+**Reason:** the same address keeps every link to it working (the frame's header, the not-found page) and needs no
+new reserved first segment, which would take a handle away. The answer already varied on the cookie, and stored
+public pages and `/` already hand a session the shell, so caches meet nothing new. A list the same for everyone can
+be cached publicly and stays a plain public read; what differs per reader is already in `/me`.
+
+**Rejected alternatives:**
+- A dashboard address of its own, such as `/all/explore`: Explore is a tab beside the projects, not a view of the
+  All projects scope; and a new first word would need a reserved segment that may already be a handle.
+- A signed-in list that marks each project as the reader's membership or star: it repeats `/me` and can only be
+  cached privately.
+- The project's id in the public list, so a star needs no further read: the public list carries what the pages
+  show, and one read per new star is cheap; the lead ruled the ids out.
+- The dashboard reading `/explore`'s HTML for its list: it would tie the app to the page's markup.
+
+## The Board's columns read `shown_clause`; `shown` and `shown_clause` are twins a test holds together
+
+**Id:** 6f980a4a-0765-447a-8e8f-9fc911126903
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-mtyyaqj39c22 (point 12 of its remainder: the rule of which cards are public spelled in several places); the lead's go of 2026-11-27 for the smallest part of it, with snapshot batching kept out; `public_cards.shown`, `shown_clause`, `public_project_views.board_rows`, `tests/test_public_board_rule.py`
+**See:** public-pages.md#who-a-public-page-names-lives-in-one-module-team-is-the-shown-members-of-that-read — cc4685d4-6489-4858-bd5e-cb0f490e853f — as of 2026-11-27
+**Revisit when:** the `security` rule gains a condition, a label can be written with blanks or outside ASCII, or the snapshot's card reads are batched into one query
+
+`board_rows` leaves the not-done `security` cards out of a column with `public_cards.shown_clause`, the
+condition the outsider's reads use (`outside_clause`), instead of spelling the rule once more inline; the
+holds, the 30-day window of the closed columns, the order (newest first, the id on a tie) and the column
+limit are unchanged, and the Board shows the same cards. `shown` (a row already read: the card's page, the
+snapshot's ticker) and `shown_clause` (a query) stay two functions, documented as twins:
+`tests/test_public_board_rule.py` holds them to the same answer over every status × a label matrix (none,
+empty, `security` in several cases, look-alikes), checks that the clause is never NULL, and holds the Board
+to the answer of its former inline rule and of the rule spelled out in Python, under holds, the cutoff and
+limits of 200, 5 and 1, on whichever engine the suite runs on.
+
+**Reason:** the clause's docstring already said the Board used it while the Board carried a copy; a change
+of the rule in one place would have left the Board, the outsider's reads or a card's page disagreeing, and
+nothing would have failed. One clause for every query, and a test across the two spellings, make such a
+drift a failing test.
+
+**Rejected alternatives:**
+- One function for both, a Python check on SQL rows only: the Board and the outsider's lists must decide in
+  the statement that reads the rows (their limit counts only shown cards, and READ COMMITTED gives each
+  statement its own moment), so the SQL form cannot go.
+- Batching the snapshot's per-card reads in the same change: it touches a separate current-title read, missing
+  ids, empty merge lists, project bounds and READ COMMITTED (an id set read first proves nothing about rows
+  read later), and needs a plan of its own; the lead kept it out of this slice.
+
+## The per-target lock of the public pages is a row of `public_page_lock` on MariaDB
+
+**Id:** 90640108-771e-4647-adf0-cd298e31a963
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-pwqhg0d0tznn (from the security team's third round: a page taken off must not be written back from an older read, on every database); the lead's go of 2026-11-27 for variant 2 of the coder's plan (a lock row for the public pages only, `db.xact_lock` and `sign_in_settings` unchanged); `public_pages._target_lock`, `refresh`, `touch`, `render_all`; `mail.address.take_lock`; `write_guard`; `tests/test_public_pages_lock.py`, `tests/test_public_pages_timing.py`, `tests/test_public_pages_engine.py`, run against MariaDB 11.8.9 before and after the change
+**See:** public-pages.md#a-touched-page-is-taken-off-in-the-writers-transaction-and-rendered-after-its-commit-one-render-has-a-time-limit-and-a-start-takes-up-no-target-after-its-budget — deafb243-f385-4108-8de4-81fc8f9a7872 — as of 2026-11-27
+**Revisit when:** MariaDB runs more than one hub process, an engine runs above READ COMMITTED, `db.xact_lock` gets a MariaDB form of its own, or a render starts taking row locks of the domain tables
+
+`refresh`, a removing `touch` and `render_all`'s cleanup take the target's lock through `public_pages._target_lock`,
+not `db.xact_lock`.
+- **PostgreSQL:** it is the advisory lock as before.
+- **SQLite:** nothing, as before.
+- **MySQL/MariaDB:** `db.xact_lock` is a no-op there, because the hub runs one process. That one process still
+  renders from request threads, the pages worker and the snapshot thread, each on its own pooled connection.
+  - So a render that had read a card as shown could write its page after a takedown had deleted it and committed.
+  - The page stayed until the next render. A test showed this against MariaDB on the unchanged code, three runs
+    out of three.
+  - The fix: the target's row of `public_page_lock`, keyed by the sha256 of the lock's name and locked
+    `SELECT … FOR UPDATE` until the transaction ends.
+  - The row is looked for first: it exists for every target rendered before. Only an absent row goes through
+    `take_lock` (an insert in a savepoint, then the lock, run once more if the row vanished).
+  - Rows are never deleted: one persistent row per target ever locked. The table is made on every engine and
+    stays empty off MariaDB.
+  - The digest holds no raw id, but it is not anonymous: it is an unsalted, deterministic sha256 of
+    `public_page:{kind}:{id}`. Anyone with database access can compare it with a known kind and id and so link a
+    row to that target. For `person` the id is the human id, which the human tombstone and `account_lock` keep
+    after the account's deletion (§2.9). The row holds no erased attribute, only that link. A sweep, or a salted
+    key, would change that; neither is done here.
+
+**What holds, and what the tests show:**
+- A takedown waits for a render that holds the lock, then deletes its page (`test_a_render_cannot_write_back_…`).
+  The same test with the lock patched to the no-op still finds the stale page, so the test can fail.
+- A rollback gives the lock back, also where the rollback took the freshly made row with it.
+- A render that waits past `innodb_lock_wait_timeout` (1205, not retried) fails before it reads or writes
+  anything. Its transaction rolls back, and the stored page stays as it was: **not** taken off.
+  - That page is never one a committed takedown removed, since the takedown deletes it in its own transaction.
+  - Only a render that ran and failed takes a page off.
+- The render's own lock comes before any of its reads, so under READ COMMITTED every statement after it sees
+  the takedown. An engine at REPEATABLE READ would also need the lock before the first plain read, and the
+  non-`events.transaction` path of `touch` reads first.
+
+**Lock order:** a run of the public page tests against MariaDB recorded every statement inside a `refresh`
+(2333 renders of all six kinds and the snapshot):
+- no write outside `public_page*`;
+- no locking read from a renderer;
+- only `write_guard`'s shared `account_lock`. The guard takes it before a human caller's first locking
+  statement, so before the page lock.
+
+So the order on MariaDB is the domain's (account, organisation, project), then `public_page_lock`, then
+`public_page`, as in a writer, and a render cannot close a cycle with a writer. Two writers that take several
+targets' locks across their transactions can still deadlock. InnoDB then ends one (1213), as PostgreSQL does
+today (40P01). `db.retrying` runs such a transaction again only where its caller is wrapped in it (the request-path
+writers that call it). The render paths are not wrapped: `refresh`, `_render_after_commit`, `render_all`, the pages
+worker and the snapshot thread do not retry a 1213 themselves.
+
+On PostgreSQL the advisory lock's `SELECT` is no locking statement for the guard, so there the guard takes its
+locks after the page lock. That is a different order, which this change leaves as it is.
+
+**Reason:** a row lock is transactional on InnoDB, as the advisory lock is on PostgreSQL:
+- it is released at commit and at rollback and never left on a pooled connection;
+- InnoDB's deadlock detection sees it;
+- `retrying` handles its deadlock errors (1213, 40P01) for the callers wrapped in it, which the render paths are
+  not (see the lock order above).
+
+The probe before `take_lock` saves the failed insert, its savepoint and the shared lock of its duplicate check
+on every render of a known target. (With up to six waiters on one held row, MariaDB 11.8.9 showed no deadlock
+with either form.)
+
+**Rejected alternatives:**
+- A MariaDB branch inside `db.xact_lock` (variant 1): it would also have turned `sign_in_settings`' lock into a
+  real one. The lead kept the change to the public pages.
+- `GET_LOCK`: it is session-scoped. COMMIT and ROLLBACK do not release it, and SQLAlchemy has no hook after the
+  database commit. A missed release stays on the pooled connection, and InnoDB's deadlock detection does not see
+  it.
+- `FOR UPDATE` on the project row: a render would block every write of the project for its whole length. The
+  person, organisation and agent targets have no project row.
+- A conditional write with a generation counter: it still needs a row per target and changes every removing
+  writer and every `put`.
+- An in-process `threading` lock: it has no hook at the database commit, it is invisible to InnoDB, and it does
+  not cover CLI processes writing the same database.

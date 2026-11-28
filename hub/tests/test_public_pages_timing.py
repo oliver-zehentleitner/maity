@@ -208,7 +208,8 @@ def test_a_removal_waits_for_a_render_of_its_target_that_is_running(
     migrated: Engine, probe: tuple[Probe, Settings]
 ) -> None:
     found, hub = probe
-    if migrated.dialect.name != "postgresql":
+    # PostgreSQL and MariaDB both lock the target (tsk-pwqhg0d0tznn).
+    if migrated.dialect.name == "sqlite":
         pytest.skip("SQLite writes one transaction at a time: the two cannot interleave")
     seed(migrated)
     first = (threading.Event(), threading.Event())

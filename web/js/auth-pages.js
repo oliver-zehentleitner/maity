@@ -20,7 +20,7 @@ window.Maity = window.Maity || {};
     { key: "point_3", get label() { return M.t("auth_pages.field.point_3"); } },
     { key: "note", long: true, get label() { return M.t("auth_pages.field.note"); } },
   ];
-  const isObject = (v) => !!v && typeof v === "object" && !Array.isArray(v);
+  const { isObject } = M.jsonIo;
   const shapeOk = (page) => isObject(page) && Object.values(page).every(isObject);
 
   // A page as the hub takes it: an empty field of this form is a key left out, and one of §16.7's
@@ -35,12 +35,8 @@ window.Maity = window.Maity || {};
   }
   const bodyOf = (draft) => ({ default_language: draft.default_language, pages: Object.fromEntries(PAGES.map((page) => [page, cleanPage(draft.pages[page])])) });
 
-  // The hub's refusal in a few words: the fields it names, or its message.
-  const refusal = (err) => {
-    const fields = err && err.code === "invalid" && err.details && err.details.fields;
-    if (err && err.code === "cancelled") return M.t("auth_pages.cancelled");
-    return fields ? Object.entries(fields).map(([f, r]) => f + ": " + r).join("; ") : (err && err.message) || String(err);
-  };
+  // The hub's refusal in a few words; a second factor not given, in this page's own.
+  const refusal = (err) => (err && err.code === "cancelled" ? M.t("auth_pages.cancelled") : M.jsonIo.refusalWords(err));
 
   // One editor per admin page: the setting is read once, and both sub-tabs draw from it.
   function editor() {

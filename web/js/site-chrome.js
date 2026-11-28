@@ -119,20 +119,13 @@ window.Maity = window.Maity || {};
     return a;
   }
 
-  // The model's address with ?next=, its own query (the language) kept.
-  function withNext(href, next) {
-    const cut = href.indexOf("#");
-    const before = cut < 0 ? href : href.slice(0, cut);
-    return before + (before.includes("?") ? "&" : "?") + "next=" + encodeURIComponent(next) + (cut < 0 ? "" : href.slice(cut));
-  }
-
   // The landing page's header: the mark, the sections, sign in and the call to action. The page
   // being drawn marks its own link as the current one.
   function siteHeader(model, current, next) {
     const top = model.header || {};
     // A page a visitor reads (js/visitor.js): Sign in comes back to it, as the app's bar's link did.
     const signIn = top.sign_in && next && typeof top.sign_in.href === "string" && top.sign_in.href.split(/[?#]/)[0] === "/login"
-      ? Object.assign({}, top.sign_in, { href: withNext(top.sign_in.href, next) }) : top.sign_in;
+      ? Object.assign({}, top.sign_in, { href: M.route.withNext(top.sign_in.href, next) }) : top.sign_in;
     const mine = (item) => (current && item && typeof item.href === "string" && item.href.split("?")[0] === current ? { "aria-current": "page" } : null);
     return h("header", { class: "site-header dz", id: "site-header" }, h("div", { class: "wrap" },
       home(),

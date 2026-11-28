@@ -23,8 +23,9 @@ if TYPE_CHECKING:  # access imports the caller, which reads the claims below: ca
 KINDS = ("task", "maintenance_round", "release", "contract", "setup")
 LABELS = ("fix", "feature", "chore")
 # The built-in roles a card may be for (§6.4), besides a project's own (§2.3): every role
-# that does a card's work, which the proxy, the manager and the expert do not.
-NEEDS = tuple(role for role in ROLES if role not in ("proxy", "manager", "expert"))
+# that does a card's work, which the proxy, the manager and the expert do not; never the
+# steward, which asks the owners of the work and is no one's work queue (§2.3 "The steward").
+NEEDS = tuple(role for role in ROLES if role not in ("proxy", "manager", "expert", "steward"))
 STATUSES = ("proposed", "open", "in_progress", "blocked", "review", "done", "cancelled")
 # The one list of closed statuses. A closed card keeps its holder's columns as a record, so
 # every reader of claims leaves these out; `open_claims` does it for them.
@@ -375,7 +376,7 @@ def open_dependencies(conn: Connection, card_id: str) -> list[str]:
     return sorted(r.id for r in rows if r.status not in CLOSED)
 
 
-def refuse_open_dependencies(conn: Connection, card_id: str) -> None:
+def refuse_open_dependencies(conn: Connection, card_id: str, reader: Membership) -> None:
     children = list(
         conn.execute(
             select(t.card.c.id).where(t.card.c.parent == card_id, t.card.c.status.not_in(CLOSED))
@@ -383,6 +384,18 @@ def refuse_open_dependencies(conn: Connection, card_id: str) -> None:
     )
     pending = sorted(set(open_dependencies(conn, card_id)) | set(children))
     if pending:
+        from maity_hub import access, public_cards
+
+        if access.reads_from_outside(reader):
+            visible = set(
+                conn.scalars(
+                    select(t.card.c.id).where(
+                        t.card.c.id.in_(pending), public_cards.outside_clause()
+                    )
+                )
+            )
+            pending = [item for item in pending if item in visible]
+            children = [item for item in children if item in visible]
         raise ApiError(
             409,
             "dependencies_open",
@@ -559,7 +572,7 @@ def set_symmetric(
 
 def area_owner(conn: Connection, project_id: str, area: str | None) -> int | None:
     """The membership owning the narrowest area that contains `area` (§6.2 routing); a
-    guest or an expert is never routed to (§2.3)."""
+    guest, an expert or a steward is never routed to (§2.3, "The steward")."""
     if not area:
         return None
     rows = conn.execute(
@@ -568,7 +581,7 @@ def area_owner(conn: Connection, project_id: str, area: str | None) -> int | Non
             t.membership.c.project_id == project_id,
             t.membership.c.active.is_(True),
             t.membership.c.trust != "guest",
-            t.membership.c.role != "expert",
+            t.membership.c.role.not_in(("expert", "steward")),
         )
         .order_by(t.membership.c.joined_at, t.membership.c.id)
     ).all()

@@ -88,9 +88,9 @@ window.Maity = window.Maity || {};
     try { me = await signedIn(); } catch (err) { append(ways, h("p", { class: "send-status failed" }, M.t("invite.session_failed", { reason: err.message }))); return; }
     if (!me) {
       append(ways,
-        h("a", { class: "button primary door-action", href: M.withNext("/login", here) }, M.t("invite.sign_in_to_accept")),
+        h("a", { class: "button primary door-action", href: M.route.withNext("/login", here) }, M.t("invite.sign_in_to_accept")),
         inv.registration === "sign_in_or_register"
-          ? h("p", { class: "door-alt" }, M.tn("invite.register", { create: h("a", { href: M.withNext("/register", here) }, M.t("invite.register.link")) }))
+          ? h("p", { class: "door-alt" }, M.tn("invite.register", { create: h("a", { href: M.route.withNext("/register", here) }, M.t("invite.register.link")) }))
           : h("p", { class: "muted" }, M.tn("invite.no_registration", { who: inviter() })));
       return;
     }
@@ -186,7 +186,8 @@ window.Maity = window.Maity || {};
     let own = M.trust.projectRoles(ctx, (list) => { own = list; roles(); });
     const roles = () => {
       const wanted = role.value || "coder";
-      const offered = M.trust.ROLES.filter((r) => r !== "proxy" || (ctx.isOwner && trust.value === "admin")).concat(own.map((x) => x.name));
+      // No steward where the project has no memory provider (§2.3 "The steward").
+      const offered = M.trust.offered(ctx, M.trust.ROLES.filter((r) => r !== "proxy" || (ctx.isOwner && trust.value === "admin"))).concat(own.map((x) => x.name));
       M.trust.fillRoles(role, offered, wanted, "coder", own);
     };
     const roleHelp = M.trust.roleHint(role);

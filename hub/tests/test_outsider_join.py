@@ -233,6 +233,8 @@ def test_contribution_tells_an_outsider_whether_they_may_add_an_agent(
     assert closed.json() == {
         "agent_owners": None,
         "outside_roles": ["coder"],
+        "looking_for_coders": "per_card",
+        "outside_claims": "human",
         "open_cards": 0,
         "agents_max": 3,
         "can_join": False,
@@ -635,7 +637,7 @@ def _role_items(who: flow.Agent) -> list[str]:
     return [item["id"] for item in answer.json()["items"]]
 
 
-def test_an_outsiders_agent_reads_its_roles_memory_but_neither_writes_nor_deletes_it(
+def test_an_outsiders_agent_neither_reads_writes_nor_deletes_its_roles_memory(
     on: None, owner: flow.Human, outsider: flow.Human, make_client: ClientFactory
 ) -> None:
     agent = _outside_agent(make_client, owner, outsider)
@@ -643,24 +645,29 @@ def test_an_outsiders_agent_reads_its_roles_memory_but_neither_writes_nor_delete
     written = member.post(MEMORY, {"store": "role", "text": "How this project reviews."})
     assert written.status_code == 201, written.text  # a member's coder still writes
     entry = written.json()["id"]
-    assert _role_items(agent) == [entry]  # it reads its role's memory
+    # It reads no memory of the project (§2.3 "Outside"): the read answers as an outsider's.
+    read = agent.get(MEMORY, params={"store": "role"})
+    assert read.status_code == 404, read.text
+    assert read.json() == NOT_FOUND
     refused = agent.post(MEMORY, {"store": "role", "text": "Another way to review."})
     assert refused.status_code == 403, refused.text
     assert _reason(refused) == "outside_trust"
-    refused = agent.delete(f"{MEMORY}/{entry}")
-    assert refused.status_code == 403, refused.text
-    assert _reason(refused) == "outside_trust"
+    refused = agent.delete(f"{MEMORY}/{entry}")  # an entry it does not read is not there
+    assert (refused.status_code, refused.json()) == (404, NOT_FOUND), refused.text
     assert _role_items(member) == [entry]  # the entry stays, and nothing was added
 
 
-def test_an_outsiders_agent_keeps_its_own_team_memory(
-    on: None, owner: flow.Human, outsider: flow.Human, make_client: ClientFactory
+@pytest.mark.parametrize("store", ["team", "community", "role"])
+def test_an_outsiders_agent_writes_no_memory_its_own_teams_included(
+    on: None, owner: flow.Human, outsider: flow.Human, make_client: ClientFactory, store: str
 ) -> None:
     agent = _outside_agent(make_client, owner, outsider)
-    written = agent.post(MEMORY, {"store": "team", "text": "What I learned here."})
-    assert written.status_code == 201, written.text
-    deleted = agent.delete(f"{MEMORY}/{written.json()['id']}")
-    assert deleted.status_code == 200, deleted.text
+    refused = agent.post(MEMORY, {"store": store, "text": "What I learned here."})
+    assert refused.status_code == 403, refused.text
+    assert _reason(refused) == "outside_trust"
+    member = flow.agent(make_client, owner)
+    written = member.post(MEMORY, {"store": store, "text": "What I learned here."})
+    assert written.status_code in (201, 202), written.text  # a member's agent still writes
 
 
 # --- isolation (§6.2) ---------------------------------------------------------------------------

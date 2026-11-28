@@ -70,6 +70,8 @@ from playwright.sync_api import Page, expect, sync_playwright
 WEB = Path(__file__).resolve().parent.parent
 OWNER = "owner"
 OWNER_PASSWORD = "e2e owner password"
+# The scenario's change_password sets this; on the main hub, a round after the scenario signs the owner in with it.
+OWNER_CHANGED_PASSWORD = "e2e changed password, long enough"
 OWNER_EMAIL = "owner@e2e.example"  # `owner create --email` stores it as verified (§2.1)
 TIMEOUT_MS = 25_000  # one step in the browser; the feed reads every 15 s
 COUNTS_MS = 70_000  # counts of other projects: /me is re-read every 60 s
@@ -983,6 +985,7 @@ def main() -> int:
                     chat_height_views(run, browser)
                     chat_phone_views(run, browser)
                     chat_phone_head(run, browser)
+                    chat_keyboard_send(run, browser)
                     chat_bubble_width(run, browser)
                     paths_views(run, browser)
                     notification_sessions_layout(run, browser)
@@ -992,6 +995,7 @@ def main() -> int:
                     switch_busy_layout(run, browser)
                     report_pages_round(run, browser)
                     outsider_tab_round(run, browser)
+                    explore_tab_round(run, browser)
                     public_first_paint_round(run, browser)
                     stored_pages_policy_round(run, browser)
                     second_hub_round(run, browser, work, artifacts)
@@ -3002,7 +3006,7 @@ def reset_by_mail(run: Run, browser, catcher: MailCatcher, owner: Page) -> None:
     """Admin → Users (§2.8.3, §2.8.7): the admin's press only sends a mail; the person's press on
     the mail's page resets, ends their sessions, and the next sign-in starts with the setup."""
     run.step("second hub: an admin resets a person's two-factor sign-in, which that person confirms by mail")
-    address, handle, password = "ada@e2e.example", "ada", "ada-e2e-password-1"
+    address, handle, password = "ada@e2e.example", "ada-e2e", "ada-e2e-password-1"
     owner.evaluate("""() => window.Maity.api.patch("/admin/settings/registration", { mode: "open", approval: "automatic" })""")
     context, page = new_page(run, browser)
     page.goto(run.base + "/")
@@ -3025,12 +3029,17 @@ def reset_by_mail(run: Run, browser, catcher: MailCatcher, owner: Page) -> None:
     register_again(run, page, link, address, handle)
     # A refused answer: each field's error under it, legible in light and dark (#1721's review).
     # The field's own pattern stops a handle that breaks the rule before it is sent, so the hub's
-    # refusal is shown with a taken one.
+    # refusal is shown with a taken one: an account of six characters or more made here, since
+    # `owner` is shorter and a new person's handle of five or fewer is refused as reserved first
+    # (docs/api.md §16.11), which is checked after it.
+    taken = "e2e-taken-handle"
+    hub_command(run, ["owner", "create", "--handle", taken, "--display-name", "Taken", "--email", "taken@e2e.example"], "e2e taken password\n")
     page.locator("#password").fill(password)
-    page.locator("#handle").fill(OWNER)
+    page.locator("#handle").fill(taken)
     page.locator("#display_name").fill("Ada")
     page.locator("form button[type=submit]").click()
     expect(page.locator("#handle-error")).to_be_visible()
+    expect(page.locator("#handle-error")).to_contain_text("This handle is taken.")
     expect(page.locator("#handle")).to_have_attribute("aria-invalid", "true")
     run.problems = [p for p in run.problems if not ("/mail/register/" in p and "answered 400" in p)]
     run.shot(page, "registration-link-error")
@@ -3038,6 +3047,13 @@ def reset_by_mail(run: Run, browser, catcher: MailCatcher, owner: Page) -> None:
     page.emulate_media(color_scheme="dark")
     run.shot(page, "registration-link-error-dark")
     page.emulate_media(color_scheme="light")
+    # Five characters keep the syntax but are kept from a new person (§16.11): the error says why.
+    page.locator("#password").fill(password)
+    page.locator("#handle").fill("adaxx")
+    page.locator("#display_name").fill("Ada")
+    page.locator("form button[type=submit]").click()
+    expect(page.locator("#handle-error")).to_contain_text("at least six characters")
+    run.problems = [p for p in run.problems if not ("/mail/register/" in p and "answered 400" in p)]
     page.locator("#password").fill(password)
     page.locator("#handle").fill(handle)
     page.locator("#display_name").fill("Ada")
@@ -4019,6 +4035,140 @@ def chat_height_views(run: Run, browser) -> None:
             context.close()
 
 
+SEND_IN_VIEW = """() => {
+  const send = document.querySelector('.chat-layout.open .chat-pane .compose-actions button[type="submit"]');
+  const attach = document.querySelector('.chat-layout.open .chat-pane .compose-actions .attach-button');
+  if (!send) return { send: null };
+  const r = send.getBoundingClientRect(), vh = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+  const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+  const a = attach ? attach.getBoundingClientRect() : null;
+  // Each part's height, for a failure to name what took the room.
+  const tall = (el) => Array.from(el ? el.children : []).filter((c) => c.getClientRects().length)
+    .map((c) => (c.tagName.toLowerCase() + "." + String(c.className || "").split(" ")[0]) + ":" + Math.round(c.getBoundingClientRect().height));
+  const pane = send.closest('.chat-pane');
+  return { send: { top: r.top, bottom: r.bottom, height: r.height }, vh, covered: !(hit && (hit === send || send.contains(hit))),
+           sameRow: a ? Math.abs((a.top + a.bottom) / 2 - (r.top + r.bottom) / 2) <= Math.max(a.height, r.height) / 2 : null,
+           parts: { pane: tall(pane), compose: tall(send.closest('.compose')) } };
+}"""
+
+
+def chat_keyboard_send(run: Run, browser) -> None:
+    """Send while a phone's keyboard is open (the maintainer on a12, tsk-ftrkm6wda8yq), in fixture mode,
+    in a direct and a group chat: the field focused at 390 x 844, then the window shrunk as an open
+    keyboard leaves it. Send is never scrolled to: only the field is brought into view, as the browser
+    does for a focused field, and Send is measured where it then stands: inside the window, not covered,
+    in the composer's one row beside Attach, taking the click.
+    - Full screen (the reported case), at 390 x 400 and 390 x 300: the pane is sized from the visual
+      viewport (js/chat.js fullScreen). Headless Chromium shrinks the layout and the visual viewport
+      together here, which the old 100dvh would follow as well; full_over_keyboard shrinks the visual
+      one only, as an Android keyboard does, and fails with the old sizing. At 390 x 300 the heading
+      and the composer at its rows need more than the window: the history gives up all its room, then
+      the field down to one line (css/app.css, full screen). A failure lists each part's height.
+    - The chat in the page, at 390 x 400 only. At 390 x 300 the page's sticky header (about 200 px on a
+      phone) leaves the composer no room below it, and a header that scrolls away is a layout change
+      beyond this card."""
+    run.step("fixtures: Send stays on screen, in Attach's row, while a phone's keyboard is open")
+    index = (WEB / "index.html").as_uri()
+    context = browser.new_context(viewport={"width": 390, "height": 844})
+    page = context.new_page()
+    errors: list[str] = []
+    page.on("pageerror", lambda err: errors.append(str(err)))
+    cases = [(mode, height) for mode, heights in (("full", (400, 300)), ("page", (400,))) for height in heights]
+    try:
+        for route in ("#/maintainer/maity/chat/agt-a", "#/maintainer/maity/chat/cnv-0007"):
+            for mode, height in cases:
+                page.set_viewport_size({"width": 390, "height": 844})
+                page.goto("about:blank")
+                page.goto(f"{index}?lang=en{route}")
+                field = page.locator(".chat-layout.open .chat-pane .compose textarea")
+                field.wait_for()
+                page.evaluate("() => { const b = document.querySelector('main .signin-banner'); if (b) b.remove(); }")
+                if mode == "full":
+                    page.locator(".chat-layout.open .chat-pane .chat-full-toggle").click()
+                    page.locator("html.chat-full .chat-pane.chat-full-pane").wait_for()
+                field.click()
+                field.fill("When is the deploy?")
+                page.set_viewport_size({"width": 390, "height": height})
+                page.wait_for_timeout(400)
+                field.scroll_into_view_if_needed()
+                send = page.locator('.chat-layout.open .chat-pane .compose-actions button[type="submit"]')
+                page.wait_for_timeout(200)
+                m = page.evaluate(SEND_IN_VIEW)
+                where = f"{route} {mode} at 390x{height} with the field focused"
+                assert m["send"], f"{where}: no Send"
+                assert m["send"]["height"] >= 44 and m["send"]["top"] >= -0.5 and m["send"]["bottom"] <= m["vh"] + 0.5, f"{where}: Send at {m}"
+                assert not m["covered"], f"{where}: something covers Send: {m}"
+                assert m["sameRow"] is True, f"{where}: Send is not in Attach's row, or no Attach: {m}"
+                run.shot(page, f"fixtures-chat-keyboard-{mode}-{height}-{'group' if 'cnv-' in route else 'direct'}")
+                send.click(trial=True)
+            # Only the visual viewport shrinks, as an Android keyboard does (see the docstring).
+            full_over_keyboard(run, page, route)
+        assert not errors, errors
+    finally:
+        context.close()
+
+
+# A stand-in for window.visualViewport that a test moves: the page's layout stays as it is.
+VV_STANDIN = """() => {
+  const vv = new EventTarget();
+  vv.height = window.innerHeight; vv.offsetTop = 0;
+  Object.defineProperty(window, "visualViewport", { configurable: true, get: () => vv });
+  if (window.visualViewport !== vv) throw new Error("visualViewport could not be replaced");
+  window.__vvMove = (height, top, kind) => { vv.height = height; vv.offsetTop = top; vv.dispatchEvent(new Event(kind)); };
+}"""
+
+FULL_IN_VV = """() => {
+  const pane = document.querySelector('.chat-pane.chat-full-pane');
+  const send = document.querySelector('.chat-layout.open .chat-pane .compose-actions button[type="submit"]');
+  const attach = document.querySelector('.chat-layout.open .chat-pane .compose-actions .attach-button');
+  if (!pane || !send) return { pane: !!pane, send: null };
+  const p = pane.getBoundingClientRect(), r = send.getBoundingClientRect(), a = attach ? attach.getBoundingClientRect() : null;
+  const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+  const tall = (el) => Array.from(el ? el.children : []).filter((c) => c.getClientRects().length)
+    .map((c) => (c.tagName.toLowerCase() + "." + String(c.className || "").split(" ")[0]) + ":" + Math.round(c.getBoundingClientRect().height));
+  return { parts: { pane: tall(pane), compose: tall(send.closest('.compose')) },
+           pane: { top: p.top, height: p.height }, send: { top: r.top, bottom: r.bottom, height: r.height },
+           vv: { top: window.visualViewport.offsetTop, height: window.visualViewport.height }, inner: window.innerHeight,
+           covered: !(hit && (hit === send || send.contains(hit))),
+           sameRow: a ? Math.abs((a.top + a.bottom) / 2 - (r.top + r.bottom) / 2) <= Math.max(a.height, r.height) / 2 : null };
+}"""
+
+
+def full_over_keyboard(run: Run, page, route: str) -> None:
+    """The reported case as Android makes it: the window (the layout viewport) stays 390 x 844 and only
+    the visual viewport shrinks to 400 above the keyboard, then is moved down by 200 (its scroll). The
+    full-screen pane must cover exactly that strip, Send inside it, uncovered, in Attach's row; with the
+    pane at 100dvh (the old sizing) Send stays near the window's bottom, under the keyboard, and this
+    fails. Headless Chromium has no on-screen keyboard: window.visualViewport is a stand-in moved by the
+    test, so this proves the pane follows the visual viewport, not that a phone reports it so."""
+    index = (WEB / "index.html").as_uri()
+    page.set_viewport_size({"width": 390, "height": 844})
+    page.goto("about:blank")
+    page.goto(f"{index}?lang=en{route}")
+    field = page.locator(".chat-layout.open .chat-pane .compose textarea")
+    field.wait_for()
+    page.evaluate("() => { const b = document.querySelector('main .signin-banner'); if (b) b.remove(); }")
+    page.evaluate(VV_STANDIN)
+    page.locator(".chat-layout.open .chat-pane .chat-full-toggle").click()
+    page.locator("html.chat-full .chat-pane.chat-full-pane").wait_for()
+    field.click()
+    field.fill("When is the deploy?")
+    kind_name = "group" if "cnv-" in route else "direct"
+    for height, top, kind in ((400, 0, "resize"), (400, 200, "scroll")):
+        page.evaluate(f"() => window.__vvMove({height}, {top}, '{kind}')")
+        page.wait_for_timeout(200)
+        m = page.evaluate(FULL_IN_VV)
+        where = f"{route} full, the visual viewport {height} high at {top} ({kind}) in a 844 window"
+        assert m["send"], f"{where}: no pane or no Send: {m}"
+        assert m["inner"] == 844, f"{where}: the window changed, the case needs it unchanged: {m}"
+        assert abs(m["pane"]["top"] - top) <= 1 and abs(m["pane"]["height"] - height) <= 1, f"{where}: the pane is not the visual viewport: {m}"
+        assert m["send"]["height"] >= 44 and m["send"]["top"] >= top - 0.5 and m["send"]["bottom"] <= top + height + 0.5, f"{where}: Send outside what is seen: {m}"
+        assert not m["covered"], f"{where}: something covers Send: {m}"
+        assert m["sameRow"] is True, f"{where}: Send is not in Attach's row, or no Attach: {m}"
+    run.shot(page, f"fixtures-chat-keyboard-vv-{kind_name}")
+    page.locator('.chat-layout.open .chat-pane .compose-actions button[type="submit"]').click(trial=True)
+
+
 def chat_phone_head(run: Run, browser) -> None:
     """The owner's feedback on the full-screen chat (tsk-2a56j80p3p9h), in fixture mode, in a direct
     and a group chat, light and dark. On a phone (390 x 844) the full-screen button is at the top
@@ -4062,7 +4212,10 @@ def chat_phone_head(run: Run, browser) -> None:
                     assert menu[2] <= width, f"{where}: tabs menu past the window {menu}"
                     if phone:
                         assert tabs.evaluate("(el) => el.scrollWidth > el.clientWidth"), f"{where}: the tabs do not overflow, nothing tested"
-                        assert menu[2] >= width - 24, f"{where}: the tabs menu is not at the row's right end {menu}"
+                        # The Explore link holds the row's right end (views.md dd8eaa01); the menu stays just before it.
+                        link = page.locator(".switcher-row > a.explore-link").evaluate(box)
+                        assert menu[2] <= link[0], f"{where}: the tabs menu does not end before the Explore link {menu} {link}"
+                        assert width - 24 <= link[2] <= width, f"{where}: the Explore link is not at the row's right end {link}"
                     # Tab from the heading reaches the button next, past the heading's own links, wherever it is drawn.
                     heading.focus()
                     for _ in range(4):
@@ -5545,7 +5698,10 @@ def report_pages_round(run: Run, browser) -> None:
 
 
 OUTSIDER_TAB = "header nav.switcher a.outsider[data-outsider='owner/e2e-alpha']"
-DASHED = ("(s) => { const e = document.querySelector(s);"
+# The dashed outline is drawn by the tab's box, which holds the link and its star where there is
+# one (tsk-q8s9dfjmjsxy), else by the link alone.
+EDGE = "e => getComputedStyle(e.closest('.outsider-tab') || e).borderTopStyle"
+DASHED = ("(s) => { const a = document.querySelector(s); const e = a && (a.closest('.outsider-tab') || a);"
           " return !!e && getComputedStyle(e).borderTopStyle === 'dashed'; }")
 CONTRIBUTION = "{base}/api/v1/projects/owner/e2e-alpha/contribution"
 
@@ -5656,7 +5812,15 @@ def outsider_tab_round(run: Run, browser) -> None:
     expect(tab).to_have_attribute("aria-current", "page")
     expect(tab).to_have_attribute("href", "/owner/e2e-alpha/overview")
     settle(page, DASHED, OUTSIDER_TAB)
-    assert tab.evaluate("e => getComputedStyle(e).borderTopStyle") == "dashed", "the outsider's tab is not dashed"
+    assert tab.evaluate(EDGE) == "dashed", "the outsider's tab is not dashed"
+    # A member's tab, only dashed (the maintainer, tsk-q8s9dfjmjsxy): the project's state dot after the name,
+    # from the project's view the page read, inside the dashed outline.
+    dot = tab.locator("span.dot")
+    expect(dot).to_have_count(1)
+    expect(dot).to_have_class(re.compile(r"\bstate-dot-[a-z_]+\b"))
+    expect(dot).to_be_visible()
+    assert tab.evaluate("e => { const d = e.querySelector('span.dot'); const t = Array.from(e.childNodes).findIndex((n) => n.nodeType === 3);"
+                        " return t >= 0 && Array.from(e.childNodes).indexOf(d) > t; }"), "the state dot does not follow the name"
     # The slot for the outsider's own actions, in the head; what it holds is the case's.
     slot = page.locator("header .project-state #outsider-actions")
     expect(slot).to_have_count(1)
@@ -5704,9 +5868,18 @@ def outsider_tab_round(run: Run, browser) -> None:
             expect(star_tab).to_have_count(1)
             # The dashed edge as the stylesheet draws it, waited for before it is read once (tsk-z4ps7cg7ve25).
             settle(fresh, DASHED, OUTSIDER_TAB)
-            assert star_tab.evaluate("e => getComputedStyle(e).borderTopStyle") == "dashed", f"{where}: not dashed"
+            assert star_tab.evaluate(EDGE) == "dashed", f"{where}: not dashed"
             box = star.bounding_box()
             assert box and box["width"] >= 24 and box["height"] >= 24, f"{where}: the star's target is {box}"
+            # Inside the dashed outline, right of the name (the maintainer, tsk-q8s9dfjmjsxy).
+            # filter(has=) looks for its locator inside each box, so it takes the link's own selector,
+            # not OUTSIDER_TAB, which starts at the header and so is inside no box.
+            outline = (fresh.locator("header nav.switcher .outsider-tab")
+                       .filter(has=fresh.locator("a.outsider[data-outsider='owner/e2e-alpha']")).bounding_box())
+            name = star_tab.bounding_box()
+            assert (outline and name and outline["x"] <= box["x"] and box["x"] + box["width"] <= outline["x"] + outline["width"] + 0.5
+                    and outline["y"] <= box["y"] + 0.5 and box["y"] + box["height"] <= outline["y"] + outline["height"] + 0.5
+                    and box["x"] >= name["x"] + name["width"] - 0.5), f"{where}: the star {box} is not inside {outline}, right of {name}"
             settle(fresh, NOT_WIDER, None)
             wide = fresh.evaluate("document.documentElement.scrollWidth - document.documentElement.clientWidth")
             assert wide <= 0, f"{where}: {wide} px wider than the window"
@@ -5738,6 +5911,143 @@ def outsider_tab_round(run: Run, browser) -> None:
     # (§2.3, #2078), as on this hub: asked for, and said in the view's one sentence; no problem.
     run.problems[:] = [p for p in run.problems if p != "GET /api/v1/projects/owner/e2e-alpha/keep-the-why/export answered 404"]
     no_problems(run, "outsider tab")
+    context.close()
+
+
+EXPLORE_TAB = "header nav.switcher a.explore-tab"
+EXPLORE_LINK = "header .switcher-row > a.explore-link"
+
+
+def explore_tab_round(run: Run, browser) -> None:
+    """Explore inside the dashboard (docs/api.md §16.9, "Explore, signed in"; tsk-r6bk2py3ezwg;
+    web/context/views.md), on the hub. For REPORTER, who has no project of their own and is no member
+    of e2e-alpha: the tabs menu is there all the same; the row's Explore link opens the Explore tab
+    at `/explore`, current, with no project views, listing e2e-alpha from `GET /public/explore`; its
+    card opens the dashed tab, whose star sends `PATCH /me` with the id the view read from `GET
+    /projects/owner/e2e-alpha`; a reload of `/explore` keeps the tab, `?as=public` is the hub's page;
+    the menu's Explore goes to the tab, and its × closes it. For the owner, a member, the card opens
+    e2e-alpha as its own tab. Screenshots of the tab at 1280 and 390 px, light and dark, axe clean."""
+    run.step("explore: a tab of its own in the dashboard; a project opens dashed or as one's own tab; the star works; × closes it")
+    handle, name, address, password = REPORTER
+    context, page = new_page(run, browser)
+    page.goto(run.base + "/login")
+    fill_sign_in(page, address, password)
+    expect(page.locator("header .me")).to_contain_text(name)
+    tab = page.locator(EXPLORE_TAB)
+    link = page.locator(EXPLORE_LINK)
+    expect(link).to_have_attribute("href", "/explore")
+    expect(tab).to_have_count(0)
+    # The tabs menu for a human without projects too: New project and Explore, no project switch.
+    menu = page.locator(".tabs-menu-box")
+    menu.get_by_role("button", name="Project tabs", exact=True).click()
+    expect(menu.get_by_role("menuitem", name="New project", exact=True)).to_be_visible()
+    expect(menu.get_by_role("menuitem", name="Explore", exact=True)).to_be_visible()
+    expect(menu.get_by_role("menuitemcheckbox")).to_have_count(0)
+    expect(menu.get_by_role("menuitem", name="Keep these tabs at start", exact=True)).to_have_count(0)
+    page.keyboard.press("Escape")
+    # A new document would lose this marker. The dashboard should only change the route.
+    page.evaluate("window.exploreRouteMarker = true")
+    with page.expect_response(lambda r: r.url == f"{run.base}/api/v1/public/explore") as listed:
+        link.click()
+    assert listed.value.status == 200, listed.value.status
+    assert {"full_name": "owner/e2e-alpha", "name": "E2E Alpha"} in listed.value.json()["projects"], listed.value.text()
+    expect(page).to_have_url(f"{run.base}/explore")
+    assert page.evaluate("window.exploreRouteMarker === true"), "opening the Explore tab reloaded the document"
+    expect(page.locator("#main section.view-explore")).to_have_count(1)
+    expect(tab).to_have_attribute("aria-current", "page")
+    expect(page.locator("header nav.views")).to_have_count(0)
+    card = page.locator("#main a.explore-card[data-full-name='owner/e2e-alpha']")
+    expect(card).to_have_attribute("href", "/owner/e2e-alpha/overview")
+    expect(page.locator("#main .tab-star")).to_have_count(0)
+    for width, height in ((1280, 900), (390, 844)):
+        page.set_viewport_size({"width": width, "height": height})
+        for scheme in ("light", "dark"):
+            page.emulate_media(color_scheme=scheme)
+            where = f"the Explore tab at {width}x{height} {scheme}"
+            expect(tab).to_be_visible()
+            expect(link).to_be_visible()
+            settle(page, NOT_WIDER, None)
+            wide = page.evaluate("document.documentElement.scrollWidth - document.documentElement.clientWidth")
+            assert wide <= 0, f"{where}: {wide} px wider than the window"
+            # The menu stays on the tabs' line, the link at the row's end inside the window.
+            got = page.evaluate("(() => { const r = (s) => document.querySelector(s).getBoundingClientRect();"
+                                " const m = r('.tabs-menu-box .menu-button'), l = r('.switcher-row > a.explore-link');"
+                                " return { menuTop: m.top, linkTop: l.top, linkRight: l.right, menuRight: m.right, linkLeft: l.left, vw: innerWidth }; })()")
+            assert abs(got["menuTop"] - got["linkTop"]) <= 1, f"{where}: {got}"
+            assert got["linkRight"] <= got["vw"] and got["menuRight"] <= got["linkLeft"], f"{where}: {got}"
+            run.shot(page, f"explore-tab-{width}-{scheme}")
+            if (width, scheme) == (1280, "light"):
+                run.a11y(page, "the Explore tab, signed in")
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.emulate_media(color_scheme="light")
+    # A project one is no member of: the dashed tab, its id from the project's own read, then the star.
+    with page.expect_response(lambda r: r.url == f"{run.base}/api/v1/projects/owner/e2e-alpha" and r.request.method == "GET") as read:
+        card.click()
+    project_id = read.value.json()["id"]
+    expect(page).to_have_url(re.compile(re.escape(run.base) + r"/owner/e2e-alpha/overview$"))
+    outsider = page.locator(OUTSIDER_TAB)
+    expect(outsider).to_have_attribute("aria-current", "page")
+    settle(page, DASHED, OUTSIDER_TAB)
+    expect(tab).to_have_count(1)
+    expect(tab).not_to_have_attribute("aria-current", "page")
+    star = page.locator("header nav.switcher .outsider-tab button.tab-star")
+    expect(star).to_have_attribute("aria-pressed", "false")
+    with page.expect_request(lambda r: r.url == f"{run.base}/api/v1/me" and r.method == "PATCH") as sent:
+        star.click()
+    assert json.loads(sent.value.post_data or "{}") == {"starred": [project_id]}, sent.value.post_data
+    expect(star).to_have_attribute("aria-pressed", "true")
+    expect(outsider).to_have_class(re.compile(r"\bstarred\b"))
+    me = page.request.get(f"{run.base}/api/v1/me").json()
+    assert [s["id"] for s in me["member"]["starred"]] == [project_id], me["member"]["starred"]
+    # A reload at /explore: the shell, the tab still open (the browser session's).
+    page.goto(run.base + "/explore")
+    expect(tab).to_have_attribute("aria-current", "page")
+    expect(page.locator("#main a.explore-card[data-full-name='owner/e2e-alpha'] .explore-mark")).to_have_text("starred")
+    # `?as=public` is the hub's page for anyone.
+    shown = context.new_page()
+    watch_page(run, shown)
+    shown.goto(run.base + "/explore?as=public")
+    expect(shown.locator("h1")).to_have_text("Public projects")
+    assert not shown.evaluate("!!(window.Maity && window.Maity.route)"), "/explore?as=public: the dashboard, not the hub's page"
+    shown.close()
+    # The star off again, as it was; the × closes the tab and leads to All projects; the menu's Explore opens it again.
+    star_off = page.request.patch(f"{run.base}/api/v1/me", headers={**_csrf(page), "Content-Type": "application/json"},
+                                  data=json.dumps({"starred": []}))
+    assert star_off.status == 200, (star_off.status, star_off.text())
+    page.reload()
+    page.locator("header nav.switcher .explore-tab-box button.tab-close").click()
+    expect(page).to_have_url(f"{run.base}/all")
+    expect(tab).to_have_count(0)
+    menu.get_by_role("button", name="Project tabs", exact=True).click()
+    menu.get_by_role("menuitem", name="Explore", exact=True).click()
+    expect(page).to_have_url(f"{run.base}/explore")
+    expect(tab).to_have_attribute("aria-current", "page")
+    # Another browser tab has its own session's tabs: no Explore tab there.
+    other = context.new_page()
+    watch_page(run, other)
+    other.goto(run.base + "/all")
+    expect(other.locator("header nav.switcher a[href='/all']")).to_have_attribute("aria-current", "page")
+    expect(other.locator(EXPLORE_TAB)).to_have_count(0)
+    other.close()
+    no_problems(run, "explore tab")
+    context.close()
+    # A member: the card opens the project as its own tab, solid, at its inbox. The scenario changed the
+    # owner's password long before this round.
+    context, page = signed_in_page(run, browser, password=OWNER_CHANGED_PASSWORD)
+    expect(page.locator("header .me")).to_be_visible()
+    page.goto(run.base + "/explore")
+    expect(page.locator(EXPLORE_TAB)).to_have_attribute("aria-current", "page")
+    own = page.locator("#main a.explore-card[data-full-name='owner/e2e-alpha']")
+    expect(own.locator(".explore-mark")).to_have_text("member")
+    own.click()
+    expect(page).to_have_url(re.compile(re.escape(run.base) + r"/owner/e2e-alpha/inbox$"))
+    solid = page.locator("header nav.switcher a[data-project]", has_text="E2E Alpha")
+    expect(solid).to_have_attribute("aria-current", "page")
+    expect(page.locator(OUTSIDER_TAB)).to_have_count(0)
+    page.locator("header nav.switcher .explore-tab-box button.tab-close").click()
+    expect(page.locator(EXPLORE_TAB)).to_have_count(0)
+    expect(page).to_have_url(re.compile(re.escape(run.base) + r"/owner/e2e-alpha/inbox$"))
+    no_problems(run, "explore tab, member")
     context.close()
 
 
@@ -6277,6 +6587,8 @@ def visitor_step(run: Run, page: Page) -> None:
     not_found = guest.locator("section.view-not-found")
     expect(not_found).to_be_visible()
     expect(guest.locator("#login-email")).to_have_count(0)
+    # Its sign-in comes back to the address (js/route.js withNext).
+    expect(not_found.get_by_role("link", name="Sign in, if you have access", exact=True)).to_have_attribute("href", "/login?next=%2Fno-such-page-here")
     not_found.get_by_role("link", name="Public projects", exact=True).click()
     expect(guest).to_have_url(f"{run.base}/explore")
     expect(guest.locator("h1")).to_have_text("Public projects")
@@ -6297,7 +6609,10 @@ def visitor_step(run: Run, page: Page) -> None:
     expect(guest.locator('section.view-visitor[data-kind="board"]')).to_be_visible()
     visitor_layout(run, page.context.browser)
     profile_layout(run, page.context.browser)
-    # The way to sign in leads to the form, and the address it came from is kept.
+    # The way to sign in leads to the form, and the address it came from is kept: after the
+    # link's own query, if it has one (js/route.js withNext).
+    href = guest.locator("header.site-header a.signin").get_attribute("href") or ""
+    assert re.fullmatch(r"/login(\?[^#]*&|\?)next=%2Fowner%2Fe2e-alpha%2Fboard", href), href
     guest.locator("header.site-header a.signin").click()
     expect(guest.locator("#login-email")).to_be_visible()
     assert "next=" in guest.url, guest.url
@@ -6686,6 +7001,7 @@ def start_on_runner_form(run: Run, page: Page, name: str) -> None:
     expect(page.get_by_role("heading", name="Managed agents", exact=True, level=3)).to_be_visible()
     expect(page.locator("main section.placements button.placement-new-open")).to_have_count(0)
     agents_page_tabs(run, page)
+    placement_instances_case(run, page)
     run.step("placements: Join an agent → On a runner: without a repository no runner fields; with one the paired runner allowed here is offered, no tool yet")
     page.goto(f"{run.base}/owner/e2e-alpha/placements")
     section = page.locator("main .join-slot")
@@ -6725,6 +7041,46 @@ def start_on_runner_form(run: Run, page: Page, name: str) -> None:
         page.unroute(runners_read, offering_it)
         page.unroute(BOOTSTRAP, in_bundle)
     no_problems(run, "start on a runner")
+
+
+def placement_instances_case(run: Run, page: Page) -> None:
+    """Which instance a placement runs (§15.5 `instance`, tsk-m8rpxpnyg0zd), in a real browser: the e2e
+    hub runs no runner, so the placements' read is answered with two placements of e2e-agent on one
+    runner (instances wqe2 and k7mq, clones e2e-agent and e2e-agent-2) and one not picked up yet.
+    Each row names its instance as handle#id with its clone; the unpicked one says no instance yet."""
+    run.step("placements: each row names its instance, handle#id, with its clone; none yet before the first pickup")
+    members = page.request.get(f"{run.base}/api/v1/projects/owner/e2e-alpha/members").json()["items"]
+    agent = next(m for m in members if m.get("handle") == "e2e-agent")
+
+    def row(pid: str, instance: str | None, clone: str) -> dict:
+        return {
+            "id": pid, "project": "owner/e2e-alpha",
+            "agent": {"id": agent["id"], "handle": "e2e-agent", "display_name": agent.get("display_name") or "E2E Agent", "avatar_url": None},
+            "runner": {"id": "rnr-e2e", "name": "e2e-box"}, "target": None, "harness": "claude-code", "mode": "interactive", "model": None,
+            "workspace": {"clone": clone, "branch": None, "continues_existing": False},
+            "desired": "running", "generation": 1, "rejoin": False, "fresh_session": False, "stop_grace_seconds": 120,
+            "approval": {"status": "approved", "request_id": None, "pending_change": None},
+            "credential_id": None, "instance": instance, "reported_current": False, "reported": None,
+            "session_hint": None, "logs_hint": None, "active": True, "closed_at": None, "closed_reason": None,
+            "created_by": "hum-owner", "proposed_by": None, "foreign": False,
+            "created_at": "2026-11-25T10:00:00Z", "updated_by": None, "updated_at": "2026-11-25T10:00:00Z",
+        }
+
+    items = [row("plc-e2e1", "wqe2", "e2e-agent"), row("plc-e2e2", "k7mq", "e2e-agent-2"), row("plc-e2e3", None, "e2e-agent-3")]
+    listing = re.compile(r"/api/v1/projects/owner/e2e-alpha/placements(\?|$)")
+    page.route(listing, lambda route: route.fulfill(json={"items": items, "next_cursor": None}))
+    try:
+        page.goto(f"{run.base}/owner/e2e-alpha/placements")
+        heads = page.locator("main section.placements li.placement .placement-head")
+        expect(heads).to_have_count(3)
+        got = [h.strip() for h in heads.all_inner_texts()]
+        assert got[0].startswith("e2e-agent#wqe2") and got[1].startswith("e2e-agent#k7mq"), f"the instances are not named: {got}"
+        assert "no instance yet" in got[2] and "#" not in got[2].split(" on ")[0], f"the unpicked placement: {got}"
+        facts = page.locator("main section.placements li.placement dl.facts").all_inner_texts()
+        assert "clone e2e-agent" in facts[0] and "clone e2e-agent-2" in facts[1], f"the clones are not named: {facts}"
+        run.shot(page, "placements-instances")
+    finally:
+        page.unroute(listing)
 
 
 def agents_page_tabs(run: Run, page: Page) -> None:
@@ -8768,7 +9124,7 @@ def project_tabs_step(run: Run, page: Page) -> None:
     assert 0 <= gap[0] <= 24 and gap[1], f"the tabs menu is not right after the tabs: {gap}"
     # The tabs menu is drawn as the row's last tab (tsk-qa2r972wjsws): the tabs' height, top, pill and gap, light and
     # dark, at 1280 and 390 px; still a menu button, not a tab; outside the tabs, so no drag or key moves it, and on a
-    # phone it keeps the row's right end while the tabs scroll.
+    # phone it keeps the row's end, or the spot just before the Explore link where it is shown, while the tabs scroll.
     like_tab = ("(() => { const ts = Array.from(document.querySelectorAll('nav.switcher a[data-project]')); const t = ts[ts.length - 1];"
                 " const b = document.querySelector('.tabs-menu-box .menu-button'); const r = (e) => e.getBoundingClientRect();"
                 " const s = (e) => { const c = getComputedStyle(e); return [c.borderTopLeftRadius, c.paddingTop, c.paddingLeft, c.fontSize,"
@@ -8889,20 +9245,29 @@ def project_tabs_step(run: Run, page: Page) -> None:
 def tabs_menu_scroll_step(run: Run, page: Page) -> None:
     """A long tabs menu on a phone (tsk-hhyccgssr2pr): the header is sticky, so the menu never
     scrolls away with the page. It ends at the screen's bottom edge, its list scrolls inside it, the
-    page behind stays where it is, and the last item can still be reached and opened. Twenty copies
-    of a project's switch, put before the real items, stand in for twenty more projects, so the
-    last item is still the real New project."""
+    page behind stays where it is, and the last project switch can still be reached and used.
+    On All projects there are no move actions. Twenty copies placed before the final switch
+    stand in for extra projects while the real bottom switch keeps its click handler."""
     run.step("tabs menu: a long list on a phone scrolls inside the menu, the page stays put")
     size = page.viewport_size
     try:
         page.set_viewport_size({"width": 360, "height": 640})
-        page.goto(f"{run.base}/owner/e2e-alpha/inbox")
+        page.goto(f"{run.base}/all")
         box = page.locator(".tabs-menu-box")
         box.get_by_role("button", name="Project tabs", exact=True).click()
         menu = box.locator("ul.menu")
         expect(menu).to_be_visible()
-        menu.evaluate("(ul) => { const li = ul.querySelector('li'); for (let i = 0; i < 20; i++) {"
-                      " const c = li.cloneNode(true); c.classList.add('e2e-extra-item'); ul.insertBefore(c, ul.firstChild); } }")
+        last = menu.locator("li:last-child > [role=menuitemcheckbox]")
+        expect(last).to_have_attribute("aria-checked", "true")
+        project = last.inner_text()
+        last.evaluate("""el => {
+            const item = el.parentElement;
+            for (let i = 0; i < 20; i++) item.before(item.cloneNode(true));
+        }""")
+        # The inbox may be empty. Give the page room to scroll so the wheel-containment check
+        # would actually fail if the menu passed its overscroll to the page.
+        page.locator("main").evaluate("(el) => el.style.minHeight = '200vh'")
+        assert page.evaluate("document.scrollingElement.scrollHeight > innerHeight")
         before = page.evaluate("scrollY")
         got = menu.evaluate("(ul) => { const r = ul.getBoundingClientRect();"
                             " return { top: r.top, bottom: r.bottom, vh: innerHeight, scrolls: ul.scrollHeight > ul.clientHeight }; }")
@@ -8915,14 +9280,18 @@ def tabs_menu_scroll_step(run: Run, page: Page) -> None:
         for _ in range(15):
             page.mouse.wheel(0, 400)
         page.wait_for_function("(ul) => ul.scrollTop + ul.clientHeight >= ul.scrollHeight - 1", arg=menu.element_handle())
-        last = box.get_by_role("menuitem", name="New project", exact=True)
         seen = last.evaluate("(el) => { const r = el.getBoundingClientRect(); const m = el.closest('ul').getBoundingClientRect();"
                              " return { inMenu: r.top >= m.top && r.bottom <= m.bottom + 1, inView: r.bottom <= innerHeight, scrollY }; }")
         assert seen["inMenu"] and seen["inView"], f"the last item is not in view after scrolling the menu: {seen}"
         assert seen["scrollY"] == before, f"the page scrolled with the menu: {before} -> {seen['scrollY']}"
         last.click()
-        expect(page).to_have_url(re.compile(r"/new$"))
+        switch = menu.get_by_role("menuitemcheckbox", name=project)
+        expect(switch).to_have_attribute("aria-checked", "false")
+        switch.click()
+        expect(switch).to_have_attribute("aria-checked", "true")
+        page.keyboard.press("Escape")
     finally:
+        page.locator("main").evaluate("(el) => el.style.removeProperty('min-height')")
         if size:
             page.set_viewport_size(size)
     no_problems(run, "tabs menu scroll")
@@ -8936,7 +9305,7 @@ SETTINGS_SECTIONS = {
     "Members and agents": ["Members' own agents", "Agents on runners", "Agents of owners who are not members", "Onboarding",
                            "Restricted access", "Agent signing", "Roles"],
     "Way of working": ["Who closes a card", "Approvals for outsiders' work", "Memory", "Keep the Why commitment",
-                       "Keep the Why personal settings", "Jour fixe series"],
+                       "Keep the Why personal settings", "Keep the Why steward", "Jour fixe series"],
     "Moderation": ["Remove a reported message", "Files waiting to be sent"],
     "Runners": [],
     "Mine": ["Your absence"],
@@ -9205,7 +9574,7 @@ def dormant_step(run: Run, page: Page) -> None:
 def change_password(run: Run, page: Page) -> None:
     """docs/api.md §2.1: the new password works, the old one does not, other sessions end."""
     run.step("account: change the password; another session ends; sign in with the new one")
-    new_password = "e2e changed password, long enough"
+    new_password = OWNER_CHANGED_PASSWORD
     other = page.context.browser.new_context()
     second = other.new_page()
     second.goto(run.base + "/")

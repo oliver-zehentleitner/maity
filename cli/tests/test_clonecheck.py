@@ -49,6 +49,7 @@ def placed(clone: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setenv("MAITY_PLACEMENT", "plc-0003")
     monkeypatch.setenv("GIT_COMMON_DIR", str(clone / ".git"))
     monkeypatch.setenv(clonecheck.GIT_INODE_ENV, str(os.lstat(clone / ".git").st_ino))
+    monkeypatch.setenv(clonecheck.GIT_DEVICE_ENV, str(os.lstat(clone / ".git").st_dev))
     private = clone.parent / "agent-dir" / "git"  # the runner's, outside the clone
     private.mkdir(parents=True)
     monkeypatch.setenv(clonecheck.GIT_PRIVATE_ENV, str(private))
@@ -213,7 +214,8 @@ def test_an_alternates_file_in_any_case_is_refused(placed: Path, name: str) -> N
 # What one sandboxed Claude Code session left in a clone, and a plain clone has not: Claude
 # Code 2.1.321, bubblewrap; `glab-cli/` and `worktrees/` from 2.1.323 on the runner's host, and
 # `modules/` from the same list of protected paths in the binary (tsk-ydxv7x37fg08;
-# cli/context/runner.md). A trailing `/` is an empty directory.
+# cli/context/runner.md); `NOTES_MERGE_WORKTREE/` seen in placed clones on a runner host
+# (tsk-c55vrwabp6wc). A trailing `/` is an empty directory.
 SANDBOX_LEFT = (
     "config.worktree",
     "objects/info/alternates",
@@ -221,6 +223,7 @@ SANDBOX_LEFT = (
     "modules/",
     "remotes/",
     "worktrees/",
+    "NOTES_MERGE_WORKTREE/",
     "info/.claude-sandbox-noreplace/",
     "objects/info/.claude-sandbox-noreplace/",
     "objects/info/commit-graphs/.claude-sandbox-noreplace/",
@@ -289,6 +292,7 @@ def test_an_empty_config_lock_mode_0444_reads_as_before(placed: Path) -> None:
         "remotes/origin",
         "glab-cli/config.yml",
         "worktrees/other/gitdir",
+        "NOTES_MERGE_WORKTREE/0123456789abcdef0123456789abcdef01234567",
         "info/.claude-sandbox-noreplace/hook",
         "objects/info/.claude-sandbox-noreplace/pack",
         "objects/info/commit-graphs/.claude-sandbox-noreplace/graph",
@@ -340,6 +344,7 @@ def test_a_link_in_place_of_a_placeholder_is_refused(placed: Path, entry: str) -
         "remotes/.hidden",
         "glab-cli/.hidden",
         "worktrees/.hidden",
+        "NOTES_MERGE_WORKTREE/.hidden",
         "info/.claude-sandbox-noreplace/.hidden",
     ],
 )
@@ -697,6 +702,7 @@ def test_a_partial_clone_is_named_so(
     (partial / ".git" / "maity").mkdir()
     monkeypatch.setenv("GIT_COMMON_DIR", str(partial / ".git"))
     monkeypatch.setenv(clonecheck.GIT_INODE_ENV, str(os.lstat(partial / ".git").st_ino))
+    monkeypatch.setenv(clonecheck.GIT_DEVICE_ENV, str(os.lstat(partial / ".git").st_dev))
     with pytest.raises(gitfacts.FactsError, match="Partial clones are not supported") as refused:
         gitfacts.collect(partial)
     assert "unset" not in str(refused.value)
@@ -880,14 +886,35 @@ def test_a_git_directory_that_is_a_link_is_refused(placed: Path, tmp_path: Path)
         proc.run([*proc.GIT, "status"], placed)
 
 
-def test_without_the_recorded_inode_maity_runs_no_git_there(
-    placed: Path, monkeypatch: pytest.MonkeyPatch
+@pytest.mark.parametrize("walks", [True, False])
+def test_the_same_inode_on_another_device_is_refused(
+    placed: Path, monkeypatch: pytest.MonkeyPatch, walks: bool
 ) -> None:
-    """A session a runner without this check started: restart it, then the inode is set."""
+    """An inode is unique only on its device: a `.git` whose inode is the recorded one but
+    whose device is not is another directory, refused on the descriptor walk and by name
+    (tsk-er1nymh4te1h)."""
     from maity import proc
 
-    monkeypatch.delenv(clonecheck.GIT_INODE_ENV)
-    with pytest.raises(proc.ToolError, match="restart the placement"):
+    if not walks:
+        monkeypatch.setattr(clonecheck, "_walks", lambda: False)
+    elif not clonecheck._walks():
+        pytest.skip("no descriptor walk on this platform")
+    other = os.lstat(placed / ".git").st_dev + 1
+    monkeypatch.setenv(clonecheck.GIT_DEVICE_ENV, str(other))
+    with pytest.raises(proc.ToolError, match="not the directory it was"):
+        proc.run([*proc.GIT, "status"], placed)
+
+
+@pytest.mark.parametrize("name", [clonecheck.GIT_INODE_ENV, clonecheck.GIT_DEVICE_ENV])
+def test_without_the_recorded_inode_maity_runs_no_git_there(
+    placed: Path, monkeypatch: pytest.MonkeyPatch, name: str
+) -> None:
+    """A session a runner without this check started: restart it, then the device and inode
+    are set."""
+    from maity import proc
+
+    monkeypatch.delenv(name)
+    with pytest.raises(proc.ToolError, match=f"{name} is not set"):
         proc.run([*proc.GIT, "status"], placed)
 
 
@@ -1189,6 +1216,43 @@ def test_the_guards_with_content_say_what_they_are(placed: Path, entry: str, exp
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("x\n")
     with pytest.raises(gitfacts.FactsError, match=expected):
+        gitfacts.collect(placed)
+
+
+def test_an_empty_notes_merge_worktree_directory_reads_as_before(placed: Path) -> None:
+    """The sandbox's empty `.git/NOTES_MERGE_WORKTREE/` alone refused two placed starts as
+    `not_a_plain_clone` (tsk-c55vrwabp6wc); empty, it passes."""
+    (placed / ".git" / "NOTES_MERGE_WORKTREE").mkdir()
+    assert clonecheck.inspection_finding(placed) is None
+    assert gitfacts.mismatches(gitfacts.collect(placed)) == []
+
+
+def test_a_notes_merge_in_progress_is_refused_and_named(placed: Path) -> None:
+    """With a note in it, `NOTES_MERGE_WORKTREE/` is a notes merge in progress: refused, and
+    named in the hub's finding, not hidden as `<entry>`."""
+    worktree = placed / ".git" / "NOTES_MERGE_WORKTREE"
+    worktree.mkdir()
+    (worktree / "0123456789abcdef0123456789abcdef01234567").write_text("a note\n")
+    finding = clonecheck.inspection_finding(placed)
+    assert finding is not None
+    assert finding.report_reason() == ".git/NOTES_MERGE_WORKTREE is not a plain clone's"
+
+
+@pytest.mark.parametrize(
+    ("entry", "directory"),
+    [
+        ("NOTES_MERGE_WORKTREE", False),  # only the directory the sandbox was seen to leave
+        ("NOTES_MERGE_PARTIAL", True),  # the rest of a notes merge, never seen empty
+        ("NOTES_MERGE_REF", False),
+    ],
+)
+def test_other_notes_merge_shapes_are_refused(placed: Path, entry: str, directory: bool) -> None:
+    path = placed / ".git" / entry
+    if directory:
+        path.mkdir()
+    else:
+        path.touch()
+    with pytest.raises(gitfacts.FactsError, match="not a plain clone's"):
         gitfacts.collect(placed)
 
 

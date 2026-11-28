@@ -5099,6 +5099,30 @@
     "en": "f0d839b3df807c74",
     "text": "4233211473afb6d0"
   },
+  "explore.heading": {
+    "en": "1a72c10edf3e3765",
+    "text": "12d8fe525a36884b"
+  },
+  "explore.intro": {
+    "en": "b3ebf768bddefa24",
+    "text": "1613b217ba832ddd"
+  },
+  "explore.member": {
+    "en": "68884b2d004b2e09",
+    "text": "a3c68ede4010a059"
+  },
+  "explore.none": {
+    "en": "de4acb7d0b2ed99f",
+    "text": "d86c87da00e3694d"
+  },
+  "explore.off": {
+    "en": "9c69d81d9c58bdeb",
+    "text": "7b39b227aca83bff"
+  },
+  "explore.starred": {
+    "en": "66d7dfa128f2c01b",
+    "text": "bb98b7d47fdcd8ae"
+  },
   "factor_banner.label": {
     "en": "ca4ae1ba2d424523",
     "text": "f3de3bec3c84506e"
@@ -5816,8 +5840,8 @@
     "text": "3e417227767701c6"
   },
   "handles.format": {
-    "en": "7c0f89573b9054d1",
-    "text": "287790ae48d219f1"
+    "en": "c1d1dc642ff3e26a",
+    "text": "742879e168e0fd63"
   },
   "handles.label": {
     "en": "91b340998b72895d",
@@ -5844,8 +5868,8 @@
     "text": "026cb941dd2884d3"
   },
   "handles.reserved": {
-    "en": "90faec94487053b7",
-    "text": "a4f1ef7e3c4b8048"
+    "en": "d9b64d8e3cc55db9",
+    "text": "fb3db92a9491abd9"
   },
   "handles.same": {
     "en": "140f66aa7a128909",
@@ -8506,6 +8530,10 @@
   "join.step_up": {
     "en": "0365bc43945f8179",
     "text": "1b1454a3e3cf5be3"
+  },
+  "join.steward.hint": {
+    "en": "77717a274f1da1a2",
+    "text": "8c6edef230ecbbe1"
   },
   "join.subagents.english": {
     "en": "7c6e4d24c8258b2f",
@@ -11415,6 +11443,14 @@
     "en": "bd1cee97842c0df5",
     "text": "27267550a9a12bb3"
   },
+  "members.steward.prefilled": {
+    "en": "fe388b6ccf098b60",
+    "text": "401479c7750552ab"
+  },
+  "members.steward.title": {
+    "en": "f9206d8238a4e3af",
+    "text": "49c36e51103c5d80"
+  },
   "members.title": {
     "en": "015c33c4ec95d38f",
     "text": "01666e349782ca93"
@@ -12086,6 +12122,10 @@
   "name_rules.handle_lowercase": {
     "en": "6c675eafabb0d256",
     "text": "69de48eddd28560a"
+  },
+  "name_rules.handle_person": {
+    "en": "b83f07916d982f95",
+    "text": "6dcbfeda28f4cd9c"
   },
   "name_rules.slug": {
     "en": "0851da38257f9de3",
@@ -12868,8 +12908,8 @@
     "text": "41ed9fcbe69d0f7d"
   },
   "orgs.field.format": {
-    "en": "97ea92837113d4eb",
-    "text": "acecc0a7dbb7c7ec"
+    "en": "d4d166f86e3818b4",
+    "text": "b470d555341a24ac"
   },
   "orgs.field.invited": {
     "en": "ad21cd4d8779da6a",
@@ -12892,8 +12932,8 @@
     "text": "faf15e621a5f9701"
   },
   "orgs.field.reserved": {
-    "en": "5b3615cae20fe05e",
-    "text": "d9e5554aa51d87a5"
+    "en": "b152f0e294a9b31a",
+    "text": "ff17ec26ad41f091"
   },
   "orgs.field.taken": {
     "en": "602ababe9582fbbe",
@@ -14071,6 +14111,10 @@
     "en": "c0774c185060fc13",
     "text": "928a54f145b53b98"
   },
+  "placements.clone": {
+    "en": "9fc50c4663edb934",
+    "text": "427495fa9969a4a2"
+  },
   "placements.consent.answer": {
     "en": "3cd96246ee7151c9",
     "text": "472ddc1fde96fb4c"
@@ -14382,6 +14426,10 @@
   "placements.new.tool": {
     "en": "077dcaba577a59ac",
     "text": "f98e8212fac0d34f"
+  },
+  "placements.no_instance": {
+    "en": "18d73d169164d0d8",
+    "text": "480a70e58bb0642b"
   },
   "placements.not_removed": {
     "en": "5d15ffc78d58b477",
@@ -16923,6 +16971,14 @@
     "en": "8caf33b74f32a38a",
     "text": "d4220aebad28bb23"
   },
+  "role.steward": {
+    "en": "8056175490b77f51",
+    "text": "8056175490b77f51"
+  },
+  "role.steward.help": {
+    "en": "0ca8a999942b5138",
+    "text": "557abb965854a58f"
+  },
   "role.tester": {
     "en": "8a954e065116c83b",
     "text": "8a954e065116c83b"
@@ -18743,6 +18799,10 @@
     "en": "5461f51145ef0783",
     "text": "5a890e9a2312ca24"
   },
+  "settings.onboarding.role.steward": {
+    "en": "005f6f53bb8d7de5",
+    "text": "a384df2e1376f092"
+  },
   "settings.onboarding.role.tester": {
     "en": "e327a4c5990c43e7",
     "text": "86bdcdf9a878d310"
@@ -19074,6 +19134,46 @@
   "settings.state.title": {
     "en": "2a3edb7abc9e6929",
     "text": "bb227c8b20a88e52"
+  },
+  "settings.steward_writes.cards_only": {
+    "en": "1e94d2ebf5ab555d",
+    "text": "12c609b987f47592"
+  },
+  "settings.steward_writes.hint": {
+    "en": "efbe06b2970bea86",
+    "text": "b3cc88778c007b17"
+  },
+  "settings.steward_writes.label": {
+    "en": "d7c672eec8b95efd",
+    "text": "4108bcf4eeefbdfd"
+  },
+  "settings.steward_writes.not_saved": {
+    "en": "87aeef0b37fc6d37",
+    "text": "0b856f6911015bfb"
+  },
+  "settings.steward_writes.reason": {
+    "en": "dafc3476fe7d3275",
+    "text": "cdd21c710cc0a47f"
+  },
+  "settings.steward_writes.reason_placeholder": {
+    "en": "c2950f8a1e414fa1",
+    "text": "ae0d303ed25f04fc"
+  },
+  "settings.steward_writes.save": {
+    "en": "a6b1ba0f36034cb8",
+    "text": "779266723a07bf08"
+  },
+  "settings.steward_writes.saved": {
+    "en": "a0a137b78e9105df",
+    "text": "bb50fb46b690cdfb"
+  },
+  "settings.steward_writes.self": {
+    "en": "b29d268ba9b541ab",
+    "text": "bd8e2ec3879dc9db"
+  },
+  "settings.steward_writes.title": {
+    "en": "0b82118f309e44ea",
+    "text": "bfd34b687ccada79"
   },
   "settings.tab.general": {
     "en": "468d61a94d9f9d93",
@@ -19850,6 +19950,18 @@
   "tabs.closed": {
     "en": "41a13659a8884709",
     "text": "4006e8399f5b9901"
+  },
+  "tabs.explore": {
+    "en": "e3abd89f854ecdf2",
+    "text": "b666fdff7d3d4fb8"
+  },
+  "tabs.explore_close": {
+    "en": "cdb225acbb2d4a15",
+    "text": "52255f33d0349af2"
+  },
+  "tabs.explore_title": {
+    "en": "b02bcc4f7f5b8c41",
+    "text": "3e29b7f756f8cfaf"
   },
   "tabs.keep_at_start": {
     "en": "bded12959749c950",
@@ -20791,6 +20903,10 @@
     "en": "4a6f228f9a0c60df",
     "text": "f0567b9c3e841fb9"
   },
+  "trust.every.role.steward": {
+    "en": "b087555385a9b175",
+    "text": "f8a50396ea3143a9"
+  },
   "trust.every.role.tester": {
     "en": "cd7db828c59b97cb",
     "text": "ac99360f7e816b8c"
@@ -20838,6 +20954,10 @@
   "trust.role_word.reviewer": {
     "en": "02b93b284a355f07",
     "text": "02b93b284a355f07"
+  },
+  "trust.role_word.steward": {
+    "en": "4108bcf4eeefbdfd",
+    "text": "4108bcf4eeefbdfd"
   },
   "trust.role_word.tester": {
     "en": "9aaf66d48dc13a73",

@@ -38,11 +38,13 @@ MARKER_PATH = Path(".git", "maity", "placement")
 # the agent, beside git's own repositories (GIT_PRIVATE_ENV), and only for Codex here in the
 # clone (IN_CLONE).
 GIT_PATH = Path(".git", "maity", "git")
-# The inode of the clone's `.git` when the runner started the session (adapters.launch).
-# The sandbox keeps the agent out of `.git/maity`, not from renaming `.git` itself, so a
-# directory of the session's own could take its name; maity takes `.git` only as the one
-# with this inode, opened once (opened_git).
+# The device and inode of the clone's `.git` when the runner started the session
+# (adapters.launch). The sandbox keeps the agent out of `.git/maity`, not from renaming
+# `.git` itself, so a directory of the session's own could take its name; maity takes `.git`
+# only as the one with this device and inode, opened once (opened_git). An inode is unique
+# only on its device, so both are compared.
 GIT_INODE_ENV = "MAITY_GIT_INODE"
+GIT_DEVICE_ENV = "MAITY_GIT_DEVICE"
 # Where maity makes git's own repository for one run, outside the clone, in the runner's
 # directory for the agent, which the sandbox hides: git gets that repository as a path, and a
 # path through `.git` names whatever `.git` is when git opens it. For Codex, whose maity
@@ -117,7 +119,14 @@ SANDBOX_EMPTY_FILES = frozenset({"config.worktree", "config.lock", *ALTERNATES})
 # `.git/worktrees` among the paths its sandbox protects (read in the binary of 2.1.321; seen made
 # empty at every session start by 2.1.323 for `glab-cli` and `worktrees`). With anything in
 # them `modules/` is still refused as submodules and `worktrees/` as worktrees (UNSUPPORTED).
-SANDBOX_EMPTY_DIRS = frozenset({"glab-cli", "modules", "remotes", "worktrees"})
+# `NOTES_MERGE_WORKTREE/`: seen as an empty directory, mode 0700, in two placed Claude Code
+# clones on a runner host (2026-11-28), made again at the next session start after it was
+# removed by hand; not read in a binary (tsk-c55vrwabp6wc). With anything in it, it is a notes
+# merge in progress and refused as no plain clone's. `NOTES_MERGE_PARTIAL` and `NOTES_MERGE_REF`
+# were not seen and are not accepted.
+SANDBOX_EMPTY_DIRS = frozenset(
+    {"glab-cli", "modules", "remotes", "worktrees", "NOTES_MERGE_WORKTREE"}
+)
 CONFIG_MAX = 64 * 1024
 # More entries than this in `.git` are refused rather than listed on every git run.
 TREE_MAX = 20_000
@@ -772,17 +781,22 @@ class Opened(NamedTuple):
 def opened_clone(root: Path) -> Iterator[Opened | None]:
     """The clone's root and `.git` as the runner left them: the root opened once without
     following a link, `.git` opened from that descriptor without following one, and refused
-    unless it is the directory whose inode the runner set in GIT_INODE_ENV at the session's
-    start. Yields both descriptors, so what maity reads or writes afterwards is not looked up
-    through the clone's path or the name `.git` again; sandboxed code can rename `.git`, and
-    a root exchanged after the check is not the one written to. Where directories cannot be
-    opened (Windows, local mode) the inode is checked by name and None is yielded."""
-    value = os.environ.get(GIT_INODE_ENV, "")
-    if not (value.isascii() and value.isdigit()):
-        raise Refused(
-            f"{GIT_INODE_ENV} is not set, so the clone's .git is unknown; the runner sets it"
-            " when it starts a session: restart the placement"
-        )
+    unless it is the directory whose device and inode the runner set in GIT_DEVICE_ENV and
+    GIT_INODE_ENV at the session's start. Yields both descriptors, so what maity reads or
+    writes afterwards is not looked up through the clone's path or the name `.git` again;
+    sandboxed code can rename `.git`, and a root exchanged after the check is not the one
+    written to. Where directories cannot be opened (Windows, local mode) device and inode are
+    checked by name and None is yielded."""
+    recorded = []
+    for name in (GIT_DEVICE_ENV, GIT_INODE_ENV):
+        value = os.environ.get(name, "")
+        if not (value.isascii() and value.isdigit()):
+            raise Refused(
+                f"{name} is not set, so the clone's .git is unknown; the runner sets it"
+                " when it starts a session: restart the placement"
+            )
+        recorded.append(int(value))
+    device, inode = recorded
     replaced = Refused(
         "the clone's .git is not the directory it was when the session started (it was"
         " renamed or replaced); maity runs no git there"
@@ -792,7 +806,7 @@ def opened_clone(root: Path) -> Iterator[Opened | None]:
             here = os.lstat(root / ".git")
         except OSError:
             raise replaced from None
-        if not stat.S_ISDIR(here.st_mode) or here.st_ino != int(value):
+        if not stat.S_ISDIR(here.st_mode) or (here.st_dev, here.st_ino) != (device, inode):
             raise replaced
         yield None
         return
@@ -806,7 +820,8 @@ def opened_clone(root: Path) -> Iterator[Opened | None]:
         except OSError:
             raise replaced from None
         try:
-            if os.fstat(fd).st_ino != int(value):
+            opened = os.fstat(fd)
+            if (opened.st_dev, opened.st_ino) != (device, inode):
                 raise replaced
             yield Opened(top, fd)
         finally:

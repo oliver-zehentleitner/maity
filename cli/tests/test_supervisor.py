@@ -216,6 +216,7 @@ def test_a_stub_placement_starts_and_runs(world: Any) -> None:
     assert name == "maity_maity_agent-3"
     assert env == {
         "MAITY_PLACEMENT": "plc-0003", "GIT_COMMON_DIR": str(clone / ".git"),
+        clonecheck.GIT_DEVICE_ENV: str(os.lstat(clone / ".git").st_dev),
         clonecheck.GIT_INODE_ENV: str(os.lstat(clone / ".git").st_ino),
         clonecheck.GIT_PRIVATE_ENV: env[clonecheck.GIT_PRIVATE_ENV],
         "MAITY_SUPERVISOR": f"maity-runner/{__version__}",
@@ -1332,7 +1333,8 @@ def test_a_clone_with_only_the_sandboxs_empty_placeholders_starts(
     for entry in ("config.worktree", "objects/info/alternates"):
         (place.path / ".git" / entry).parent.mkdir(parents=True, exist_ok=True)
         (place.path / ".git" / entry).write_text("")
-    for entry in ("glab-cli", "modules", "remotes", "worktrees", "info/.claude-sandbox-noreplace",
+    for entry in ("glab-cli", "modules", "remotes", "worktrees", "NOTES_MERGE_WORKTREE",
+                  "info/.claude-sandbox-noreplace",
                   "objects/info/.claude-sandbox-noreplace",
                   "objects/info/commit-graphs/.claude-sandbox-noreplace"):  # fmt: skip
         (place.path / ".git" / entry).mkdir(parents=True)
