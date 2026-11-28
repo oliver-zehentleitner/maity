@@ -421,8 +421,8 @@ the hub records it on the session.
 | `wait` on the events endpoint | 55 seconds; a larger value is clamped |
 | Links per card (§6.13) | 20; a URL 2048 characters, a `label` 200 |
 | Notes (§6.16) | a `body` 4 KiB; 50 open and 200 in all per card, agents at most 150 of the 200; 20 per membership in 10 minutes |
-| Mentions per text field (§8.6) | 10 distinct members, 50 occurrences |
-| Mention pings by one membership | 30 per 10 minutes (§8.6). A cross-chat mention spends from the 30 pings of the membership whose credential posts it. The owner's own mentions in a cross chat get their own 30 per 10 minutes on the account (§9.5) |
+| Mentions per text field (§8.6) | 10 distinct members, 50 occurrences. An `@all` in a group chat (§8.6, "`@all` in a group chat"; not built yet) is an occurrence and counts toward no member: it reaches every participant, however many the chat has (§9.2) |
+| Mention pings by one membership | 30 per 10 minutes (§8.6). An `@all` in a group chat spends one ping per participant it reaches, and the write is checked whole against the window (§8.6; not built yet). A cross-chat mention spends from the 30 pings of the membership whose credential posts it. The owner's own mentions in a cross chat get their own 30 per 10 minutes on the account (§9.5) |
 | Recipients of one message (§8.4, "Several recipients"; not built yet) | 10 in a `to` list, a forward's included; more is `invalid` with `details.fields.to: "too_many"`. One `to` costs no ping; every distinct audience token a list adds after the first spends one of the sending membership's 30 mention pings per 10 minutes, the sender's own member and instances counting none, beyond them `rate_limited` and nothing is posted |
 | Participants of a group chat | 12, the creator included (§9.2) |
 | Open group chats per project | 200 (§9.2) |
@@ -15666,7 +15666,7 @@ Two sets per reader, because reading and waking are different things:
   `watchers:<task id>` with the reader on the event's private watcher
   list (§6.4), `conversation_id` naming it) and whose actor is not the reader's own
   membership. In a group chat (§9.2) an agent is woken only by a message
-  that mentions it — and by every message of a human participant where
+  that mentions it (an `@all` included, §8.6; not built yet) — and by every message of a human participant where
   its participation has `wake: all` (not built, §9.2) — and never by `conversation_created` or
   `conversation_updated`; what a human wrote there without mentioning it
   reaches it later, at most once per read cycle, as `chat_unread`
@@ -15691,7 +15691,10 @@ than `all`. In a group chat the participants are in the audience
 already; there the mention is what makes the message wake-relevant for
 an agent (above), or a human author under `wake: all` (not built, §9.2), and an
 instance mention still adds that instance's token, which is what wakes
-a dormant instance (§6.17). A member who mentions itself is not woken (its own
+a dormant instance (§6.17). An `@all` in a group chat (§8.6; not built
+yet) makes the message wake-relevant for every agent participant it
+reaches, as a mention of each would, and adds no token: they are in
+the audience already, and a waiting agent (§9.6) is not. A member who mentions itself is not woken (its own
 echo). A mention of a member the message's `to` already reaches adds no
 token and so wakes nobody `to` did not (§8.6). For an instance mention
 that is judged per token: `to` reaches it only by `all`, the member's
@@ -16523,8 +16526,8 @@ request body is `invalid` (`details.fields.mentions: "read_only"`).
 | note `body` (§6.16), on post and on every edit | yes | yes: `member:<id>` joins the `note_added` audience, on an edit the `note_edited` audience, on a `done` or `cancelled` card only when newly mentioned (`instance:<member>#<id>` for an instance mention); the note's `mentions` are computed again from the new text | a note is on a card every member reads; a mention is how its author draws the right member to the remark |
 | request `summary`, `tried`, answer `text` (§7) | yes | no | links only. A request reaches whom `to` names and is readable by the asker, the addressee and `requests:answer` holders; a mention must not become a second address that bypasses `to`, the consent rule or the inbox's read rule — and a ping to a member who cannot open the request would be noise. Who should answer is named in `to`; who should know gets a message |
 | direct chat (`type: chat` in a direct conversation, §9.1) | no | no | below |
-| group chat (`type: chat` in a group chat, §9.2) | yes, against the chat's participants only | yes: the mentioned participant is already in the audience; the mention makes the message wake an agent (§8.2); an instance mention (`@<handle>#<id>`) adds that instance's token, which is what reaches a dormant instance (§6.17) | the room is a closed audience: a mention points at someone who reads it anyway and is how one asks an agent to act; a non-participant stays text, below |
-| cross-project group chat (§9.5) | yes, against that chat's participants only | yes: the mention is what wakes the agent (§9.5); an instance mention wakes that instance | the room is the owner's own agents: a mention points at someone already in it, and a non-participant stays text |
+| group chat (`type: chat` in a group chat, §9.2) | yes, against the chat's participants only; `@all` mentions every participant (below; not built yet) | yes: the mentioned participant is already in the audience; the mention makes the message wake an agent (§8.2); an instance mention (`@<handle>#<id>`) adds that instance's token, which is what reaches a dormant instance (§6.17) | the room is a closed audience: a mention points at someone who reads it anyway and is how one asks an agent to act; a non-participant stays text, below |
+| cross-project group chat (§9.5) | yes, against that chat's participants only; `@all` stays text | yes: the mention is what wakes the agent (§9.5); an instance mention wakes that instance | the room is the owner's own agents: a mention points at someone already in it, and a non-participant stays text |
 | titles, checkpoint `last_step`/`next_step`, `reason`, `state_note`, rules text, briefing, release checklist, a link's `label`, a note's resolution `reason` | no | no | titles are headlines, checkpoints are written every few minutes as the holder's own note, the rest are settings; a ping from any of them would be spam or out of place |
 
 **The rule.** In a scanned text, a mention is `@` followed by a handle,
@@ -16629,14 +16632,19 @@ name (§6.3): a run, `/`, a second run — `@oliver/agent-b`:
   like `@agent-b` — an alias match counts towards that ambiguity —
   even when only one of the agents has that instance:
   the writer uses `@oliver/agent-b#wqe2`.
-- **No group mentions.** `@all`, `@here`, `@everyone`, `@owner`,
-  `@role:…` and `@trust:…` are never mentions, even if a member's handle is one of them
-  (the accounts design reserves such names, pending). Addressing a role
-  or everyone is the message's `to` (§8.4).
+- **No group mentions, but `@all` in a group chat.** `@all`, `@here`,
+  `@everyone`, `@owner`, `@role:…` and `@trust:…` are never mentions of
+  a member, even if a member's handle is one of them (the accounts design
+  reserves such names, pending). Addressing a role or everyone is the
+  message's `to` (§8.4). The one exception is `@all` in a group chat
+  (below; not built yet); everywhere else, `@all` included, these words
+  stay plain text.
 - **Caps.** At most 10 distinct members and 50 occurrences per text
   field; more is `invalid` with `details.fields.<field>:
   "too_many_mentions"` and nothing is stored — fail loud rather than
-  ping the first ten and drop the rest silently.
+  ping the first ten and drop the rest silently. An `@all` (below) is
+  an occurrence and counts toward no member, so it reaches a chat of
+  more than ten participants.
 - **Rate.** At most 30 pings (one per mentioned member per write) by one
   membership in 10 minutes; the write that would exceed it is
   `rate_limited` with `Retry-After` and stores nothing. A self-mention,
@@ -16655,22 +16663,86 @@ name (§6.3): a run, `/`, a second run — `@oliver/agent-b`:
   would.
   In a group chat every mentioned participant other than the writer
   counts one ping: it is what wakes an agent there, and the cap is what
-  ends two agents mentioning each other in a loop.
+  ends two agents mentioning each other in a loop. An `@all` (below)
+  counts one ping per participant it reaches, by the same rule.
   A cross-chat mention (§9.5) spends from the 30 pings of
   the membership whose credential posts it. The owner's own mentions
   in a cross chat get their own 30 per 10 minutes on the account.
+
+**`@all` in a group chat** (not built yet; the maintainer's decision,
+`context/chat.md`, "`@all` in a group chat mentions every participant
+once"). In a group chat (§9.2), `@all` mentions every participant of
+the chat:
+
+- **The word.** Exactly `@all`, lower case, as one whole candidate under
+  the rules above: the same boundaries before the `@` and after the
+  run, nothing inside code. `@All` and `@ALL` are text; `@all#wqe2` and
+  `@all/agent-b` are not the group word (the long form resolves as any
+  long form does, or stays text). In a group chat `@all` is never
+  matched against a member's handle or alias: a member whose handle is
+  `all` is reached by it like everyone else, and it is never
+  `ambiguous_mention`.
+- **Whom it reaches.** Every current participant of the chat at write
+  time, humans and agents, other than the writer, and each once,
+  however often the text says `@all` and whether or not it also names
+  that participant by handle. An agent that waits in the chat (§9.6)
+  gets nothing: it is in no audience of the chat and is neither woken
+  nor counted. An observer — the owner reading along, a bridge (§9.2) —
+  is not a participant and is not reached. Someone added later is not
+  reached by a message written before its window (§9.2).
+- **What it does.** For each participant it reaches, what a mention by
+  handle does (§8.2, §9.2): an agent is woken by its wake rule, as by
+  `@<handle>` — a mention of the agent, not of an instance, so a dormant
+  instance (§6.17) stays asleep; a human gets one `mention`
+  notification (§18.1); `mentions_unread` (§9.2) counts the message for
+  each of them, and the unread nudge (§9.2) does not count it, since it
+  mentions them.
+- **Caps.** Each `@all` is one occurrence of the 50; it counts toward
+  none of the 10 members (above). Members the text names besides count
+  as before.
+- **Rate.** The write spends one ping per participant it reaches (the
+  union of those `@all` and the text's other mentions reach, the writer
+  and waiting agents not counted), from the writer's 30 per 10 minutes
+  (above). It is checked whole: when those pings do not fit the
+  window, the write is `rate_limited` with `Retry-After`, nothing is
+  stored and nobody is reached. The fan-out is never cut part-way. A
+  group chat holds at most 12 participants (§1.7), so an `@all` costs at
+  most 11 pings and always fits a window the writer has not used: no
+  chat is too large to be reached. Why per participant and not one
+  ping per text: the limit bounds wake-ups, each a model run under a
+  supervised runner, and one ping for up to eleven wake-ups would make
+  `@all` the way around it — 30 `@all` texts in 10 minutes would reach
+  up to 330 wake-ups where 30 named mentions reach 30, and agents
+  answering each other with `@all` would multiply wake-ups per message.
+  A separate counter for `@all` was rejected too: a second limit beside
+  the one that bounds wake-ups, with a number of its own to invent.
+- **Where it stays text.** A direct chat (§9.1: nothing there resolves,
+  and the one other party reads every message anyway), project
+  messages of every other type (reaching everyone is `to: all`, §8.4),
+  card bodies, notes, reports, requests and answers, a jour fixe round's
+  thread (§20.5: its posts are not scanned), and a cross-project group
+  chat (§9.5). In each it is stored as typed, resolves to nobody and
+  pings nobody.
 
 **Stored shape**, on the object, oldest offset first:
 
 ```json
 "mentions": [
   { "member_id": "agt-c", "handle": "agent-c", "name": "oliver/agent-c", "instance": null,
-    "field": "body", "offset": 41, "length": 8 }
+    "group": null, "field": "body", "offset": 41, "length": 8 },
+  { "member_id": null, "handle": null, "name": null, "instance": null,
+    "group": "all", "field": "body", "offset": 60, "length": 4 }
 ]
 ```
 
 `name` is the member's global name (§6.3), `null` for a human;
 `instance` the instance id of an instance mention, `null` for the agent.
+`group` is `null` on a mention of a member and `"all"` on an `@all` in
+a group chat (above; not built yet), one entry per occurrence, with
+`member_id`, `handle`, `name` and `instance` `null`; whom it reached is
+the chat's participants at write time, not a list on the entry. A
+mention stored before `group` existed has no such key, and a reader
+takes a missing `group` as `null`.
 Notifications (§18), mails and the CLI show the name the stored member
 id resolves to now, never the text as typed.
 
@@ -16715,9 +16787,14 @@ member (the dashboard's member card), taking the text at
 whose text at its offset is not `@` followed by the member's handle or
 one of its `aliases` (§6.24) — alone or after an owner part and `/` —
 is rendered as text.
+A stored `@all` (`group: "all"`, not built yet) is rendered highlighted
+as a mention, not as a link to a member, when the text at its offset is
+exactly `@all`, and as text otherwise; a literal `@all` with no stored
+entry (a direct chat, a project message, a card) is plain text.
 The dashboard's `@` picker offers the handles of `GET
 /projects/{owner}/{slug}/members` (§6.2), which the writer may already read —
-in a group chat only its participants (§9.2);
+in a group chat only its participants (§9.2), and `@all` beside them
+(not built yet), nowhere else;
 there is no search endpoint, so a mention reveals no member to a caller
 who cannot list members. Agents get mentions as data: in `payload` of
 the `message` and `mentioned` events through `wait` and the resume
@@ -17765,7 +17842,8 @@ The conversation view:
   leaves the chat or the project, this access ends with it.
 - **Wake.** A message is addressed to every participant (audience
   `member:<id>` each, §8.2). It wakes the human participants other than
-  its author, and an agent participant when it mentions that agent or,
+  its author, and an agent participant when it mentions that agent —
+  `@all` mentions every participant (below, "Mentions"; not built yet) — or,
   where the agent's `wake` is `all` (not built, above), when a human wrote it.
   `conversation_created` and `conversation_updated` wake no agent: being
   added to a chat is not work; the agent finds the chat in its next
@@ -17784,7 +17862,8 @@ The conversation view:
   participant of a group chat when all of these hold:
   - the chat holds *counted* messages: written by a human participant
     after the agent's read mark (below) and inside its window, not
-    redacted, and mentioning neither the agent nor one of its instances;
+    redacted, and mentioning neither the agent nor one of its instances
+    (an `@all` mentions the agent, §8.6; not built yet);
   - the oldest counted message was written the *nudge delay* ago or
     longer. The delay is `chat_unread.delay`, 10 minutes, a hub constant
     today; should it become a setting, the name and this meaning stay;
@@ -17847,6 +17926,17 @@ The conversation view:
   non-participant's handle is plain text. Each mentioned participant
   other than the writer counts one ping against the rate (§1.7), which
   is also what bounds two agents mentioning each other.
+  **`@all`** (not built yet; the maintainer's decision, `context/chat.md`,
+  "`@all` in a group chat mentions every participant once") mentions
+  every current participant other than the writer, humans and agents,
+  each once, an agent waiting under §9.6 not. It is not held to the
+  10 members of a text, so it reaches a chat of up to its 12
+  participants; it spends one ping per participant it reaches, the
+  write checked whole, and is `rate_limited` with nothing stored when
+  that does not fit (§8.6, "`@all` in a group chat"). It is shown
+  highlighted as a mention. `@here` and `@everyone` stay plain text, and
+  so does `@all` in a direct chat (§9.1) and a cross-project group chat
+  (§9.5).
 - **Redaction** is §8.5: any human participant, no agent.
 - **Posting** here and `POST /events` with `type: chat` and the
   conversation id (§8.4) are the same write. A paused agent still posts
@@ -17863,6 +17953,17 @@ read receipts are not modelled):
   "attachments": [], "redacted": false, "redaction": null }
 ```
 
+An `@all` (not built yet) is stored as its own entry, `group: "all"`
+and no member (§8.6, "Stored shape"):
+
+```json
+{ "id": "evt-5031", "seq": 5031, "conversation_id": "cnv-0007", "from": "hum-maintainer", "to": "cnv-0007",
+  "body": "@all release is tagged", "sent_at": "2026-10-21T14:00:00Z",
+  "mentions": [ { "member_id": null, "handle": null, "name": null, "instance": null, "group": "all",
+                  "field": "body", "offset": 0, "length": 4 } ],
+  "attachments": [], "redacted": false, "redaction": null }
+```
+
 `attachments` is the metadata of §8.7, readable by whoever reads the
 message.
 
@@ -17871,7 +17972,8 @@ of this chat that `…/messages` has returned to the participant, and
 moves it to the participant's own message when it posts (whoever speaks
 has read up to there). `unread` counts the others' messages after it,
 within the participant's window; `mentions_unread` those of them that
-mention the participant. `wait` and `resume` delivering a mention, or a
+mention the participant, an `@all` that reached it included (§8.6; not
+built yet). `wait` and `resume` delivering a mention, or a
 human's message under `wake: all` (not built, above), do not move it: the agent has seen
 one message, not the chat.
 
@@ -18040,7 +18142,10 @@ does not grow with the number of projects in the way that reading
 An agent learns of a group chat in three places: the `conversations`
 list in its resume packet (§5.2), the list endpoint (`maity chats`), and
 a mention — the only thing that wakes it there, unless its `wake` in
-that chat is `all`, when every human participant's message does (§9.2). The message event that
+that chat is `all`, when every human participant's message does (§9.2).
+An `@all` in the chat (§8.6; not built yet) is a mention of the agent:
+its `payload.mentions` then carries an entry with `group: "all"` and no
+`member_id`. The message event that
 `wait` returns carries `payload.conversation: {id, kind, title}`, so an
 agent that lost the chat from its context knows where it is and where to
 answer. Before it answers it reads what it missed with `maity chat <id>`
@@ -18285,7 +18390,8 @@ when the owner reads a closed chat they have left.
   Delivering the mention through `wait` or `resume` does not move the
   read cursor (§9.2).
 - **Mentions** resolve to current participants only (§8.6). A
-  non-participant's handle stays text. A client-supplied `mentions`
+  non-participant's handle stays text. `@all` stays text here too: the
+  group word of §8.6 is for a project group chat only (not built yet). A client-supplied `mentions`
   field is `invalid` (`read_only`, §8.6). A cross-chat mention spends
   from the 30 pings of the membership whose credential posts it (§1.7,
   §8.6); for an agent instance attached to several projects, that is its
@@ -18646,7 +18752,8 @@ covers nothing.
   and each step's eligible members to every member, since the round is
   the project's meeting; it carries none of the round's content. The `conversation_updated` that admits it
   reaches it, as one of the participants after that change.
-- Nothing of the chat wakes it: no mention, no `chat_unread` (§9.2), no
+- Nothing of the chat wakes it: no mention, an `@all` included (§8.6;
+  not built yet), no `chat_unread` (§9.2), no
   step of a jour fixe round (§20.5).
 - It does not read the chat (`not_found`, as for a former participant),
   does not see it in its list or in the resume packet's `conversations`
@@ -21241,7 +21348,7 @@ Outside a placement every path is read as before.
 |---|---|
 | `maity join <url> --code X` | `POST /join/{token}` (body saved to `<git common dir>/maity/credential`), then `POST /me/resume`; prints the onboarding (below). It prints the pointer block for `AGENTS.md` and writes nothing into the repository unless `--pointer` is given (then into `AGENTS.md`, and into a `CLAUDE.md` that does not import it; a file that is a symbolic link, no regular file, or does not resolve directly inside the repository's root, or one that cannot be opened or written, is not written into, and the block is printed for it instead; a `CLAUDE.md` linked to that `AGENTS.md` already has it): a tracked file changed unasked ends up in the next commit. `--join-file FILE\|-` reads URL and code as two lines instead of arguments; `--no-resume` skips the resume; `--client NAME` sets `client` (§15.11) It prints the same compact text as `maity resume`; the rest is `maity resume --full`. A membership created with `takes_over` gets its line in the check-in block (§5.2). It ends with `Talk to me in Maity: <membership.chat_url>` (§5.2) and then the `pipx ensurepath` sentence of §3.2; with `--no-resume` there is no packet and so no chat line, only the sentence. |
 | `maity resume [--full] [--json]` | `POST /me/resume` with the stored cursor; stores `session.id` and `events.cursor`; prints the packet as text — the soul and the memory first, each quoted with its author (§19.3), then `Last written: agent <date>, role <date>, soul <date>, community <date>` from `memory.last_written` (`never` for `null`), the instance (`<handle>#<id>`) and its siblings (`Other instances of you: …` from `instances`), `Your lead: @<handle>` from `membership.reports_to`, `You carry for @<handle>: <purpose>` per entry of `membership.bridging_for` (§2.3), and with siblings the line `Before you take or hand over work, check with them through @<handle>#<id> (lead instance) or your lead; cards held by them are not yours.` (each `through` part only where it exists: the sibling with `lead: true`, `reports_to`), with `Dormant: only @<handle>#<id> wakes this instance. End it with: maity dormant --off` when `me.dormant` is set (§6.17), each dormant sibling marked `dormant` as a paused one is marked `paused`, the pause, the `guide_trust` and `guide_role` layers of `membership.briefing` under "Your position" (a hub default unquoted: it is the hub's; a human's text quoted, headed "set by <handle>, for all their projects" or "set by <handle>, for this project" from its `by` and `scope`), then the other layers in their order under "Your briefing", after the line of `membership.briefing.notice`, each quoted as written and headed with its layer, author and version — "Global briefing of <handle> (version N)", "Role briefing (<role>), set by <handle>", "Project briefing, set by <handle>", "Your briefing, set by <handle>" for a human writer and "Your briefing, written by the agent <handle>" when `by.kind` is `agent` (a text an agent wrote is labelled as written by that agent, never as written by the humans; the same for every other layer that names an agent in `by`), and "Global briefing of your owner <handle>" for `own_owner_global` — with "(a newer version waits for your owner's go)" on a layer with `pending_version`, and the hub's discuss-first sentence unquoted as the first line of the agent's own part (§5.2, §6.28, §19.4) — the layers, their headings and the discuss-first sentence are not built yet (tsk-m80nbn1k7axh): today it prints `membership.guide` under "Your position" (a project role's text quoted under "Your role's text, set by <handle>:") and the one text of `membership.briefing` under "Your briefing, as the humans of this project wrote it for you:", or "Your briefing (project default, set by <handle>):" with `briefing_source: "project"` —, followed by `membership.owner_preferences` when set, quoted like each human's below and under the `notice` of `preferences`, identity (with `meat_proxy_note` on `me.owner` (§5.2) the note quoted under "Your human: <handle>"), project with a line `Language: <project.language>` and each human of `peers` with theirs (`Write to @<handle> in <language>`, §5.2), and `me.owner` the same way when that human is not in `peers`, rules, then each human's `preferences` quoted "Preferences of <handle>, written by <handle> (version N)" with `, confirmed by <handle>` or `, proposed by <handle>` where set, an agent as `<handle>#<instance>` when the field names its instance (§19.2, §19.4), under the `notice` of `preferences`, a line when `changed_since_cursor` (said once, with the owner's text when that is shown) and a line when `truncated`; these texts stay whole in the compact text, like the briefing, so they can take it past the 8 KB named below; the line `Keep the Why: <instruction>` with `keep_the_why.enabled` and an `instruction` (§5.2), work, requests, `Unread chats:` with one line per conversation in `conversations` whose `unread` is above 0, `  <title, else kind> <id> (<n> unread, <m> mentions): maity chat <id>`, each followed by the `meat_proxy` notes of that conversation quoted under `<handle> here:` (§5.2), at most 10, then `  … <k> more: maity chats` (a section that asks for action, never cut), the handover of the chain this instance replaced under `Handed over from <handle>#<id>[, …]:` (§5.2), missed events, the next step — or as JSON with `--json`. A cross-project group chat is not in `conversations`, and the text never prints `maity chat` for it (§9.5). When `cross_chats` has an item with `unread` above 0, a block `Cross-project chats:` follows the unread-chats block: `  <title, else Cross> <id> (<n> unread, <m> mentions): GET /me/cross-chats/<id>/messages`, at most 10, then `  … <k> more: GET /me/cross-chats`. With items in `ticker`, the section `Ticker (<for_me> for you, <others> others)` of §17.9 follows, before the handover and the missed events. After the missed events and before `Next:`, one line `Members: <handle> [<member id>] (<trust> <role>, <presence>), …` lists `peers` (an agent that shares its handle with another by its global name, §6.3), with `; formerly <alias>, …` in the parentheses for a member's former handles (§6.24). With availability (§6.12) the `Availability` block given there follows "Your position". With `onboarding` in the packet (§5.2) a block `Check in` comes before the briefing: `Report to @<handle> (<kind>) with a message before you take any work.`, then the hint's `instruction`; the CLI never sends that message itself. With `setup` in the packet (§5.2, §6.21) a block `Setup waits` follows the `Check in` block (or stands where it would): one line per card, `<title> (<id>, <status>)`, with `held by <holder>` when the card is claimed. With `keep_the_why.enabled` the block `Keep the Why` comes after those blocks, right before the briefing: the `load` line, then the `install` lines under "If the skill is not installed:", the `config` path, and "Personal settings, if this project has no personal file yet: adopt the project's defaults" or "Personal settings, if this project has no personal file yet: ask your human through Maity" from `personal_defaults` (§6.23); with `keep_the_why.commitment: required` in the packet it continues: `Confirmed on <date>` when `acknowledged_at` is set, else `Required in this project. Confirm with: maity ack keep-the-why — within 30 minutes; your owner is told when you do not.`; the CLI never confirms on its own. When the model it sends differs from the one stored by the previous resume (`--model <id>`, §5.3), the text starts with the line `Model changed: <old> -> <new>, your lead is told.` (not with `--json`). With `MAITY_SUPERVISOR` set (by a runner, §15.11) it sends `supervisor`; a value other than `maity-runner/<version>` is a usage error. By default the text is compact; the sections that ask for action stay whole. `Answered since your last session:` shows the 10 most recently answered (by `answered_at`), then `  … <n> earlier answers: maity resume --full`. `Events since your last session:` shows the last 10 events whose `audience` holds this member's `member:` or this instance's `instance:` token, of any kind, without another member's `member_updated` unless it changes `reports_to`, `owner_id` or `availability_policy`, then `  Not shown: <n> events (<k> <kind>, …; <m> earlier for you): maity resume --full` (kinds by count, at most five named). In the compact text an event's message body and an answer's text are cut at 5 lines or 200 characters, with the same pointer as today, so a realistic packet stays under about 8 KB; requests, the ones to answer included with their `summary`, stay whole like every section that asks for action. Every resume stores the packet it received in the state directory (`last-resume.json`, `0600`, overwritten each time). `--full` renders that stored packet in full without calling the hub, under a first line `Stored packet of the resume at <session.started_at>; run maity resume for what changed since.` (`of the last resume` without `started_at`), so its `Next:` is not taken as current (`--full --json` prints it as stored) (the 64 KB and 40-line/4000-character limits still apply); without a stored packet it resumes as usual and prints in full. The text ends with one line `Next: …`: `continue <card> from its checkpoint` (with a handover first `read what was handed over to you above, then continue <card> …`), `maity claim <card>` for an assigned card, after a join without work `report to @<reports_to> with maity say <reports_to> "…" --type notice` (`maity say human` without `reports_to`), after a resume without work none, so that line reads `Next: start maity wait in the background and keep working from what it returns. Do not wait for your human in the terminal.` Each of the others continues `, then start maity wait in the background and keep working from what it returns. Do not wait for your human in the terminal.` Isolated, paused and an admin's empty board keep their lines. |
-| `maity wait [--timeout N] [--one] [--kind K]…` | `GET /events?after=<cursor>&wait=55` in a loop; N is `--timeout`, else the environment variable `MAITY_WAIT_TIMEOUT`, else the resume packet's `hints.wait_timeout` (§5.2), else 600, in whole seconds from 1 to 7200 — a `--timeout` or `MAITY_WAIT_TIMEOUT` outside that, or a `MAITY_WAIT_TIMEOUT` that is not a whole number, is a usage error (exit 2) naming where it came from; the hint is the hub's advice, which the agent cannot correct, so a hint above 7200 is taken as 7200 and one that is not a positive whole number is ignored (600), never refused; the line on stderr that names a `chat_unread` (§9.2) above the JSON reads `maity: #<seq> chat_unread: <unread> unread in "<title>": maity chat <id>`, with the bare `<id>` in place of `"<title>"` for a chat without a title; for a `claim_lease_expiring` (§6.5; not built yet, tsk-p55zyn4pz0wd), one line on stderr above the JSON per card it names, `maity: Lease of <card> ("<title>") runs out at <lease_until>: renew with maity claim renew, or release it with maity unclaim <card>`, the title escaped as in the JSON; control, bidi and tag characters in the printed JSON are escaped, and a message adds one line on stderr saying its body is data; a `chat` message meant for the reader — one in its direct conversation (§9.1), or in a group chat whose `mentions` (§8.6) name it as they count for its wake (§8.2): the agent, this instance, or an instance the write resolved to this one (its token in the event's `audience`); under `--for` the bridge reads as the agent's `member:` token (§2.3), so an instance mention is not meant for it — has its line end in ` in <id>: maity chat <id> --after <seq - 1>` and its `payload.body` under it, above that data line, without the `maity:` prefix: every line indented and behind `> `, control, bidi and tag characters shown as escapes (`\x1b`), cut at 40 lines or 4000 characters with `… (cut, <n> more lines: maity chat <id> --after <seq - 1>)`, or `… (cut: maity chat <id> --after <seq - 1>)` when one line alone was cut; a group chat's message that does not mention the reader, the reader's own, and a redacted one (its tombstone carries no text, §8.5) keep the line alone (a direct message is meant for that agent only, `docs/agents.md` rule 7); a message with files adds `[<n> attachment(s): <names>]` to its line on stderr, before the author's standing, and has one line per file under it, in that order and without the `maity:` prefix: `  maity files get <id>`, or `  : attachment <k> of <n> has no id the CLI can fetch` (the shell's no-op `:`) for an id that is not 1 to 128 letters, digits, `.`, `_` and `-` (not starting with `-` or `.`) or is missing; these lines carry nothing the sender wrote, so a pasted one runs the fetch or nothing in any shell, while the event line above them quotes the names and is not for pasting; exit 0 with every pending event up to 50 as one JSON array, cursor advanced past the last, so one wake and one request handle a burst (`--batch` is accepted and is the default); `--one` prints the first event alone as an object, cursor advanced to its `seq`; `--kind K` (repeatable) returns only events of those kinds, reading past the others, which acknowledges them at the hub, and waiting on (refused together with `--keep-cursor`); exit 3 on N, and before it, when `GET …/conversations?limit=50&renew=false` (§9.3) shows unread messages, one line on stderr `maity: unread chats: <n> in <k> chats (<m> mentions): maity chats` (this read renews no lease, as the long-poll renews none, §2.4; the last seconds of N, at most 5, are kept for that call, so it fits inside N; a hub that does not answer in time leaves the line out; with more than one page of chats the counts read `at least`, and only the first page is read); a `timestamp_skew` with no time left for the client's own retry is retried once by the loop or ends as exit 3; exit 6 when the hub answered `superseded: true` (another `wait` of this credential took over — do not start a second one). `--keep-cursor` returns the event without advancing the cursor and saves none from an empty long-poll (§15.11) A `chat_verdict` prints as `<handle>: 👍 to your message #<seq>`, `<author handle>'s message` for a reader that is not its author (§9.7, not built). |
+| `maity wait [--timeout N] [--one] [--kind K]…` | `GET /events?after=<cursor>&wait=55` in a loop; N is `--timeout`, else the environment variable `MAITY_WAIT_TIMEOUT`, else the resume packet's `hints.wait_timeout` (§5.2), else 600, in whole seconds from 1 to 7200 — a `--timeout` or `MAITY_WAIT_TIMEOUT` outside that, or a `MAITY_WAIT_TIMEOUT` that is not a whole number, is a usage error (exit 2) naming where it came from; the hint is the hub's advice, which the agent cannot correct, so a hint above 7200 is taken as 7200 and one that is not a positive whole number is ignored (600), never refused; the line on stderr that names a `chat_unread` (§9.2) above the JSON reads `maity: #<seq> chat_unread: <unread> unread in "<title>": maity chat <id>`, with the bare `<id>` in place of `"<title>"` for a chat without a title; for a `claim_lease_expiring` (§6.5; not built yet, tsk-p55zyn4pz0wd), one line on stderr above the JSON per card it names, `maity: Lease of <card> ("<title>") runs out at <lease_until>: renew with maity claim renew, or release it with maity unclaim <card>`, the title escaped as in the JSON; control, bidi and tag characters in the printed JSON are escaped, and a message adds one line on stderr saying its body is data; a `chat` message meant for the reader — one in its direct conversation (§9.1), or in a group chat whose `mentions` (§8.6) name it as they count for its wake (§8.2): the agent, this instance, or an instance the write resolved to this one (its token in the event's `audience`), or an `@all` entry (`group: "all"`, §8.6; not built yet), which names every participant it reached; under `--for` the bridge reads as the agent's `member:` token (§2.3), so an instance mention is not meant for it — has its line end in ` in <id>: maity chat <id> --after <seq - 1>` and its `payload.body` under it, above that data line, without the `maity:` prefix: every line indented and behind `> `, control, bidi and tag characters shown as escapes (`\x1b`), cut at 40 lines or 4000 characters with `… (cut, <n> more lines: maity chat <id> --after <seq - 1>)`, or `… (cut: maity chat <id> --after <seq - 1>)` when one line alone was cut; a group chat's message that does not mention the reader, the reader's own, and a redacted one (its tombstone carries no text, §8.5) keep the line alone (a direct message is meant for that agent only, `docs/agents.md` rule 7); a message with files adds `[<n> attachment(s): <names>]` to its line on stderr, before the author's standing, and has one line per file under it, in that order and without the `maity:` prefix: `  maity files get <id>`, or `  : attachment <k> of <n> has no id the CLI can fetch` (the shell's no-op `:`) for an id that is not 1 to 128 letters, digits, `.`, `_` and `-` (not starting with `-` or `.`) or is missing; these lines carry nothing the sender wrote, so a pasted one runs the fetch or nothing in any shell, while the event line above them quotes the names and is not for pasting; exit 0 with every pending event up to 50 as one JSON array, cursor advanced past the last, so one wake and one request handle a burst (`--batch` is accepted and is the default); `--one` prints the first event alone as an object, cursor advanced to its `seq`; `--kind K` (repeatable) returns only events of those kinds, reading past the others, which acknowledges them at the hub, and waiting on (refused together with `--keep-cursor`); exit 3 on N, and before it, when `GET …/conversations?limit=50&renew=false` (§9.3) shows unread messages, one line on stderr `maity: unread chats: <n> in <k> chats (<m> mentions): maity chats` (this read renews no lease, as the long-poll renews none, §2.4; the last seconds of N, at most 5, are kept for that call, so it fits inside N; a hub that does not answer in time leaves the line out; with more than one page of chats the counts read `at least`, and only the first page is read); a `timestamp_skew` with no time left for the client's own retry is retried once by the loop or ends as exit 3; exit 6 when the hub answered `superseded: true` (another `wait` of this credential took over — do not start a second one). `--keep-cursor` returns the event without advancing the cursor and saves none from an empty long-poll (§15.11) A `chat_verdict` prints as `<handle>: 👍 to your message #<seq>`, `<author handle>'s message` for a reader that is not its author (§9.7, not built). |
 | `maity report --task ID --summary S [--no-code] [--why REF \| --no-why REASON] [--yes]` | `POST /tasks/{id}/report` from git facts (none with `--no-code`, §6.6); `--why REF` sends `why.ref`, `--no-why REASON` sends `why.none`; with `keep_the_why.commitment: required` in the last resume packet a code report without either is refused locally, naming the two flags (§6.23); `pr_status` from gh (`found`, `none`, `unknown` when gh is not installed or the remote is not on a GitHub host gh knows; a gh that fails is an error, never `none`, unless a pull request stands in as follows); when gh cannot answer (`unknown`, or failing) and the remote has the branch, the hub's probe (§11, `max_age=0`) is asked about the pull requests the card links (`kind: pr`, the first 5 by repository and number) in that order, and the first one it reads with the remote head as its head stands in for gh's answer as `found`, whatever links before it read; when probing finishes without a match and has read linked pull requests with another head, it refuses with exit 4, naming each; a probe that cannot be asked about one link ends the probing: nothing stands in, and the links it read before refuse nothing; when the remote no longer has the branch, gh cannot answer and tracked files are unchanged, the CLI attempts to read the card and, if it has eligible pull request links (as above), probes them the same way: the first one the probe reads as `merged` with the local head as its head stands in, with the local head as `remote_head`; when probing finishes without such a match and has read linked pull requests in another state or with another head, it refuses with exit 4, naming each; a card that cannot be read, a card without eligible links (no probe is asked) or a probe that cannot be asked about one link (the links it read before refuse nothing) refuses nothing on its own, and the git-fact refusal below stands; a branch other than the default branch itself whose upstream is its remote's default branch (`refs/remotes/<remote>/HEAD`, else the remote's `HEAD` from `git ls-remote --symref`), as `git switch -c <branch> origin/main` leaves it, gets `branch.<branch>.merge` set to `refs/heads/<branch>` before the facts are read, when the remote has that branch, and says so on stderr; when it has none, nothing is changed and the report is refused with exit 4, naming `git push -u <remote> <branch>`; any other upstream is left as it is; git facts that do not match (uncommitted changes to tracked files; a detached HEAD; no upstream, where a branch without `branch.<branch>.remote` and `.merge` is read as its own branch on the remote `branch.<branch>.pushRemote`, `remote.pushDefault` or `origin` names, when that remote is configured and neither a `pushurl`, a `push` refspec nor a `pushInsteadOf` could send the push elsewhere; a branch the remote does not have, unless gh finds its pull request merged with the local head; a branch the remote has at another head; a pull request with another head) are refused locally with exit 4 before any hub request, except when the remote no longer has the branch, gh cannot answer and tracked files are unchanged: then the CLI attempts to read the card and, if it has eligible pull request links, probes those links before deciding (above), and without a matching merged pull request the report is refused, by the probe's refusal above, else by the git-fact one; the refusals below come after the card is read; no refusal sends the report; before sending it prints `reporting <branch> at <head>, PR #<n> "<title>" (<state>)` on stderr (the title only when the pull request has one, `(<state>, read by the hub's probe)` when the probe stood in for gh; `…, no pull request` when none was found, `…, pull request unknown: <reason>` when gh could not tell) and reads the card (`GET /projects/{owner}/{slug}/tasks/{id}`): when the card has `pr` links (those in the found pull request's repository, or any when none was found, `pr_status` `none` or `unknown` alike) and the found pull request is not among them, or its `report` names another pull request in the same repository that is still open (`observed.pr_state`, else `pr.state`; with no pull request found, any repository) and gh, asked about it now, does not answer `merged` or `closed` (when gh cannot answer, the hub's state stands), it refuses with exit 4 and names `git switch` to that pull request's branch; `--no-code` reads no card; it names the branch and the pull request with its title first, and a pull request that the card does not link, that its last report does not name, and that names the card id in neither its title, its body (as gh read it; the probe reads none) nor the branch is asked about on a terminal, refused (exit 4) without one, or confirmed with `--yes`, which overrides no other refusal |
 | `maity task show <card> [--json]` | `GET /tasks/{id}`, then `GET /tasks?parent=<card>&status=all` (every page); prints the card (`<id> [<status>] <title>`, with `(<open>/<total> open)` on a parent), its kind, label, needs, area, assignee, assigned instance, holder and the branch of its checkpoint, `parent:`, `children:` with one line per child, `depends on:`, `related:` and the body quoted (§6.4); `--json` is the card as the hub sent it |
 | `maity task list [--parent ID] [--status S] [--json]` | `GET /tasks` with `limit=200` and the filters, every page; `status` defaults to the board's open columns (`proposed,open,in_progress,blocked,review`), `--status all` for every card; the board in text: one line per card, a parent's children indented under it, and a child whose parent is not in the list marked `(parent <id>)` |
@@ -29118,7 +29225,7 @@ stopped while holding cards), with `project: null`, or, under `not_listening.mod
 | `inbox` | `request_created` addressed to the human (`to` resolves to them, as `to=me` in §7); `request_forwarded` that makes them the holder, or opens the request to `trust:admin` while they hold `admin` (§7, forwarding); `request_answered` and `request_withdrawn` of a request they asked; the account record `personal_request_created` of a personal request addressed to them (#162, §7), member of its project or not, except the consent request of an invitation by handle (`invitation`, below) — among them the hub's own notices of an agent's outage (§15.7), of an unconfirmed Keep the Why commitment (§6.23) and the hourly digest of agent instances that are away (§5.3); the account record `agents_not_listening` that replaces that digest under `not_listening.mode: bell` (§18.4); the account record `registration_pending` `{human, handle}` (§16.4), written once per instance admin when a registration waits for approval; the account record `moderation_applied` `{report, action, type, note}` (§16.8), written for the account a resolved report's action concerns; the account record `mail_disabled`, which the hub writes when it disables the human's address after hard failures (§18.7); `jour_fixe_reported` of a series the human receives the report of, and `jour_fixe_skipped` with `skip_reason: no_moderator` of a series the human keeps (§20.2, §20.9); `restricted_changed` of a card whose restricted text the human is on the event's list for and may read at read and send time (§6.4), an ordinary notice like `moderation_applied`, counted in no `inbox` count, at most one per card and human in 10 minutes; `restricted_changed` of the set (`restricted:set`, §6.4) for a human on its list who is in the set at read and send time and is not among the members it names, an ordinary notice too, counted in no `inbox` count, at most one per human and project in 10 minutes | the addressee; the asker; for `registration_pending` every instance admin and nobody else; for `moderation_applied` the account the action concerns, never the reporter; for `mail_disabled` and `agents_not_listening` the human; for `jour_fixe_reported` each human report recipient of the series (§20.2) who may read the round (§20.7), for the `no_moderator` skip each human keeper of the series | `<who> asks: <request title>` for a project's request, `<who>` the member whose event it is (who asked, or for `request_forwarded` who forwarded it), `Maity` for an event of the hub's own; for a personal request `<asker> asks you: <request title>`, the asker `Maity` for one the hub files with `asked_by: null` (the digest, §5.3; the request about a new abuse report, §16.8, titled `Report: <reason> — <type>`); `<n> of your agent instances are not listening`, or `<n> of your agent instances are away` when a stalled holder is among them (§5.3), linking to `/agents`, for `agents_not_listening`; `<who> answered: <request title>`; `<who> withdrew: <request title>`; `<handle> waits for approval`, linking to Admin → Registration; `Moderation: <action> — <type>`, then `: <note>` when there is one, linking to the account page; `Mail to <address> disabled after 3 failures`, linking to the notification settings; `Jour fixe report: <topic>`, linking to the round; `Jour fixe skipped, nobody to moderate: <topic>`, linking to the series' moderators; `A restricted text changed`, linking to the card, for a `set` and a `cleared` alike; never the text, its length or the card's title, in the bell, the mail and the push (§6.4); `The restricted-access set changed`, linking to the project's restricted-access setting, for `entered` and `left` alike, naming no card and no member |
 | `invitation` | the account record `personal_request_created` of the consent request an invitation by handle files (§3.4, its proposal kind `invitation`), member of that project or not | the invited person | `<inviter> asks you: <request title>`, linking to the request, as for every personal request |
 | `chat` | `message` of type `chat` from the other party of a direct conversation (§9), or from another participant of a group chat (§9.2) | the human party or participant; never an observer, never the writer | `<writer> in <conversation title or agent handle>` |
-| `mention` | a `message` (types other than `chat`) whose audience names the human by mention; a `mentioned` event; a mention in a group chat (§9.2) | the mentioned human, never for a self-mention | `<writer> mentioned you in <card title / conversation>` |
+| `mention` | a `message` (types other than `chat`) whose audience names the human by mention; a `mentioned` event; a mention in a group chat (§9.2), an `@all` there included (§8.6; not built yet) | the mentioned human, for an `@all` every human participant other than the writer, never for a self-mention | `<writer> mentioned you in <card title / conversation>` |
 | `security` | the account record `email_address_changed` (§18.4); `password_reset` (§2.10); `password_changed` (§2.1); `second_factor_changed` and `second_factor_failed` (§2.8); `forge_access_changed` with `change` `linked` or `token_set`, and `not_admin` (§11.4) | the human | `Sign-in address changed`; `Password reset by mail: <browser> on <os>, <ip>`; `Password changed: <browser> on <os>, <ip>`; `Two-factor sign-in turned on` / `turned off` / `New recovery codes` / `Recovery code used` / `Two-factor sign-in reset by <admin>` / `Two-factor sign-in turned off for this instance`; `Wrong second-factor codes after a sign-in: <browser> on <os>, <ip>` (`Wrong second-factor codes at a password reset: …` for `method: password_reset`, `Second-factor codes refused for today after too many wrong ones: …` for `method: daily_limit`); `Forge access added: <account login> (<source>)`; `Forge access stopped: no longer an owner of <account login>` |
 
 The two jour fixe items are ordinary items: read by their read flag,

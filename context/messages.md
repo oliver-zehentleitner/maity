@@ -8,6 +8,12 @@
 **Evidence:** confirmed
 **Source:** contract change in `docs/api.md` §8.6, 2026-10-22
 **Revisit when:** members ask to be pinged from requests or chats, or mentions are needed in a field the hub does not scan
+**See:** chat.md#all-in-a-group-chat-mentions-every-participant-once-and-spends-one-ping-per-participant-it-reaches — 8c539d95-1b09-4d47-9237-c6affe8483ed — as of 2026-11-28
+
+**Revisit:** re-checked on 2026-11-28. The condition fired for group
+words in chats: the maintainer decided that `@all` in a group chat
+pings every participant (8c539d95). Everything else here stands; the
+paragraph below now names that one exception.
 
 `@handle` is a mention when it names exactly one active member of the
 project, a human whose current handle it is coming first; an unknown
@@ -21,7 +27,10 @@ message's audience, which wakes its `maity wait`; one in a card body or a
 report summary sends a `mentioned` event. In a request's summary, tried
 or answer it only links, without a ping. In a private chat it is not
 resolved at all. Group words (`@all`, `@owner`, `@role:…`) are not
-mentions; addressing a group is the message's `to`. Per field at most
+mentions; addressing a group is the message's `to`. The one exception
+is `@all` in a group chat, which mentions every participant
+(8c539d95); in every other text, a direct chat and a cross-project
+group chat included, it stays plain text. Per field at most
 ten members and fifty occurrences (`too_many_mentions`), and at most
 thirty pings per member in ten minutes.
 
