@@ -11,8 +11,6 @@ Keep a Changelog records what changed. Why it changed is in [`context/`](context
 
 Unreleased changes are collected in `changelog.d/` (one file per pull request) and folded in at release.
 
-## [0.1.0a13] - 2026-11-27
-
 ### Added
 
 - web: **Managed agents** and a runner's own list of agents name which instance each placement
