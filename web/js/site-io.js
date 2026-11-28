@@ -25,7 +25,7 @@ window.Maity = window.Maity || {};
   // The landing part takes what the landing editor imports.
   const LANDING_KEYS = ["enabled", "default_language", "pages", "footer", "variants", "campaigns"];
   const LANG = /^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$/;
-  const isObject = (v) => !!v && typeof v === "object" && !Array.isArray(v);
+  const { isObject, refusalWords } = M.jsonIo;
   // Getters: the words are the catalog's when said.
   const PAGE_WORDS = { get imprint() { return M.t("site.page.imprint"); }, get privacy() { return M.t("site.page.privacy"); }, get terms() { return M.t("site.page.terms"); } };
   const PART_WORDS = { get landing() { return M.t("site.part.landing"); }, get legal() { return M.t("site.part.legal"); }, get sign_in() { return M.t("site.part.sign_in"); }, get sign_up() { return M.t("site.part.sign_up"); }, get registration() { return M.t("site.part.registration"); } };
@@ -78,12 +78,6 @@ window.Maity = window.Maity || {};
     if (Array.isArray(v)) return v.map((x) => fill(x, values, seen));
     return isObject(v) ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, fill(x, values, seen)])) : v;
   }
-
-  // The hub's refusal in a few words: the fields it names, or its message.
-  const refusalWords = (err) => {
-    const fields = err && err.code === "invalid" && err.details && err.details.fields;
-    return fields ? Object.entries(fields).map(([f, r]) => f + ": " + r).join("; ") : (err && err.message) || String(err);
-  };
 
   // A part's state: missing, same, changes or refused, with the words and the saves it needs.
   async function checkLanding(d, now) {

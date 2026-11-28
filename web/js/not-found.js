@@ -19,7 +19,7 @@ window.Maity = window.Maity || {};
   function ways(signedIn, path) {
     const items = signedIn
       ? [h("a", { href: "/all" }, M.t("not_found.all")), explore()]
-      : [h("a", { href: M.withNext("/login", path) }, M.t("not_found.sign_in")), h("a", { href: "/" }, M.t("not_found.start")), explore()];
+      : [h("a", { href: M.route.withNext("/login", path) }, M.t("not_found.sign_in")), h("a", { href: "/" }, M.t("not_found.start")), explore()];
     return h("ul", { class: "not-found-ways" }, items.map((a) => h("li", null, a)));
   }
 
