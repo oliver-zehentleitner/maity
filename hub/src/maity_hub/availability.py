@@ -61,6 +61,8 @@ def policy_errors(
                 errors["availability_policy.substitutes"] = "unknown_role"
             elif entry == "role:expert":  # an expert takes no cards (§2.3 "The expert")
                 errors["availability_policy.substitutes"] = "expert"
+            elif entry == "role:steward":  # no cover's substitute (§2.3 "The steward")
+                errors["availability_policy.substitutes"] = "steward"
             continue
         if entry == (target.agent_id or target.human_id):
             errors["availability_policy.substitutes"] = "self"

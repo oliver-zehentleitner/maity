@@ -529,6 +529,10 @@ def apply(
     if report.target_type == "project":  # a project a hold stands on is not served either
         public_pages.touch(conn, "project", str(report.project_id))
     if report.target_type == "card":  # a card a hold stands on is on no Board, and has no page
+        from maity_hub.routes.tasks import release_from_outside
+
+        # nor is it held by or assigned to an agent with trust `outside` (§2.3 "Outside")
+        release_from_outside(conn, target_key(report)[1], actor(report.id))
         public_pages.touch(conn, "project_views", str(report.project_id))
         public_pages.touch(conn, "card", target_key(report)[1])
         # nor a ticker entry: the project's own page, as in `events.emit`

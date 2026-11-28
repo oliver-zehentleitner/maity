@@ -138,7 +138,14 @@ window.Maity = window.Maity || {};
   }
   // A filled five-pointed star for a starred project's tab (§5.1 "Stars"); the text colour.
   const star = (size) => bars(size, "M12 2.5l2.85 6.1 6.65.75-4.95 4.5 1.35 6.6L12 17.1l-5.9 3.35 1.35-6.6-4.95-4.5 6.65-.75z");
-  M.icons = { gear, bell, chat, lead, newGroup, writeProject, plus, close, expand, collapse, lock, star, theme: themeIcon };
+  // A compass for Explore (§16.9, "Explore, signed in"): a ring and its needle, one path, the
+  // ring's inside cut out; the text colour.
+  function compass(size) {
+    const svg = bars(size, "M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm0 2.2a7.8 7.8 0 1 1 0 15.6 7.8 7.8 0 0 1 0-15.6zM16.6 7.4l-2.6 6.6-6.6 2.6 2.6-6.6z");
+    svg.firstChild.setAttribute("fill-rule", "evenodd");
+    return svg;
+  }
+  M.icons = { gear, bell, chat, lead, newGroup, writeProject, plus, close, expand, collapse, lock, star, compass, theme: themeIcon };
 
   // spec: { label (accessible name), face (nodes inside the button), items: [...],
   // listLabel (the list's name, when the button's label carries a state that changes) }

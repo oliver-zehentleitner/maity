@@ -186,7 +186,8 @@ window.Maity = window.Maity || {};
     let own = M.trust.projectRoles(ctx, (list) => { own = list; roles(); });
     const roles = () => {
       const wanted = role.value || "coder";
-      const offered = M.trust.ROLES.filter((r) => r !== "proxy" || (ctx.isOwner && trust.value === "admin")).concat(own.map((x) => x.name));
+      // No steward where the project has no memory provider (§2.3 "The steward").
+      const offered = M.trust.offered(ctx, M.trust.ROLES.filter((r) => r !== "proxy" || (ctx.isOwner && trust.value === "admin"))).concat(own.map((x) => x.name));
       M.trust.fillRoles(role, offered, wanted, "coder", own);
     };
     const roleHelp = M.trust.roleHint(role);

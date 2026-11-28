@@ -11,6 +11,173 @@ Keep a Changelog records what changed. Why it changed is in [`context/`](context
 
 Unreleased changes are collected in `changelog.d/` (one file per pull request) and folded in at release.
 
+## [0.1.0a13] - 2026-11-27
+
+### Added
+
+- web: **Managed agents** and a runner's own list of agents name which instance each placement
+  runs, as `handle#id`, and Managed agents also names its clone. Two instances of one agent on
+  the same runner are told apart, and a placement not yet picked up says "no instance yet".
+- hub: `GET /public/explore` lists the projects `/explore` shows, as
+  `{name, full_name}`, the same answer for everyone (`public, max-age=60`,
+  an `ETag`), for the dashboard's Explore tab.
+- web: Explore inside the dashboard for a signed-in human: a link at the
+  right end of the project tab row, and an item in the tabs menu, open a tab
+  of its own at `/explore` for the browser session, closed with its own ×. It
+  lists the public projects; a member's opens as its tab, any other as the
+  dashed tab, where the star is.
+- hub: the project policy fields for an outsider's claim, as docs/api.md §6.1 contracts them: `looking_for_coders` (`per_card`, `all` or `off`, default `per_card`), `outside_claims` (`human`, `agent` or `direct`, default `human`; `agent` and `direct` set by an owner only, `human` back by any human with `project:admin`) and `outside_claims_max` (`null` or 1 to 2147483647, default `null`). `null` or a value that is no string on either choice is `invalid` (`unknown`), and a refused field leaves the whole `PATCH` unapplied; `null` on `outside_claims_max` removes the cap. Each change needs a `reason`, a preset change keeps all three, and a project that predates them reads the defaults (tsk-5q5emh2nm61k).
+- hub: the card field `open_to_outsiders` (§6.4), `false` by default, set on `POST …/tasks` and `PATCH …/tasks/{id}` by whoever edits the card and recorded in its history; a caller with trust `outside` that names it is refused with `outside_trust`, whatever the value.
+- hub: the card field `claim_requests` (§6.4), `[{id, member_id, instance, requested_at}]`, read by every reader through the API and not shown on the card's public page. Nothing files a claim request yet: it reads `[]` while an outsider's agent still claims no card itself (§6.5).
+- hub: `GET …/contribution` answers `looking_for_coders` and `outside_claims` as the policy reads them (§6.1).
+- The built-in role `steward` keeps a project's Keep the Why complete. It is built on the
+  expert and has the coder's scopes. It answers why questions across `context/` with the
+  source, and it asks the authors of missing or open entries until each is done or someone
+  has said why not. Every member still writes its own entries. A join gives a steward the
+  sources `context/`, and every merge on the ticker has every steward in its audience,
+  with the ticker's usual mutes and the dashboard's "for me" for humans. A steward is never
+  routed a card, never a cover's substitute and never a card's `needs`. It is no base for a
+  project role and is not offered to outsiders' agents. Its rules carry a steward line. The
+  dashboard offers it after `expert` in Join an agent and Manage, with Expert for and Sources,
+  and hides it there and in Invite user where the memory provider is `none`. The Way of
+  working tab of Settings gains a Keep the Why steward section, where a human admin sets
+  `policy.steward_writes`: `cards_only` to open a card for the author, or `self` to write
+  where no author can.
+
+### Changed
+
+- docs: the footer of every page on the docs site links the Discord in its follow row, after
+  LinkedIn, as the landing page already does (tsk-txdezz3cb4d5).
+- web: the **Join an agent** form keeps one shape whether the agent joins by a line or starts
+  on a runner (tsk-6w4qckma672q). Ticking **On a runner** adds the runner's fields at the end
+  and hides nothing above them: take over, hand-over and the line's validity stay visible but
+  switched off with a one-line reason, **Replace instance** is off with its reason (a start
+  makes another instance), and a member's agents that a start cannot take stay listed, off,
+  with the reason. Every field keeps its value when the part is turned on and off.
+- web: an agent already in the project shows its membership (trust, role, subagents, briefing,
+  and its areas where the form has that field) read-only where those fields stand, with a link
+  to its Manage; its boss is still changed here, saved before the start on a runner too, and a
+  refused start says a saved change stays saved, or that one across owners waits for consent.
+  The form's fields follow the members' Manage in order and words.
+- hub: a new person or organisation needs a handle of at least six characters, and can no
+  longer take one of about 300 words the hub keeps for pages of its own or that name a part of
+  Maity (`about`, `blog`, `docs`, `pricing`, `support`, `board`, `review` and the others listed
+  in docs/api.md §16.11). Registration, a rename and an organisation answer `reserved`.
+  `maity-hub owner create` and `quickstart` are held to the words, not to the length. An
+  agent's handle is no address and may still be short or such a word. Whoever already holds
+  one keeps it, its page and its alias; `maity-hub migrate` and the hub's start name those
+  holders and go on. `owner` and `owners` stay free (tsk-3ykgt3t9jd57).
+- web: a dashed tab looks like a member's tab, only dashed (tsk-q8s9dfjmjsxy): the project's
+  logo and name, a lock where the project is private, the state dot once the project's view was
+  read, and its star last inside the dashed outline instead of beside the tab. The star stays its
+  own button: a click on it stars or unstars, a click on the name opens the tab.
+- hub: the six public page kinds end in one function, `public_pages.page`, and the Board, Team,
+  Organisation and Why pages share the project page's `targets`; an agent page's address is
+  `public_agents.path_of`. No page changes: every stored digest stays as it was.
+- docs: `docs/api.md` §16.7's section table says that `profiles` and `explore` draw nothing in this
+  version, as `collab` does, and that `activity` is not the project page's **Recently**.
+- hub: the public pages name their members by one rule: one member-picture rule (the online list asks
+  it too), the members read once per project render, one link helper, one member card, one `monogram`
+  and one list of the statistics' keys. No page changes: every stored page, its `data` and the
+  public routes' answers are the same.
+- hub: who a public page names lives in one module (`public_members`: `Person`,
+  `members`, `shown_data`, `holder_data`, `pictured`, `person_data` and
+  `shown_pictures`); `team()` is the shown members of that read, split by human,
+  in the database's handle order, as before (a PostgreSQL locale orders a hyphen
+  differently from Python). The lists of served projects were already set-based
+  (`served_of`, since #2077); `/explore` is left as it is until #2227 and #2233
+  merge. No page changes: every stored page, its `data` and the public routes'
+  answers are the same.
+- The CLI and runner share UTC timestamp formatting and parsing. Output uses a four-digit
+  year, whole seconds and a trailing `Z`, including for years below 1000. Watch still
+  requires the exact wire format. The keeper now also requires it when reading a saved
+  `checked_at`. Lowercase `t` or `z` and single-digit fields in older noncanonical
+  values give an unknown age and can trigger an immediate daily tool check. The keeper
+  writes canonical timestamps. The hub client's server-time parser now requires an
+  explicit time zone for clock-skew correction.
+- docs: the README and its nine translations show new dashboard screenshots: the inbox and
+  the board again, then team, organisation, agents, managed agents, a Why entry and runners in
+  a gallery, one line each; the dashboard guide and the runners page show them where they
+  describe each view, every image with an alt text of what it shows (tsk-kctcw62tp8f4).
+- hub: `/explore` answers a signed-in human with the app shell, where the
+  dashboard draws Explore; a visitor, and anyone with `?as=public`, keeps the
+  page as before.
+- web: the tabs menu shows for every signed-in human, one without projects
+  too, and starts with New project, Explore and, with a project, Keep these
+  tabs at start, then the projects.
+- hub: an agent with trust `outside` reads the project as its owner reads it from outside, plus
+  its own membership, credentials and the cards it is given: no `security` card before it is
+  done, no card under a moderation hold, the outsider's view of the project and of the other
+  members, and only the events of the cards it reads and of its own membership. The project's
+  memory, messages, requests, jour fixe, group chats, rules and every other read answer it
+  `not_found`, and its resume packet carries none of them, the rules' text included. It writes
+  no memory of the project, its own team's included, and posts in no group chat.
+- hub: a card such an agent holds or is assigned that comes to be labelled `security` while not
+  done, or comes under a moderation hold, is released from it and its assignment ends; lifting
+  the label or the hold gives neither back.
+- docs: "What Maity delivers" promises only what the contract does: in a project that requires
+  signing, an agent's work after joining goes through the CLI; the answers open on a request
+  depend on the request; a report holds the pull request when one is found
+  (tsk-4g4wd3rnt07e).
+- hub: upgrade note: the migration `20261126090000_outside_claims` adds three nullable project columns, `card.open_to_outsiders` (false on every existing card) and the empty table `claim_request`. A downgrade drops them all, with any value a project or a card set.
+- The `steward_writes` policy sentences in the rules text say that the steward asks the
+  author first and, under `self`, writes an entry itself only where no author can.
+- The upgrade renames a project role named `steward` to `steward-custom`. Where that name is
+  taken too, it uses the next free one (`steward-custom-2`, `-3`, …), and the log says which
+  project got which name. Where a project role `steward` was removed while a change waited
+  to apply it, approving that change after the upgrade is refused with `409 role_unknown`,
+  so it cannot make the agent the built-in steward or store a `role:steward` substitute that
+  now names the built-in stewards. Before, only another owner's consent naming the removed
+  role was refused that way.
+- cli: one helper each for the "every page" read, the `more:` line, a card's linked pull
+  requests, JSON read from a file or stdin, project paths and the dict helpers, in place of
+  copies in `cli.py` (tsk-sgaz43qazfzx). Behaviour stays the same, except: `jourfixe statement
+  --file`, `jourfixe report --file` and `jourfixe answer --file` now say why a file is not JSON
+  with the parser's full message (position included), and they also turn any other decoder
+  `ValueError` (for example the integer conversion limit) into a usage error, where they used
+  to catch only `JSONDecodeError`; a non-object file for `jourfixe answer` says "the body is
+  one JSON object" before the keys are checked; and `hub.USER_AGENT` and `MESSAGE_TYPES` are
+  gone. `--review-file` still turns any decoder `ValueError` into a usage error, as it already
+  did.
+
+### Fixed
+
+- web: on a person's or an organisation's page, a project you are not a member of opens in the
+  dashboard as its dashed tab, no longer as its stored public page in a new browser tab.
+- web: a menu in the header (the project tabs menu, "+", the gear and profile menus) no longer runs
+  past the bottom of the screen. With many projects on a phone, the tabs menu's list scrolls
+  inside the menu, and the page behind it does not scroll along.
+- web: on a phone with the on-screen keyboard open, a chat composer's Send button could go missing
+  below Attach (tsk-ftrkm6wda8yq). A chat in full screen now fits what is visible above the
+  keyboard, Send sits in the composer's row beside Attach, at its end, where the row's controls fit
+  in one line, and the open chat in the page is never shorter than its heading and composer. The
+  automated checks move a stand-in for the visible area in a desktop browser; how an Android
+  keyboard reports it is confirmed on a phone, not by them.
+- web: a start on a runner never sent the owner's subagent instruction (`subagents`,
+  `subagents_language`); it now goes with a new or admitted profile's placement as with a
+  join.
+- cli: use the runner's harness default model for Claude Code, Codex and Antigravity
+  when the placement names no model.
+- cli: disable automatic OpenCode snapshots in runner placements. Initializing a snapshot's Git store can set `core.worktree` in the placement clone and cause the runner to refuse its next start.
+- runner: when the runner refuses a clone before starting a placement, its finding now gives the
+  clone check's reason and identifies recognized Git metadata such as `core.worktree`.
+  The owner's outage request points to the Runner log (tsk-27rm0ay2ntnx).
+
+### Security
+
+- cli: under the runner, maity takes the clone's `.git` only as the
+  directory whose device and inode the runner recorded at the session's
+  start (`MAITY_GIT_DEVICE` beside `MAITY_GIT_INODE`), no longer by the
+  inode alone. A session started by an older runner runs no maity git
+  until the placement is restarted.
+- hub: an outsider creates at most 10 joins an hour and 30 a day, at most 5 first joins a day
+  in one project, and holds at most `member_agents_max` + 2 open joins in a project and two for
+  any one agent (`rate_limited`, `forbidden` with `open_joins_max`); `GET …/joins` lists an
+  outsider's open joins and their 50 most recent others.
+- hub: `DELETE /agents/{id}` takes at most 10 profiles a day per human, and with `cascade=true`
+  answers `409 profile_in_use` while the profile holds an isolated membership with trust
+  `outside`; deleting the owner's account still removes it.
+
 ## [0.1.0a12] - 2026-11-25
 
 ### Added

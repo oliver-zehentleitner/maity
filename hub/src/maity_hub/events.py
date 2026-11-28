@@ -33,7 +33,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 from maity_hub import clock, restricted, ticker_read
 from maity_hub import tables as t
 from maity_hub.ids import PREFIXES
-from maity_hub.scopes import counts_as, in_admin_team, tokens_of
+from maity_hub.scopes import OUTSIDE, counts_as, in_admin_team, tokens_of
 
 _PENDING = "maity_pending_events"
 _UNDO = "maity_undo_on_rollback"
@@ -634,6 +634,55 @@ HUMANS_ONLY_KINDS = frozenset(
 )
 
 
+# What an agent with trust `outside` reads of the events the rules give it (§2.3 "Outside",
+# §8.2): the events of a card it reads now and of that card's notes (`OUTSIDE_CARD_KINDS`), and
+# the changes of its own membership and credentials (`OUTSIDE_OWN_KINDS`); no other kind, a
+# kind added later included.
+OUTSIDE_CARD_KINDS = CARD_KINDS | NOTE_KINDS
+OUTSIDE_OWN_KINDS = MEMBER_KINDS | frozenset({"credential_revoked"})
+OUTSIDE_CARD = "outside_card:"  # a card a reader with trust `outside` reads now (`hidden`)
+
+
+def event_card(row: Any) -> str | None:
+    """The card an event of `OUTSIDE_CARD_KINDS` is about: its subject, as `emit` writes it,
+    else the payload's `id` or `task_id`."""
+    if row.subject_type == "task" and row.subject_id:
+        return str(row.subject_id)
+    payload = row.payload or {}
+    found = payload.get("id") if row.kind in CARD_KINDS else payload.get("task_id")
+    return found if isinstance(found, str) else None
+
+
+def _outside_cards(conn: Connection, rows: Sequence[Any], membership: Any) -> set[str]:
+    """For a reader with trust `outside`, `outside_card:<id>` for each card the batch's card
+    and note events name that it reads now (`public_cards.outside_clause`), decided in one
+    statement on the cards' rows; nothing for any other reader."""
+    if getattr(membership, "trust", None) != OUTSIDE:
+        return set()
+    named = {event_card(r) for r in rows if r.kind in OUTSIDE_CARD_KINDS} - {None}
+    if not named:
+        return set()
+    from maity_hub import public_cards  # the public pages' modules read events
+
+    read = conn.execute(
+        select(t.card.c.id).where(t.card.c.id.in_(named), public_cards.outside_clause())
+    ).scalars()
+    return {f"{OUTSIDE_CARD}{card_id}" for card_id in read}
+
+
+def _outside_reads(row: Any, principal: str, hidden: frozenset[str]) -> bool:
+    """Whether a reader with trust `outside` reads `row` (§2.3 "Outside", §8.2): an event of a
+    card it reads now (`_outside_cards`), or a change of its own membership or credentials."""
+    if row.kind in OUTSIDE_CARD_KINDS:
+        card_id = event_card(row)
+        return card_id is not None and f"{OUTSIDE_CARD}{card_id}" in hidden
+    if row.kind in OUTSIDE_OWN_KINDS:
+        if row.subject_type == "member":
+            return bool(row.subject_id == principal)
+        return f"member:{principal}" in (row.audience or [])
+    return False
+
+
 # Kinds a bridge's read for an agent (`carried`, §2.3) never reads nor wakes on: the rules the
 # agent's owner set for it (§9.6) and a mention from a chat across projects, whose payload
 # names that chat's title (§9.5).
@@ -659,8 +708,11 @@ def hidden_redactions(
     - `circle:<seq>` for each jour fixe event of a round or series with `circle: owner`:
       it reaches only its audience, never an owner's or admin's see-all (§20.1, §20.7);
     - `outside:<conversation>` for each thread of such a round whose `circle_owner` the
-      human is not: owning an agent in it does not let them read along (§20.5)."""
+      human is not: owning an agent in it does not let them read along (§20.5);
+    - with a `membership` with trust `outside`, `outside_card:<id>` for each card a card or
+      note event of the batch names that it reads now (§2.3 "Outside", `_outside_cards`)."""
     hidden = {f"ticker:{seq}" for seq in ticker_read.withheld(conn, rows, membership)}
+    hidden |= _outside_cards(conn, rows, membership)
     hidden |= {f"watching:{seq}" for seq in watched_seqs(conn, rows, membership)}
     hidden |= {f"restricted:{seq}" for seq in restricted.readable_seqs(conn, rows, membership)}
     hidden |= _owned_in_chats(conn, rows, membership)
@@ -928,6 +980,11 @@ def readable_by(
         return False  # an isolated agent is left out of every audience (§6.2)
     if in_window(row, membership):
         return False  # as if it had never been a member then, whatever its trust (§8.2)
+    if membership.trust == OUTSIDE and not _outside_reads(row, principal, hidden):
+        # An agent with trust `outside` reads, of what the rules below give it, only the
+        # events of a card it reads now and of its own membership (§2.3 "Outside"), its own
+        # events included: what it wrote on a card hides with the card.
+        return False
     if row.kind == restricted.KIND:
         # Its private list intersected with the set at this read, and nothing else: not the
         # see-all of owners and admins, not its actor once out of the set (§6.4).

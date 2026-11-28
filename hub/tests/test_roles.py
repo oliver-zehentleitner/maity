@@ -28,6 +28,7 @@ CONTRACT_ROLES = (
     "blue-team",
     "purple-team",
     "expert",
+    "steward",
 )
 CODER = {"project:read", "tasks:write", "requests:ask", "events:post"}
 TESTER = {*CODER, "tasks:test"}
@@ -47,6 +48,8 @@ SCOPES = {
     "purple-team": REVIEWER,
     # §2.3 "The expert": it answers and posts, and takes no card and files no request.
     "expert": {"project:read", "events:post"},
+    # §2.3 "The steward": the coder's scopes, with the expert's fields.
+    "steward": CODER,
 }
 
 
@@ -80,6 +83,7 @@ def test_the_derived_lists() -> None:
         "blue-team",
         "purple-team",
         "expert",
+        "steward",
     )
     assert (*scopes.WORK_ROLES, "manager") == scopes.MEMBER_RULE_ROLES
     assert set(scopes.SENSITIVE_ROLES) == {"reviewer", "tester", "red-team", "purple-team"}

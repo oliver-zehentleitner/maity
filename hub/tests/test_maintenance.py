@@ -12,6 +12,7 @@ from typing import Any
 
 import pytest
 from sqlalchemy import Engine, insert, select, update
+from sqlalchemy.exc import TimeoutError as PoolTimeout
 
 from maity_hub import clock, maintenance
 from maity_hub import tables as t
@@ -209,10 +210,16 @@ def test_a_running_window_refuses_the_api_with_retry_after(
     fresh = make_client()
     signed_in = factory.login_handle(fresh, "maintainer")
     assert signed_in.status_code == 200, signed_in.text
-    # the hub's own pages answer a small page, the badge an empty one; the app shell is served
-    page = fresh.get("/explore")
+    # the hub's own pages answer a small page, the badge an empty one; the app shell is served,
+    # at `/explore` too for a signed-in reader (§16.9, "Explore, signed in"): the app shows the
+    # full page there, as at `/`
+    page = fresh.get("/join/not-a-token", headers={"Accept": "text/html"})
     assert page.status_code == 503 and "Maintenance" in page.text
     assert page.headers["Retry-After"] == str(25 * 60)
+    explore = fresh.get("/explore")
+    assert explore.status_code == 200 and "js/app.js" in explore.text
+    refused = make_client().get("/explore")
+    assert refused.status_code == 503 and refused.headers["Retry-After"] == str(25 * 60)
     badge = fresh.get("/badge/maintainer/maity.svg")
     assert badge.status_code == 503 and badge.content == b""
     assert fresh.get("/settings").status_code == 200
@@ -292,6 +299,28 @@ def test_the_503_page_never_waits_for_the_frames_read(
         assert len(reads) <= 1  # one read at a time, not one per refused request
     finally:
         held.set()
+
+
+def test_a_visitor_at_explore_gets_the_503_page_with_the_pool_used_up(
+    make_client: ClientFactory, admin: flow.Human, now: Clock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # #2227's review (4nuu): the session check of `/explore` takes a pooled connection only for
+    # a request with a session cookie, so a visitor without one gets the maintenance page, not
+    # `503 database_unavailable`, while the pool has none to give.
+    put(admin)
+    running(now)
+    visitor = make_client()
+    assert visitor.get("/explore").status_code == 503  # the window is read and kept
+    engine = visitor.app.state.engine  # type: ignore[attr-defined]
+
+    def used_up() -> Any:
+        raise PoolTimeout("no pooled connection")
+
+    monkeypatch.setattr(engine, "begin", used_up)
+    page = visitor.get("/explore", headers={"Accept": "text/html"})
+    assert page.status_code == 503, page.text
+    assert "Maintenance" in page.text and page.headers["Retry-After"] == str(25 * 60)
+    assert "database_unavailable" not in page.text
 
 
 def test_a_failing_frame_read_is_tried_again_only_after_a_rest(

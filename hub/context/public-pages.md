@@ -804,7 +804,8 @@ without the card history and the member and card fields the contract opens to an
 **Revisit when:** the login is no longer the way a mail link goes on after a sign-in
 
 The pages themselves worked; the shell around them does not know visitors and shows the login. So `/explore`,
-which the landing page's button named and nothing served, is now a page for everyone, a slash at the end of a
+which the landing page's button named and nothing served, is now a page for every visitor (a signed-in human
+gets the shell there since 2026-11-25, b723d46b), a slash at the end of a
 page's address leads to the page, and the join host keeps `/<owner>/<slug>…`. A dashboard address under a
 public project stays the login and links the page. A signed-in non-member first went to `?as=public`; since
 2026-11-02 they read the same view in the app at the same address (70c80e4f), and since 2026-11-03 the
@@ -1565,3 +1566,151 @@ digest hashes, so each would be rewritten and dated again; the second needs five
 
 A mechanical change: the stored pages, their `data` and the public routes' answers on one world (people, agents, an
 organisation, a second project, cards, an online agent, a profile switched off) are the same before and after.
+
+## Who a public page names lives in one module; `team` is the shown members of that read
+
+**Id:** cc4685d4-6489-4858-bd5e-cb0f490e853f
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the clean-up audit of the rendering and stored public pages (card tsk-hgnbapyw7hnh, items 7, 9 and 11) and the card tsk-mtyyaqj39c22 that carries it out; the lead's scope on that card; the diff of every stored page, its `data` and the answers of the public routes on one world before and after; reviews A2755 and A2756 of PR #2246 (the handle order under a PostgreSQL locale), and a run of the team tests on a PostgreSQL database with a locale that weighs the hyphen last; reviews A2757 and A2758 (a membership change between the members read and the order read), and regression tests that fail with the earlier form; reviews A2770 and A2771 (what the shared read does and does not fix, the order of missing profiles)
+**See:** public-pages.md#the-public-pages-name-their-members-by-one-rule-pictures-one-read-of-the-members-per-render-one-link-one-card-one-monogram-one-figure-list — 5fc710f7-f9c3-4622-91bb-146baab12f57 — as of 2026-11-25
+
+Who a page names, and how it writes their name, lives in `public_members`: `Person`, `members`,
+`person_data`, `shown_data`, `holder_data`, `pictured` and `shown_pictures`, under the public
+names they already had. The snapshot, the card pages, the outsider's members view and the
+project page import them from there. A module for them was left out of the earlier clean-up
+because `Person` stayed in `public_project_views`; they move together now.
+
+`team` is those `members` shows, split by human, each list in the order the database's
+`ORDER BY handle` gives their own rows, read as ids for exactly those principals. Hidden
+members (a hold, an account not served) stay in `members` unnamed; `team` drops them. An
+isolated agent is in neither. `render_project` reads the members once and hands that read to
+`team`, to the pictures and to who is online, so who the page names, who the Members figure
+counts and whose pictures and presence are looked up cannot come from two membership reads.
+The shared read is a shared membership selection, not a snapshot of the page: the roles
+(`team_details`), the profile order, the pictures, the online state and the statistics are
+later reads, each as the database has it when it runs (`public_snapshot.online` reads the
+memberships again by the shared ids).
+
+The order read does not filter the memberships again. Under READ COMMITTED (and on MariaDB,
+where the render's `xact_lock` is no lock) a member can leave, or an agent be isolated,
+between `members` and `team`; a second membership read then lacked a principal the first one
+named, and `team` failed with a `KeyError`, taking the project's page offline (reviews A2757,
+A2758 of PR #2246). Now `team` names exactly the shown members of the read it is given, even
+one that changed since: who is named stays the shared selection, and the member change
+renders the page again (its own `touch`). Every member of the read comes back once, two
+memberships of one principal together at its handle; those whose profile row is gone
+meanwhile have no handle and follow the others, grouped by principal in the order each
+principal first appears, each group in its own order (missing principals A and B, input A1,
+B1, A2: A1, A2, B1), not the input's person order. `agent_statistics` still reads which
+agents count itself, so an agent isolated after the read is named but has no counters on
+that render: the statistics rightly leave it out.
+
+The audit's item 7, a set-based `served` over lists, is already on `main` as `served_of` /
+`served_among` / `standing_of` (since #2077). The landing page's count, the organisation
+page, a person's listed projects and an agent's memberships already pass their rows to
+`served_of`. The landing page only counts the served projects; `memberships` returns the
+rows and their membership ids and reads no names. The full names are read once, with
+`namespace.full_names`, by the callers that show them: the organisation page, a person's
+listed projects and an agent's page. `/explore` is left as it is, because #2227 and #2233
+rewrite it, and a follow-up after they merge is smaller.
+
+**Reason:** the rule for who is named changes in one place, and `team` cannot drift from the
+members the views use. The set-based served rule already had one function; renaming it would
+add a second name for the same thing. The order stays the database's because the change is
+mechanical: PostgreSQL compares text by its locale (persistence.md), and a locale such as
+`en_US.utf8` weighs a hyphen last (`aaaa-a`, `aaaaaa`, `aaaa-b`), where Python, SQLite and
+MySQL's binary tables compare code points (`aaaa-a`, `aaaa-b`, `aaaaaa`). A handle may hold a
+hyphen, so a Python sort would reorder `people` and `agents` on such a database and render
+every affected project page with a new digest.
+
+For the order of an earlier read, two other forms were in contention. The ordered
+intersection of a second membership read with the members shown would not fail, but drops
+from the names whoever changed in between, while the Members figure and who is online of the
+same render still come from the first read: one page from two reads. Reading visibility and
+order in one statement, by ordering `members` itself by handle, changes the order of the read
+its other users (the Team tab, the snapshot) iterate. Catching the `KeyError` would only move
+the failure to a silent guess.
+
+**Rejected alternative:** rewrite `/explore` in the same change, or introduce `served_projects`
+beside `served_of`. The first collides with #2227 and #2233; the second is a new name for a
+function that already exists. Reintroducing the old private names (`_shown`, `_holder`) when
+moving the helpers was left out: they are already public, and a move should not rename them
+back. Sorting `team` in Python by code point, as the Team tab's `members_data` does, was left
+out too: it is the cross-engine order, but it changes the pages on a PostgreSQL database with
+a locale, which this change was not to do; making the project page's order bytewise is a
+decision of its own.
+
+A mechanical change: the stored pages, their `data` and the public routes' answers on one
+world (people, agents, an organisation, a second project, cards, an online agent, a profile
+switched off) are the same before and after. A test compares `team` with the row-wise form
+on hyphenated handles of people and of several agents; on a PostgreSQL database with such a
+locale it fails for a Python sort and passes for the database's order.
+
+## A signed-in `/explore` is the shell, and `GET /public/explore` lists the projects the same for everyone
+
+**Id:** b723d46b-9810-4de0-b29c-0f1ad1f72c48
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-r6bk2py3ezwg (a signed-in Explore inside the dashboard, on the maintainer's design of 2026-11-25); the lead's decision of 2026-11-25 on the plan for it (the route, the reads, the cache rule, two pull requests); contract `docs/api.md` §16.9 "Explore, signed in", §16.11; `routes.pages.explore` and `read_explore`, `public_projects.explore_rows`
+**See:** public-pages.md#a-visitor-on-the-way-to-a-public-page-never-ends-at-the-login — 439a36e9-c05c-4c87-a3d3-1cd2ff5061d7 — as of 2026-11-25
+**Revisit when:** the dashboard's Explore needs something per reader that `GET /me` does not carry, or a shared cache in front of the hub stops honouring `Vary: Cookie`
+
+`/explore` answers a request with a live session, unless it asks `?as=public`, with the app shell (`no-cache`,
+`Vary: Cookie`, as every shell), and the dashboard draws Explore there as a tab of its own. A visitor, and anyone
+with `?as=public`, gets the page as before. The dashboard reads its list from `GET /public/explore`,
+`{"projects": [{name, full_name}]}`, the same answer for everyone (`public, max-age=60`, an `ETag`, no
+`Vary: Cookie`), from `public_projects.explore_rows`, the one listing the page draws as well. Whether the reader
+is a member of a listed project or has starred it, the dashboard takes from `GET /me`; a project's id for a new
+star from `GET /projects/{owner}/{slug}`, which an outsider reads (§2.3). The star stays in the dashed tab, not
+on the list. While a maintenance window runs the route decides, as `/` does: a visitor gets the 503 page, a
+signed-in reader the shell, whose app shows the full page; the middleware no longer refuses `/explore` for everyone.
+
+**Reason:** the same address keeps every link to it working (the frame's header, the not-found page) and needs no
+new reserved first segment, which would take a handle away. The answer already varied on the cookie, and stored
+public pages and `/` already hand a session the shell, so caches meet nothing new. A list the same for everyone can
+be cached publicly and stays a plain public read; what differs per reader is already in `/me`.
+
+**Rejected alternatives:**
+- A dashboard address of its own, such as `/all/explore`: Explore is a tab beside the projects, not a view of the
+  All projects scope; and a new first word would need a reserved segment that may already be a handle.
+- A signed-in list that marks each project as the reader's membership or star: it repeats `/me` and can only be
+  cached privately.
+- The project's id in the public list, so a star needs no further read: the public list carries what the pages
+  show, and one read per new star is cheap; the lead ruled the ids out.
+- The dashboard reading `/explore`'s HTML for its list: it would tie the app to the page's markup.
+
+## The Board's columns read `shown_clause`; `shown` and `shown_clause` are twins a test holds together
+
+**Id:** 6f980a4a-0765-447a-8e8f-9fc911126903
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-mtyyaqj39c22 (point 12 of its remainder: the rule of which cards are public spelled in several places); the lead's go of 2026-11-27 for the smallest part of it, with snapshot batching kept out; `public_cards.shown`, `shown_clause`, `public_project_views.board_rows`, `tests/test_public_board_rule.py`
+**See:** public-pages.md#who-a-public-page-names-lives-in-one-module-team-is-the-shown-members-of-that-read — cc4685d4-6489-4858-bd5e-cb0f490e853f — as of 2026-11-27
+**Revisit when:** the `security` rule gains a condition, a label can be written with blanks or outside ASCII, or the snapshot's card reads are batched into one query
+
+`board_rows` leaves the not-done `security` cards out of a column with `public_cards.shown_clause`, the
+condition the outsider's reads use (`outside_clause`), instead of spelling the rule once more inline; the
+holds, the 30-day window of the closed columns, the order (newest first, the id on a tie) and the column
+limit are unchanged, and the Board shows the same cards. `shown` (a row already read: the card's page, the
+snapshot's ticker) and `shown_clause` (a query) stay two functions, documented as twins:
+`tests/test_public_board_rule.py` holds them to the same answer over every status × a label matrix (none,
+empty, `security` in several cases, look-alikes), checks that the clause is never NULL, and holds the Board
+to the answer of its former inline rule and of the rule spelled out in Python, under holds, the cutoff and
+limits of 200, 5 and 1, on whichever engine the suite runs on.
+
+**Reason:** the clause's docstring already said the Board used it while the Board carried a copy; a change
+of the rule in one place would have left the Board, the outsider's reads or a card's page disagreeing, and
+nothing would have failed. One clause for every query, and a test across the two spellings, make such a
+drift a failing test.
+
+**Rejected alternatives:**
+- One function for both, a Python check on SQL rows only: the Board and the outsider's lists must decide in
+  the statement that reads the rows (their limit counts only shown cards, and READ COMMITTED gives each
+  statement its own moment), so the SQL form cannot go.
+- Batching the snapshot's per-card reads in the same change: it touches a separate current-title read, missing
+  ids, empty merge lists, project bounds and READ COMMITTED (an id set read first proves nothing about rows
+  read later), and needs a plan of its own; the lead kept it out of this slice.

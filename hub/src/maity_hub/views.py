@@ -29,6 +29,7 @@ from maity_hub.chunks import chunks
 from maity_hub.config import Settings
 from maity_hub.cover import still_with as cover_still_with
 from maity_hub.cover import view as cover_view
+from maity_hub.errors import not_found
 from maity_hub.languages import known as known_language
 from maity_hub.seen import latest_call, presence_by_age
 
@@ -718,7 +719,8 @@ def member_views(
             "line_consent": bool(row.line_consent),
             "areas": row.areas,
             "capabilities": row.capabilities,
-            # An expert's fields (§2.3 "The expert", §6.2): null and [] for everyone else.
+            # An expert's and a steward's fields, a human's as an agent's (§2.3 "The expert",
+            # "The steward", §6.2): null and [] for every other role.
             "expert_for": row.expert_for,
             "expert_sources": row.expert_sources or [],
         }
@@ -1110,9 +1112,13 @@ def _release(
 
 
 def task_view(conn: Connection, row: Any, fg: forge.Forge, viewer: Any = None) -> dict[str, Any]:
-    """The card as §6.4 shows it (the tasks slice adds its endpoints). Not for an outsider,
-    whose view may drop (`task_views`)."""
-    return task_views(conn, [row], fg, viewer)[0]
+    """The card as §6.4 shows it (the tasks slice adds its endpoints). For a reader from
+    outside (`access.reads_from_outside`), whose view may drop (`task_views`), a card it no
+    longer reads is `not_found`, as its read answers."""
+    views = task_views(conn, [row], fg, viewer)
+    if not views:
+        raise not_found()
+    return views[0]
 
 
 def task_views(
@@ -1120,15 +1126,15 @@ def task_views(
 ) -> list[dict[str, Any]]:
     """`task_view` for several cards: one query for the edges, one for the members. With
     `viewer` (the reader's membership) each card carries `watching`, the reader's own
-    watch or the one a dependency brings (§6.4), never anyone else's. A public project's
-    outsider (`access.OutsideReader`) reads no trace of a card it does not read (§2.3,
-    `public_cards.outside_views`)."""
+    watch or the one a dependency brings (§6.4), never anyone else's. A reader from outside
+    (`access.reads_from_outside`: a public project's outsider, an agent with trust `outside`)
+    reads no trace of a card it does not read (§2.3, `public_cards.outside_views`)."""
     if not rows:
         return []
     views = _task_views(conn, rows, fg)
     from maity_hub import access, public_cards  # they read views; imported here, not at the top
 
-    outside = isinstance(viewer, access.OutsideReader)
+    outside = access.reads_from_outside(viewer)
     if outside:
         # Decided on the rows its last statement returns: a view may drop (READ COMMITTED).
         views = public_cards.outside_views(conn, views)
@@ -1158,6 +1164,33 @@ def _approvals(row: Any, signing: set[str]) -> dict[str, Any] | None:
     if row.project_id not in signing or row.status != "review":
         return None
     return row.approvals or {"review": None, "test": None}
+
+
+def _claim_requests(conn: Connection, card_ids: Sequence[str]) -> dict[str, list[dict[str, Any]]]:
+    """The waiting claim request of each card, `[{id, member_id, instance, requested_at}]`
+    (§6.4 `claim_requests`): the one row whose `pending` is set, at most one per card by the
+    table's key. Every reader of the card reads it, an outsider included; the reason and who
+    settled a request never appear here. The public HTML card does not show it (the lead's
+    ruling of 2026-11-25, Q14: `public_cards.render_card` builds its page from its own
+    fields)."""
+    c = t.claim_request.c
+    found: dict[str, list[dict[str, Any]]] = {}
+    rows = conn.execute(
+        select(c.id, c.task_id, c.member_id, c.instance, c.requested_at)
+        .where(c.task_id.in_(card_ids), c.pending.is_(True))
+        .order_by(c.requested_at, c.id)
+    ).all()
+    members = principal_ids(conn, (row.member_id for row in rows))
+    for row in rows:
+        found.setdefault(row.task_id, []).append(
+            {
+                "id": row.id,
+                "member_id": members.get(row.member_id),
+                "instance": row.instance,
+                "requested_at": ts(row.requested_at),
+            }
+        )
+    return found
 
 
 def _task_views(conn: Connection, rows: Sequence[Any], fg: forge.Forge) -> list[dict[str, Any]]:
@@ -1194,6 +1227,7 @@ def _task_views(conn: Connection, rows: Sequence[Any], fg: forge.Forge) -> list[
     release_tags = tags(conn, [r for r in rows if r.kind == "release"])
     linked = links.views_of(conn, (r.id for r in rows))
     noted = notes.counts_of(conn, (r.id for r in rows))
+    waiting = _claim_requests(conn, [r.id for r in rows])
     now = clock.now()
     views = []
     for row in rows:
@@ -1225,6 +1259,8 @@ def _task_views(conn: Connection, rows: Sequence[Any], fg: forge.Forge) -> list[
                 "assigned_to": members.get(row.assigned_to),
                 "assigned_instance": row.assigned_instance,
                 "claim": claim,
+                "claim_requests": waiting.get(row.id, []),
+                "open_to_outsiders": bool(row.open_to_outsiders),
                 "checkpoint": row.checkpoint,
                 "depends_on": sorted(edges[row.id]["depends_on"]),
                 "ships_with": sorted(edges[row.id]["ships_with"]),
@@ -1540,6 +1576,30 @@ def event_views(conn: Connection, rows: Sequence[Any], reader: Any = None) -> li
         found = held.get(f"{row.project_id}/{row.seq}") if row.kind == "message" else None
         if found is not None:  # only while a hold stands on the message (§16.8)
             view["moderation"] = found
+    from maity_hub import access, events, public_cards
+
+    if access.reads_from_outside(reader):
+        # Project the saved edges at read time, the same way as the card itself. A partial
+        # update keeps only fields present in that event; the event's stored body stays intact.
+        cards = [
+            {**view["payload"], "id": events.event_card(row), "_seq": row.seq}
+            for row, view in zip(rows, views, strict=True)
+            if row.kind in events.OUTSIDE_CARD_KINDS
+        ]
+        projected = {card["_seq"]: card for card in public_cards.outside_views(conn, cards)}
+        kept = []
+        for row, view in zip(rows, views, strict=True):
+            if row.kind in events.OUTSIDE_CARD_KINDS:
+                projected_card = projected.get(row.seq)
+                if projected_card is None:
+                    continue
+                payload = dict(view["payload"])
+                for key in (*public_cards.EDGE_FIELDS, "children", "release", "parent"):
+                    if key in payload:
+                        payload[key] = projected_card[key]
+                view["payload"] = payload
+            kept.append(view)
+        return kept
     return views
 
 

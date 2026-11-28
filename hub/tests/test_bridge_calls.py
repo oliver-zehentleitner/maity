@@ -148,6 +148,17 @@ def test_a_message_for_the_served_agent_is_its_own_with_the_bridge_as_via(
     assert mine["from"] == bridge.agent_id and "via" not in mine
 
 
+def test_a_member_bridge_serves_outside_with_direct_only_credential_metadata(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    served, bridge, _ = _pair(migrated, owner, trust="outside")
+    calls = Calls(make_client(), bridge)
+    assert calls.get(f"{PROJECT}/members/{served.agent_id}", served.agent_id).status_code == 200
+    path = f"{PROJECT}/members/{served.agent_id}/credentials"
+    assert calls.get(path, served.agent_id).status_code == 404
+    assert Calls(make_client(), served).get(path).status_code == 200
+
+
 def test_a_card_written_for_the_served_agent_shows_via_in_its_history(
     owner: flow.Human, make_client: ClientFactory, migrated: Engine
 ) -> None:
@@ -372,7 +383,9 @@ def test_a_carried_write_after_its_connection_ended_is_refused_with_or_without_a
         )
 
 
-@pytest.mark.parametrize("change", ["bridge_guest", "bridge_isolated", "owner_suspended"])
+@pytest.mark.parametrize(
+    "change", ["bridge_guest", "bridge_outside", "bridge_isolated", "owner_suspended"]
+)
 def test_a_carried_write_after_the_connections_standing_ended_is_refused(
     owner: flow.Human,
     make_client: ClientFactory,
@@ -400,8 +413,8 @@ def test_a_carried_write_after_the_connections_standing_ended_is_refused(
                 )
                 return
             values: dict[str, Any] = (
-                {"trust": "guest"}
-                if change == "bridge_guest"
+                {"trust": change.removeprefix("bridge_")}
+                if change in ("bridge_guest", "bridge_outside")
                 else {
                     "isolated_since": clock.now(),
                     "isolated_reason": "test",
@@ -472,7 +485,7 @@ def test_an_isolated_served_agent_is_refused_and_keeps_its_bridge(
         assert conn.execute(select(t.bridge)).first() is not None
 
 
-@pytest.mark.parametrize("change", ["owner_suspended", "bridge_guest"])
+@pytest.mark.parametrize("change", ["owner_suspended", "bridge_guest", "bridge_outside"])
 def test_a_bridge_carries_nothing_once_its_standing_ends(
     owner: flow.Human, make_client: ClientFactory, migrated: Engine, change: str
 ) -> None:
@@ -490,12 +503,20 @@ def test_a_bridge_carries_nothing_once_its_standing_ends(
             conn.execute(
                 update(t.membership)
                 .where(t.membership.c.id == bridge.membership_id)
-                .values(trust="guest")
+                .values(trust="outside" if change == "bridge_outside" else "guest")
             )
     refused = _say(calls, served.agent_id)
     assert (refused.status_code, _reason(refused)) == (403, "not_your_bridge")
     read = calls.get(f"{PROJECT}/members/{served.agent_id}", served.agent_id)
     assert (read.status_code, _reason(read)) == (403, "not_your_bridge")
+    if change == "bridge_outside":
+        with migrated.begin() as conn:
+            conn.execute(
+                update(t.membership)
+                .where(t.membership.c.id == bridge.membership_id)
+                .values(trust="member")
+            )
+        assert _say(calls, served.agent_id).status_code == 201
 
 
 def test_a_claim_through_the_bridge_is_the_served_agents_without_an_instance(

@@ -35,11 +35,30 @@ _ROLE_SCOPES: dict[str, tuple[str, ...]] = {
     "purple-team": _REVIEWER,
     # The expert (§2.3 "The expert") answers and posts: no card, no request of its own.
     "expert": ("project:read", "events:post"),
+    # The steward (§2.3 "The steward") keeps the reasoning complete: the coder's scopes, so
+    # that it posts notes, opens cards and files requests; it carries the expert's fields.
+    "steward": _CODER,
 }
 ROLES = tuple(_ROLE_SCOPES)
+# The roles that carry `expert_for` and `expert_sources` (§6.2): a change between them keeps
+# the fields, a change to any other role clears them.
+EXPERT_FIELD_ROLES = ("expert", "steward")
+# What a join that gives the steward fills where it names neither field (§2.3 "The steward").
+STEWARD_EXPERT_FOR = "`context/`: the project's reasoning"
+STEWARD_SOURCES = ("context/",)
+
+
+def joined_expert_fields(role: str) -> dict[str, object]:
+    """The expert's fields a new membership with `role` starts with (§2.3 "The steward"): a
+    steward's are filled, every other role's are empty, and a join names neither."""
+    if role != "steward":
+        return {}
+    return {"expert_for": STEWARD_EXPERT_FOR, "expert_sources": list(STEWARD_SOURCES)}
+
+
 # What a project role may be built on (§2.3 "Project roles"): never `proxy`, `manager` or a
-# security team, whose scopes are already those of a base, and never `expert`, whose scopes
-# are fewer than any base's.
+# security team, whose scopes are already those of a base, never `expert`, whose scopes
+# are fewer than any base's, and never `steward`, whose duty no project role carries.
 BASES = ("coder", "reviewer", "tester", "designer", "ops", "writer")
 # Where the hub resolves a built-in role to find who holds done authority, whom a change
 # waits for the owner's go, a substitute (§6.12), a security team counts as the role whose

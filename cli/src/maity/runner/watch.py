@@ -23,10 +23,13 @@ import threading
 from collections import deque
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
-from datetime import UTC, datetime
 from typing import Any
 
 from .. import hub, sign
+from ..stamp import FORMAT
+from ..stamp import WIRE_TIMESTAMP as WIRE_TIMESTAMP
+from ..stamp import parse_stamp as _parse_utc
+from ..stamp import stamp as _stamp
 
 # --- the closed lists (§15.7) ----------------------------------------------------------------
 
@@ -64,25 +67,21 @@ CUT_AT = LOG_LINE_BYTES - 3
 SCRUB_INPUT_MAX = 4 * LOG_LINE_BYTES
 
 # The form §1.1 gives every timestamp: `2026-11-20T20:26:00Z`, whole seconds, `Z`.
-WIRE_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
-WIRE_TIMESTAMP = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z")
+# WIRE_TIMESTAMP is re-exported from maity.stamp; WIRE_FORMAT is the same constant.
+WIRE_FORMAT = FORMAT
 
 
 def stamp(moment: float) -> str:
     """`moment` in the wire form of §1.1 (whole seconds, `Z`), as the hub requires of a
     finding's times."""
-    return datetime.fromtimestamp(moment, tz=UTC).strftime(WIRE_FORMAT)
+    return _stamp(moment)
 
 
 def parse_stamp(value: Any) -> float | None:
     """A timestamp the hub sent, in the wire form only; None for anything else (an offset, a
     fraction, an epoch, a date that does not exist)."""
-    if not isinstance(value, str) or not WIRE_TIMESTAMP.fullmatch(value):
-        return None
-    try:
-        return datetime.strptime(value, WIRE_FORMAT).replace(tzinfo=UTC).timestamp()
-    except ValueError:
-        return None
+    at = _parse_utc(value, strict=True)
+    return None if at is None else at.timestamp()
 
 
 def offset_from(server_time: Any, received_at: float) -> float | None:

@@ -161,41 +161,58 @@ def public_for_outsiders(conn: Connection, project_ids: Collection[str]) -> set[
     return served_among(conn, project_ids)
 
 
-def team(conn: Connection, project_id: str) -> tuple[list[Any], list[Any]]:
-    """Who the page names (§16.9): every human member and every agent, by handle, whatever
-    their profile says; an open project never only counts them. Active memberships only, in
-    the order of the handles. A person or agent profile under a hold of moderation (§16.8), a
-    suspended owner's agent and an isolated agent (§6.28) are neither named nor counted."""
-    m = t.membership.c
-    people = conn.execute(
-        select(t.human)
-        .join(t.membership, m.human_id == t.human.c.id)
-        .where(m.project_id == project_id, m.active.is_(True))
-        .order_by(t.human.c.handle)
-    ).all()
-    humans = [h for h in people if public_people.served(conn, h)]
-    agents = conn.execute(
-        select(t.agent_profile)
-        .join(t.membership, m.agent_id == t.agent_profile.c.id)
-        .where(m.project_id == project_id, m.active.is_(True), m.isolated_since.is_(None))
-        .order_by(t.agent_profile.c.handle)
-    ).all()
-    owners = (
-        {
-            h.id: h
-            for h in conn.execute(
-                select(t.human).where(t.human.c.id.in_({a.owner_id for a in agents}))
-            )
-        }
-        if agents
-        else {}
-    )
-    # An agent profile under a hold of moderation (§16.8) is no more named than a person's.
-    held = moderation.holds_of(conn, "profile", [a.id for a in agents])
-    shown = [
-        a for a in agents if a.id not in held and public_people.served(conn, owners[a.owner_id])
-    ]
-    return humans, shown
+def team(
+    conn: Connection, project_id: str, who: dict[int, Any] | None = None
+) -> tuple[list[Any], list[Any]]:
+    """Who the page names (§16.9): the shown members of `public_members.members`, humans and
+    agents each in handle order. Active memberships only; a person or agent profile under a
+    hold of moderation (§16.8), a suspended owner's agent and an isolated agent (§6.28) are
+    neither named nor counted. Hidden members (a hold, an account not served) stay in
+    `members` unnamed; `team` drops them. `who` is that read, when the caller has it already
+    (`render_project`): `team` names exactly its shown members, even when a membership changed
+    since (a member removed, an agent isolated), so that who is named comes from one shared
+    membership selection. That is all the shared read fixes, not a snapshot of the whole page:
+    the profile order (`_in_handle_order`), the roles (`team_details`), the pictures, who is
+    online and the statistics are later reads, each at the time it runs. The handle order is
+    the database's `ORDER BY handle`, as before `team` was built from `members`: PostgreSQL
+    compares by its locale, Python by code point, and the two disagree on a hyphen
+    (hub/context/public-pages.md)."""
+    from maity_hub import public_members
+
+    if who is None:
+        who = public_members.members(conn, project_id)
+    shown = [p for p in who.values() if p.shown]
+    humans = _in_handle_order(conn, [p for p in shown if p.human], human=True)
+    agents = _in_handle_order(conn, [p for p in shown if not p.human], human=False)
+    return humans, agents
+
+
+def _in_handle_order(conn: Connection, persons: list[Any], *, human: bool) -> list[Any]:
+    """`persons` in the order the database gives their handles (`ORDER BY handle`, the order
+    `team` had before it was built from `members`), so that no stored page and no page digest
+    changes. The order is read for these principals only, not for the project's memberships
+    again: who is named is decided by `persons` alone, and a membership that changed since
+    they were read can neither drop one nor fail the read. Every one of `persons` comes back
+    exactly once, the persons of one principal together in their order in `persons`. Those
+    whose profile row is gone meanwhile have no handle to order by and follow the others,
+    grouped by principal: the principals in the order each first appears in `persons`, each
+    group's persons in their order there, not the whole of `persons` in its order (missing
+    principals A and B, `persons` A1, B1, A2: A1, A2, B1)."""
+    if not persons:
+        return []
+    table = t.human if human else t.agent_profile
+    of: dict[str, list[Any]] = {}
+    for p in persons:
+        of.setdefault(p.principal, []).append(p)
+    ordered = conn.execute(
+        select(table.c.id).where(table.c.id.in_(list(of))).order_by(table.c.handle)
+    ).scalars()
+    found: list[Any] = []
+    for principal in ordered:
+        found.extend(of.pop(principal, []))
+    for rest in of.values():
+        found.extend(rest)
+    return found
 
 
 def member_pictures(
@@ -231,8 +248,8 @@ def team_details(
         roles[human_id or agent_id] = role
     harnesses: dict[str, str | None] = {}
     for a in agents:
-        found = public_agents.memberships(conn, a.id)
-        harnesses[a.id] = public_agents.latest_session(conn, found)[1] if found else None
+        found = public_agents.memberships(conn, a.principal)
+        harnesses[a.principal] = public_agents.latest_session(conn, found)[1] if found else None
     return roles, harnesses
 
 
@@ -261,9 +278,13 @@ def agent_statistics(
     if named is None:
         _, named = team(conn, project_id)
     people = {
-        by_agent[a.id]: {"handle": a.handle, "name": a.display_name, "display_name": a.display_name}
+        by_agent[a.principal]: {
+            "handle": a.handle,
+            "name": a.name,
+            "display_name": a.name,
+        }
         for a in named
-        if a.id in by_agent
+        if a.principal in by_agent
     }
     found = swarm.CACHE.get(conn, project_id)
     folded: dict[str, Any] = swarm.fold(
@@ -362,24 +383,18 @@ def render_project(conn: Connection, hub: Settings, project_id: str) -> list[pub
     shown_links = project_links.public(
         project.links, project.repository_url, project.repository_public
     )
-    humans, agents = team(conn, project.id)
-    statistics = agent_statistics(conn, project.id, agents)
-    from maity_hub import public_agents, public_snapshot
-    from maity_hub.public_project_views import members, shown_pictures
+    from maity_hub import public_members, public_snapshot
 
-    # The members are read once for the page: the Members figure, the pictures of everyone it
-    # names and who is online all come from this one read.
-    who = members(conn, project.id)
-    pictures = shown_pictures(conn, who)
+    # The members are read once for the page: who the Members figure counts and who `team`
+    # names come from this one read, and the pictures and who is online take their members
+    # from it. Their own rows (avatars, presence, roles, profile order, statistics) are later
+    # reads, not one snapshot of the page.
+    who = public_members.members(conn, project.id)
+    pictures = public_members.shown_pictures(conn, who)
+    humans, agents = team(conn, project.id, who)
+    statistics = agent_statistics(conn, project.id, agents)
     entries = public_snapshot.ticker(conn, project)
     up = public_snapshot.online(conn, who, pictures)
-    owners = dict(
-        conn.execute(
-            select(t.human.c.id, t.human.c.handle).where(
-                t.human.c.id.in_({a.owner_id for a in agents})
-            )
-        ).all()
-    )
     roles, harnesses = team_details(conn, project.id, agents)
     data = {
         "name": project.name,
@@ -390,22 +405,22 @@ def render_project(conn: Connection, hub: Settings, project_id: str) -> list[pub
         "links": [u for u in shown_links if landing.safe_target(u)],
         "people": [
             {
-                "name": h.display_name,
+                "name": h.name,
                 "handle": h.handle,
-                "page": f"/{h.handle}",
-                "picture": pictures.get(h.id),
-                "role": roles.get(h.id),
+                "page": h.address,
+                "picture": pictures.get(h.principal),
+                "role": roles.get(h.principal),
             }
             for h in humans
         ],
         "agents": [
             {
-                "name": a.display_name,
+                "name": a.name,
                 "handle": a.handle,
-                "page": public_agents.path_of(owners[a.owner_id], a.handle),
-                "picture": pictures.get(a.id),
-                "role": roles.get(a.id),
-                "harness": harnesses.get(a.id),
+                "page": a.address,
+                "picture": pictures.get(a.principal),
+                "role": roles.get(a.principal),
+                "harness": harnesses.get(a.principal),
             }
             for a in agents
         ],
@@ -541,6 +556,25 @@ def _shared_agent_pages(conn: Connection, project_id: str) -> list[tuple[str, st
     return [(KIND, other_id) for other_id in ids]
 
 
+def explore_rows(conn: Connection) -> list[tuple[str, str]]:
+    """What `/explore` and `GET /public/explore` list (§16.9): every project that has a page
+    now, as `(full_name, name)`, by its name without regard to case, then its full name. The
+    one listing of both, so the page and the dashboard's Explore cannot list different
+    projects."""
+    p = t.project.c
+    candidates = conn.execute(
+        select(p.id, p.name, p.public_page, p.state, p.owner_org_id, p.owner_human_id).where(
+            p.public_page == "on", p.state != "archived"
+        )
+    ).all()
+    public = served_of(conn, candidates)
+    names = namespace.full_names(conn, public)
+    return sorted(
+        ((names[row.id], row.name) for row in candidates if row.id in public),
+        key=lambda item: (item[1].casefold(), item[0]),
+    )
+
+
 def explore_html(
     conn: Connection,
     hub: Settings,
@@ -555,18 +589,7 @@ def explore_html(
     frame of §16.7.5 (`setting`, `legal`, `stats` and `accept_language` are the frame's). It
     shows only what those pages already show, and is rendered per request, behind the public
     cache."""
-    p = t.project.c
-    candidates = conn.execute(
-        select(p.id, p.name, p.public_page, p.state, p.owner_org_id, p.owner_human_id).where(
-            p.public_page == "on", p.state != "archived"
-        )
-    ).all()
-    public = served_of(conn, candidates)
-    names = namespace.full_names(conn, public)
-    shown = sorted(
-        ((names[row.id], row.name) for row in candidates if row.id in public),
-        key=lambda item: (item[1].casefold(), item[0]),
-    )
+    shown = explore_rows(conn)
 
     def monogram_of(full: str, name: str) -> str:
         return public_design.monogram(name, full.rsplit("/", 1)[-1])

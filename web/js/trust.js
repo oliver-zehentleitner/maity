@@ -25,13 +25,27 @@ window.Maity = window.Maity || {};
     "blue-team": () => [M.t("role.blue_team"), M.t("role.blue_team.help")],
     "purple-team": () => [M.t("role.purple_team"), M.t("role.purple_team.help")],
     expert: () => [M.t("role.expert"), M.t("role.expert.help")],
+    steward: () => [M.t("role.steward"), M.t("role.steward.help")],
   };
   const ROLES = Object.keys(ROLE_WORDS);
   // What an agent's own human may give it when bringing it (§3.1): not ops, not proxy.
   const MEMBER_TRUSTS = ["member", "guest"];
   const MEMBER_ROLES = ROLES.filter((r) => r !== "ops" && r !== "proxy");
-  // What a card's needs may name, beside a project role (§6.4): an expert takes no cards (§2.3).
-  const NEEDS_ROLES = ROLES.filter((r) => r !== "proxy" && r !== "manager" && r !== "expert");
+  // What a card's needs may name, beside a project role (§6.4): an expert takes no cards, and no
+  // card needs the steward, which asks the owners of the work (§2.3).
+  const NEEDS_ROLES = ROLES.filter((r) => !["proxy", "manager", "expert", "steward"].includes(r));
+  // The roles that carry "Expert for" and "Sources" (§6.2), and what a join fills for a
+  // steward (§2.3 "The steward").
+  const EXPERT_FIELD_ROLES = ["expert", "steward"];
+  const STEWARD_EXPERT_FOR = "`context/`: the project's reasoning";
+  const STEWARD_SOURCES = ["context/"];
+  // A role picker in Join an agent and Manage: the steward keeps the project's Keep the Why, so
+  // it is not offered where the project's memory provider is `none` (§2.3, §6.1). The hub does
+  // not refuse it there, and a member that already is a steward keeps its role in the picker.
+  const offered = (ctx, roles) => {
+    const provider = ctx && ctx.project && ctx.project.memory && ctx.project.memory.provider;
+    return provider === "none" ? roles.filter((r) => r !== "steward") : roles;
+  };
   // A trust or a role as a word in a line ("member · coder"), where roleLabel is the choice's name.
   // Words outside the contract's sets stay as they come: a project may name its own roles.
   const TRUST_WORDS = {
@@ -51,6 +65,7 @@ window.Maity = window.Maity || {};
     "blue-team": () => M.t("trust.role_word.blue_team"),
     "purple-team": () => M.t("trust.role_word.purple_team"),
     "expert": () => M.t("trust.role_word.expert"),
+    "steward": () => M.t("trust.role_word.steward"),
   };
   const trustWord = (t) => (Object.hasOwn(TRUST_WORDS, t) ? TRUST_WORDS[t]() : t);
   const roleWord = (r) => (Object.hasOwn(ROLE_LINE_WORDS, r) ? ROLE_LINE_WORDS[r]() : r);
@@ -164,6 +179,7 @@ window.Maity = window.Maity || {};
     "role:blue-team": () => M.t("trust.every.role.blue_team"),
     "role:purple-team": () => M.t("trust.every.role.purple_team"),
     "role:expert": () => M.t("trust.every.role.expert"),
+    "role:steward": () => M.t("trust.every.role.steward"),
   };
   function tokenWords(token) {
     if (Object.hasOwn(EVERY, token)) return EVERY[token]();
@@ -172,5 +188,5 @@ window.Maity = window.Maity || {};
     return token;
   }
 
-  M.trust = { trustWord, roleWord, TRUSTS, ROLES, NEEDS_ROLES, MEMBER_TRUSTS, MEMBER_ROLES, roleLabel, roleHelp, projectRoles, fillRoles, roleHint, governs, owner, guest, roleIs, reviews, tests, releases, outsider, writes, opensViews, words, tokenWords };
+  M.trust = { trustWord, roleWord, TRUSTS, ROLES, NEEDS_ROLES, MEMBER_TRUSTS, MEMBER_ROLES, EXPERT_FIELD_ROLES, STEWARD_EXPERT_FOR, STEWARD_SOURCES, offered, roleLabel, roleHelp, projectRoles, fillRoles, roleHint, governs, owner, guest, roleIs, reviews, tests, releases, outsider, writes, opensViews, words, tokenWords };
 })(window.Maity);

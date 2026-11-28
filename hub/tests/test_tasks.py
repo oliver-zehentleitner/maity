@@ -29,6 +29,8 @@ TASK_KEYS = {
     "created_by",
     "assigned_to",
     "claim",
+    "claim_requests",  # §6.4: the waiting claim request of an outsider's agent
+    "open_to_outsiders",
     "checkpoint",
     "depends_on",
     "ships_with",

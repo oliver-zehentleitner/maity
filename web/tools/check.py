@@ -820,7 +820,10 @@ NOT_PROSE = {"use strict", " · Maity", "Codex", "Antigravity", "Hermes", "Kimi 
              "Maity", "GitHub", "GitLab", "Gitea", "HTTP ", "SHA-256 ", "[U+", "?c=", "XXXX-XXXX-XXXX", "de", "staging",
              "badge ok", "reply primary", "nofollow ugc",
              # The maintainer's name in the product line, never translated (docs/api.md §16.13).
-             "Oliver Zehentleitner"}
+             "Oliver Zehentleitner",
+             # The steward's `expert_for` as the hub stores it at a join (docs/api.md §2.3 "The
+             # steward", hub scopes.STEWARD_EXPERT_FOR): a value, the same in every language.
+             "`context/`: the project's reasoning"}
 
 
 # What comes before a literal that is code whatever it reads like: a class, an

@@ -39,7 +39,7 @@ from maity_hub import (
     wakeups,
 )
 from maity_hub import tables as t
-from maity_hub.access import Membership, member_row, membership
+from maity_hub.access import Membership, member_row, membership, reads_from_outside
 from maity_hub.auth.caller import Caller
 from maity_hub.config import Settings
 from maity_hub.deps import AnyCaller, EventsCaller, engine_of, settings_of, wait_of
@@ -96,7 +96,10 @@ class RedactIn(Strict):
 
 def load_event(conn: Connection, seq: str, reader: Any = None) -> dict[str, Any]:
     row = conn.execute(select(t.event).where(t.event.c.seq == int(seq))).one()
-    return event_views(conn, [row], reader)[0]
+    views = event_views(conn, [row], reader)
+    if not views:
+        raise not_found()
+    return views[0]
 
 
 def _load_for_caller(conn: Connection, seq: str, request: Request) -> dict[str, Any]:
@@ -108,7 +111,10 @@ def _load_for_caller(conn: Connection, seq: str, request: Request) -> dict[str, 
         reader = membership(conn, request.state.caller, slug) if slug else None
     except ApiError:
         reader = None
-    return event_views(conn, [row], reader)[0]
+    views = event_views(conn, [row], reader)
+    if not views:
+        raise not_found()
+    return views[0]
 
 
 def _single_read(conn: Connection, mine: Membership, number: int, carried: bool) -> list[Any]:
@@ -465,7 +471,10 @@ def read_event(slug: str, seq: str, request: Request, caller: AnyCaller) -> JSON
         )
         if not rows:
             raise not_found()
-        view = event_views(conn, rows, mine)[0]
+        views = event_views(conn, rows, mine)
+        if not views:
+            raise not_found()
+        view = views[0]
         from maity_hub.routes import conversations  # it imports this module
 
         conversation = rows[0].conversation_id
@@ -514,6 +523,7 @@ def _carried_windows(conn: Connection, reader: Caller) -> list[dict[str, int]] |
             t.bridge.c.live.is_(True),
             t.membership.c.active.is_(True),
             t.membership.c.isolated_since.is_(None),
+            t.membership.c.trust.not_in(("guest", "outside")),
         )
     ).first()
     return None if found is None else list(found.isolation_windows or [])
@@ -701,6 +711,14 @@ def post_message(
                 addressee = member_row(conn, mine.project.id, principal)
             except ApiError:
                 raise invalid({"to": "not_a_member"}) from None
+            if reads_from_outside(mine) and principal != me:
+                from maity_hub import public_members
+
+                person = public_members.members(conn, mine.project.id, only=[addressee.id]).get(
+                    addressee.id
+                )
+                if person is None or not person.shown:
+                    raise invalid({"to": "not_a_member"})
             if addressee.isolated_since is not None:
                 raise invalid({"to": "isolated"}, "the agent is isolated")
             # One instance of a team: its token wakes only it, the team reads it; a replaced
@@ -712,11 +730,14 @@ def post_message(
             )
         audience = list(dict.fromkeys([target, f"member:{me}"]))
     if body.task_id is not None:
-        found = conn.execute(
-            select(t.card.c.id).where(
-                t.card.c.id == body.task_id, t.card.c.project_id == mine.project.id
-            )
-        ).first()
+        query = select(t.card.c.id).where(
+            t.card.c.id == body.task_id, t.card.c.project_id == mine.project.id
+        )
+        if reads_from_outside(mine):
+            from maity_hub import public_cards
+
+            query = query.where(public_cards.outside_clause())
+        found = conn.execute(query).first()
         if found is None:
             raise invalid({"task_id": "unknown_task"})
     mentioned: list[dict[str, Any]] = []
@@ -967,7 +988,9 @@ def _group_for_posting(conn: Connection, mine: Membership, conversation_id: str)
     events.lock_project(conn, mine.project.id)
     group = group_chats.find(conn, mine.project.id, conversation_id)
     found = group_chats.access(conn, conversation_id, mine) if group is not None else None
-    if found is None and group is not None and chat_gate.waiting(conn, group.id, mine.id):
+    # An agent with trust `outside` takes part in no group chat: not told it waits (§2.3).
+    waits = found is None and group is not None and not reads_from_outside(mine)
+    if waits and chat_gate.waiting(conn, group.id, mine.id):
         raise chat_gate.refuse_waiting()  # it does not post before its owner's yes (§9.6)
     if found is None:
         raise invalid({"conversation_id": "not_a_conversation"})
