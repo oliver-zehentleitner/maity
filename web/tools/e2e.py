@@ -8833,8 +8833,13 @@ def outside_claims_step(run: Run, page: Page, clone: Path) -> None:
     assert run.api(clone, "GET", "/projects/owner/e2e-alpha")["policy"]["outside_claims_max"] == 2147483647
     form.locator("#outside-claims-max").fill("2")
     form.locator("#outside-claims-reason").fill("e2e: two cards per outsider")
-    form.get_by_role("button", name="Save").click()
+    # "Saved" still stands from the save before, and the field reads 2 before anything is sent:
+    # only the hub's answer says this one arrived.
+    with page.expect_response(lambda r: r.request.method == "PATCH" and r.url.endswith("/projects/owner/e2e-alpha")) as saved:
+        form.get_by_role("button", name="Save").click()
+    assert saved.value.ok, saved.value.status
     form = page.locator("form.outside-claims-form")
+    expect(form.locator("#outside-claims-reason")).to_have_value("")  # the redraw after the save
     expect(form.locator("#outside-claims-max")).to_have_value("2")
     policy = run.api(clone, "GET", "/projects/owner/e2e-alpha")["policy"]
     assert (policy["looking_for_coders"], policy["outside_claims"], policy["outside_claims_max"]) == ("per_card", "human", 2), policy
@@ -8850,7 +8855,12 @@ def outside_claims_step(run: Run, page: Page, clone: Path) -> None:
     box = page.locator(f"#card-outsiders-{card['id']}")
     expect(box).not_to_be_checked()
     box.check()
-    page.locator("form.card-family-form").get_by_role("button", name="Save").click()
+    # The box reads checked before anything is sent: only the hub's answer says the save arrived.
+    with page.expect_response(lambda r: r.request.method == "PATCH" and r.url.endswith(f"/tasks/{card['id']}")) as saved:
+        page.locator("form.card-family-form").get_by_role("button", name="Save").click()
+    assert saved.value.ok, saved.value.status
+    # Save stays disabled until the board is read again and the panel drawn anew.
+    expect(page.locator("form.card-family-form").get_by_role("button", name="Save")).to_be_enabled()
     expect(page.locator(f"#card-outsiders-{card['id']}")).to_be_checked()
     shown = run.api(clone, "GET", f"/projects/owner/e2e-alpha/tasks/{card['id']}")
     assert shown["open_to_outsiders"] is True, shown
@@ -9353,8 +9363,9 @@ SETTINGS_SECTIONS = {
                 "README badge", "Change ticker", "Forge webhook", "Logo and banner"],
     "Members and agents": ["Members' own agents", "Agents on runners", "Agents of owners who are not members", "Onboarding",
                            "Restricted access", "Agent signing", "Roles"],
-    "Way of working": ["Who closes a card", "Approvals for outsiders' work", "Memory", "Keep the Why commitment",
-                       "Keep the Why personal settings", "Keep the Why steward", "Jour fixe series"],
+    "Way of working": ["Who closes a card", "Approvals for outsiders' work", "Claims by outside agents", "Memory",
+                       "Keep the Why commitment", "Keep the Why personal settings", "Keep the Why steward",
+                       "Jour fixe series"],
     "Moderation": ["Remove a reported message", "Files waiting to be sent"],
     "Runners": [],
     "Mine": ["Your absence"],
