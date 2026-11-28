@@ -1349,6 +1349,7 @@ def scenario(run: Run, page: Page) -> None:
     runners_step(run, page)
     availability_step(run, page, alpha)
     agent_owners_step(run, page)
+    outside_claims_step(run, page, alpha)
     isolate_step(run, page)
     memory_provider_step(run, page, alpha)
 
@@ -8805,6 +8806,69 @@ def agent_owners_step(run: Run, page: Page) -> None:
     run.a11y(page, "settings, agents of owners who are not members")
 
 
+def outside_claims_step(run: Run, page: Page, clone: Path) -> None:
+    """Claims by outside agents (docs/api.md §6.1 looking_for_coders, outside_claims,
+    outside_claims_max; §6.4 open_to_outsiders) on the real hub: the owner sets them with a
+    reason and the form reads them back; a card is opened to outsiders from its own form."""
+    run.step("settings: the owner sets which cards outside agents may claim, who confirms, and a limit")
+    page.goto(f"{run.base}/owner/e2e-alpha/settings/work")
+    form = page.locator("form.outside-claims-form")
+    expect(form.locator("#looking-for-coders-select")).to_have_value("per_card")
+    expect(form.locator("#outside-claims-select")).to_have_value("human")
+    form.locator("#outside-claims-select").select_option("agent")
+    expect(form.locator("#outside-claims-warning")).to_contain_text("An agent then decides who works in this project")
+    form.locator("#outside-claims-select").select_option("human")
+    # Both bounds are refused at the form, before anything is sent.
+    for invalid_cap in ("0", "2147483648"):
+        form.locator("#outside-claims-max").fill(invalid_cap)
+        form.locator("#outside-claims-reason").fill("e2e: invalid cap")
+        form.get_by_role("button", name="Save").click()
+        expect(form.locator("#outside-claims-error")).to_have_text(
+            "Enter a whole number from 1 to 2147483647, or leave it empty for no limit.")
+        assert run.api(clone, "GET", "/projects/owner/e2e-alpha")["policy"]["outside_claims_max"] is None
+    form.locator("#outside-claims-max").fill("2147483647")
+    form.locator("#outside-claims-reason").fill("e2e: largest cap")
+    form.get_by_role("button", name="Save").click()
+    expect(page.locator("main")).to_contain_text("Claims by outside agents saved.")
+    assert run.api(clone, "GET", "/projects/owner/e2e-alpha")["policy"]["outside_claims_max"] == 2147483647
+    form.locator("#outside-claims-max").fill("2")
+    form.locator("#outside-claims-reason").fill("e2e: two cards per outsider")
+    # "Saved" still stands from the save before, and the field reads 2 before anything is sent:
+    # only the hub's answer says this one arrived.
+    with page.expect_response(lambda r: r.request.method == "PATCH" and r.url.endswith("/projects/owner/e2e-alpha")) as saved:
+        form.get_by_role("button", name="Save").click()
+    assert saved.value.ok, saved.value.status
+    form = page.locator("form.outside-claims-form")
+    expect(form.locator("#outside-claims-reason")).to_have_value("")  # the redraw after the save
+    expect(form.locator("#outside-claims-max")).to_have_value("2")
+    policy = run.api(clone, "GET", "/projects/owner/e2e-alpha")["policy"]
+    assert (policy["looking_for_coders"], policy["outside_claims"], policy["outside_claims_max"]) == ("per_card", "human", 2), policy
+    # Refused: an agent sets no outside-claims policy, whatever its scopes: the hub says humans_only
+    # (routes/projects.py _refuse_for_agents) before it checks owner_only or the scope; nothing changes.
+    said = run.maity_refused(clone, "api", "--json", "-", "PATCH", "/projects/owner/e2e-alpha",
+                             stdin=json.dumps({"policy": {"outside_claims": "direct"}, "reason": "e2e: an agent tries"}))
+    assert "forbidden" in said and "reason: humans_only" in said, said
+    assert run.api(clone, "GET", "/projects/owner/e2e-alpha")["policy"]["outside_claims"] == "human"
+    run.a11y(page, "settings, claims by outside agents")
+    run.step("board: a card is opened to outsiders from its own form")
+    card = run.api(clone, "POST", "/projects/owner/e2e-alpha/tasks", {"title": "E2E: a card for outsiders", "status": "open"})
+    page.goto(f"{run.base}/owner/e2e-alpha/tasks/{card['id']}")
+    box = page.locator(f"#card-outsiders-{card['id']}")
+    expect(box).not_to_be_checked()
+    box.check()
+    # The box reads checked before anything is sent: only the hub's answer says the save arrived.
+    with page.expect_response(lambda r: r.request.method == "PATCH" and r.url.endswith(f"/tasks/{card['id']}")) as saved:
+        page.locator("form.card-family-form").get_by_role("button", name="Save").click()
+    assert saved.value.ok, saved.value.status
+    # Save stays disabled until the board is read again and the panel drawn anew.
+    expect(page.locator("form.card-family-form").get_by_role("button", name="Save")).to_be_enabled()
+    expect(page.locator(f"#card-outsiders-{card['id']}")).to_be_checked()
+    shown = run.api(clone, "GET", f"/projects/owner/e2e-alpha/tasks/{card['id']}")
+    assert shown["open_to_outsiders"] is True, shown
+    run.a11y(page, "card, open to outsiders")
+    run.shot(page, "card-open-to-outsiders")
+
+
 def isolate_step(run: Run, page: Page) -> None:
     """Isolation (docs/api.md §6.2) on the real hub. Last of the agent's steps: isolating
     releases its claims, which the steps before rely on, and lifting does not bring them back."""
@@ -9300,8 +9364,9 @@ SETTINGS_SECTIONS = {
                 "README badge", "Change ticker", "Forge webhook", "Logo and banner"],
     "Members and agents": ["Members' own agents", "Agents on runners", "Agents of owners who are not members", "Onboarding",
                            "Restricted access", "Agent signing", "Roles"],
-    "Way of working": ["Who closes a card", "Approvals for outsiders' work", "Memory", "Keep the Why commitment",
-                       "Keep the Why personal settings", "Keep the Why steward", "Jour fixe series"],
+    "Way of working": ["Who closes a card", "Approvals for outsiders' work", "Claims by outside agents", "Memory",
+                       "Keep the Why commitment", "Keep the Why personal settings", "Keep the Why steward",
+                       "Jour fixe series"],
     "Moderation": ["Remove a reported message", "Files waiting to be sent"],
     "Runners": [],
     "Mine": ["Your absence"],

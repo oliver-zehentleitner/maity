@@ -2943,6 +2943,18 @@
     "en": "917d270cbbc00aff",
     "text": "6f208982484b99d8"
   },
+  "cards.open_to_outsiders": {
+    "en": "016fccc26b47652e",
+    "text": "139528b1eec5b5f8"
+  },
+  "cards.open_to_outsiders.all": {
+    "en": "1135447884317834",
+    "text": "ca4f0787bf7fa96f"
+  },
+  "cards.open_to_outsiders.off": {
+    "en": "764e427d5dbd60dd",
+    "text": "e1da27a77b81d386"
+  },
   "cards.place.bottom": {
     "en": "782f0aa5d721ff83",
     "text": "f7c84e3bf91ec49f"
@@ -3006,6 +3018,10 @@
   "cards.refused.not_open_to_outsiders": {
     "en": "1a00c2735888374f",
     "text": "5a3126650af92245"
+  },
+  "cards.refused.outside_trust": {
+    "en": "8b0aad0293d43b82",
+    "text": "60d33a5c89e344a2"
   },
   "cards.refused.project_closed": {
     "en": "4205ad383022da26",
@@ -18651,6 +18667,22 @@
     "en": "95b7fb23ec1d83d4",
     "text": "538f207e57e93de2"
   },
+  "settings.looking_for_coders.all": {
+    "en": "a392accd3e935744",
+    "text": "538545ec9bb0669f"
+  },
+  "settings.looking_for_coders.label": {
+    "en": "e7bb45f6778aa750",
+    "text": "69ae90570747e13b"
+  },
+  "settings.looking_for_coders.off": {
+    "en": "f2953d2931e36d0c",
+    "text": "44e335a13bb55fd9"
+  },
+  "settings.looking_for_coders.per_card": {
+    "en": "3ba366910225690d",
+    "text": "eaf11306a54d22b0"
+  },
   "settings.max_placements.bad_max": {
     "en": "4b79f03c71f0b64d",
     "text": "315fa6adae595e26"
@@ -18859,6 +18891,66 @@
     "en": "1a911130bbaf4eb5",
     "text": "1a911130bbaf4eb5"
   },
+  "settings.outside_claims.agent": {
+    "en": "ad4ae7159ccc9077",
+    "text": "659792dbc4193e81"
+  },
+  "settings.outside_claims.direct": {
+    "en": "8c91a91190c45f22",
+    "text": "f6e0144901ed004d"
+  },
+  "settings.outside_claims.error.out_of_range": {
+    "en": "9fe85787ad27ecbd",
+    "text": "2e1b38d4afcef2a2"
+  },
+  "settings.outside_claims.error.owner_only": {
+    "en": "6dc4796724dbb2c5",
+    "text": "04d0cc22eabbcd63"
+  },
+  "settings.outside_claims.hint": {
+    "en": "52e9e38edd3bacad",
+    "text": "a5b28abe2721ca26"
+  },
+  "settings.outside_claims.human": {
+    "en": "56f4c19421d6bd24",
+    "text": "15231b5e1c041910"
+  },
+  "settings.outside_claims.label": {
+    "en": "8f30934280b7d165",
+    "text": "ade704ff42d11cda"
+  },
+  "settings.outside_claims.not_saved": {
+    "en": "4464d772b31bb20e",
+    "text": "84edff4d72ee3568"
+  },
+  "settings.outside_claims.owner_only": {
+    "en": "6dc4796724dbb2c5",
+    "text": "04d0cc22eabbcd63"
+  },
+  "settings.outside_claims.saved": {
+    "en": "381a364a23c84a56",
+    "text": "33805bc166db78d2"
+  },
+  "settings.outside_claims.title": {
+    "en": "5e0bec5ddbd4f183",
+    "text": "4bcfb9b86b961322"
+  },
+  "settings.outside_claims.warn_agent": {
+    "en": "d2ae84b0ee3024b5",
+    "text": "fc26e6b2483160e7"
+  },
+  "settings.outside_claims.warn_direct": {
+    "en": "22c59001c8ef0593",
+    "text": "86873ea1045431bc"
+  },
+  "settings.outside_claims_max.label": {
+    "en": "6cc5e8dac40043b7",
+    "text": "7212406f202f497f"
+  },
+  "settings.outside_claims_max.none": {
+    "en": "69d9f48accd7fbb3",
+    "text": "687ded507c6e67e8"
+  },
   "settings.outside_roles.hint": {
     "en": "8060f77c5aa9f254",
     "text": "514fad8c0bac2701"
@@ -18938,6 +19030,10 @@
   "settings.reason": {
     "en": "dafc3476fe7d3275",
     "text": "b7e8c3cf4b177298"
+  },
+  "settings.reason_needed": {
+    "en": "9fd7f8d7088a9850",
+    "text": "c8b3d2028cfac62c"
   },
   "settings.reason_placeholder": {
     "en": "c2950f8a1e414fa1",

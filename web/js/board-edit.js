@@ -38,6 +38,7 @@ window.Maity = window.Maity || {};
   const FORBIDDEN = {
     not_open_to_outsiders: () => M.t("cards.refused.not_open_to_outsiders"),
     humans_only: () => M.t("cards.refused.humans_only"),
+    outside_trust: () => M.t("cards.refused.outside_trust"),
   };
   function forbidden(err) {
     const d = (err.code === "forbidden" && err.details) || null;
@@ -265,6 +266,20 @@ window.Maity = window.Maity || {};
     return select;
   }
 
+  // "Open to outsiders" (§6.4 open_to_outsiders): whether an outsider's agent may claim the card under
+  // policy.looking_for_coders per_card (§6.1). Set by whoever may edit the card; a caller with trust
+  // outside never sets it (outside_trust), so it gets no box. Under all or off the mark decides
+  // nothing, and the box says so. Returns {box, el}, or null.
+  function outsidersBox(ctx, id, checked) {
+    if (ctx.trust === "outside") return null;
+    const box = h("input", { type: "checkbox", id });
+    box.checked = checked;
+    const looking = (ctx.project.policy || {}).looking_for_coders || "per_card";
+    const note = looking === "all" ? M.t("cards.open_to_outsiders.all") : looking === "off" ? M.t("cards.open_to_outsiders.off") : null;
+    return { box, el: [h("label", { class: "check", for: id }, box, " ", M.t("cards.open_to_outsiders")),
+      note ? h("p", { class: "hint" }, note) : null] };
+  }
+
   function newCardForm(ctx, cards, create, onCancel, parent) {
     const id = (f) => (parent ? "new-subtask-" : "new-card-") + f;
     const title = h("input", { id: id("title"), required: true, maxlength: "200", autocomplete: "off" });
@@ -280,6 +295,7 @@ window.Maity = window.Maity || {};
     const status = h("select", { id: id("status") }, h("option", { value: "proposed" }, M.t("cards.new.status.proposed")),
       h("option", { value: "open" }, M.t("cards.new.status.open")));
     status.value = "proposed";
+    const outsiders = outsidersBox(ctx, id("outsiders"), false);
     const locked = parent && childProposed(ctx);
     if (locked) status.disabled = true;
     const assignee = isAdmin(ctx)
@@ -314,6 +330,7 @@ window.Maity = window.Maity || {};
         if (label.value) card.label = label.value;
         if (needs.value) card.needs = needs.value;
         if (area.value.trim()) card.area = area.value.trim();
+        if (outsiders && outsiders.box.checked) card.open_to_outsiders = true;
         if (assignee && assignee.value) card.assigned_to = assignee.value;
         const d = chosen(deps);
         const sw = chosen(ships);
@@ -342,6 +359,7 @@ window.Maity = window.Maity || {};
     h("label", { for: id("area") }, M.t("cards.new.field.area")), area, areaList,
     h("label", { for: id("status") }, M.t("cards.new.field.status")), status,
     locked ? h("p", { class: "hint" }, M.t("cards.new.proposed_hint")) : null,
+    outsiders ? outsiders.el : null,
     assignee ? [h("label", { for: id("assigned") }, M.t("cards.new.field.assigned")), assignee] : null,
     h("label", { for: id("depends") }, M.t("cards.new.field.depends")), deps,
     h("label", { for: id("ships") }, M.t("cards.new.field.ships")), ships,
@@ -351,5 +369,5 @@ window.Maity = window.Maity || {};
     return { form, focus: () => title.focus(), body };
   }
 
-  M.boardEdit = { editable, childProposed, targets, moveControl, assignControl, orderControl, orderable, byOrder, newCardForm, needsSelect, signSlots, said, COLUMNS, columnName };
+  M.boardEdit = { editable, childProposed, targets, moveControl, assignControl, orderControl, orderable, byOrder, newCardForm, needsSelect, outsidersBox, signSlots, said, COLUMNS, columnName };
 })(window.Maity);

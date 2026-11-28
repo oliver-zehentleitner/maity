@@ -837,6 +837,7 @@ window.Maity = window.Maity || {};
     // policy field (§2.3 ʰ); the commitment follows the memory provider.
     { tab: "work", when: humanAdminOf, build: (ctx, save) => doneAuthorityForm(ctx, save) },
     { tab: "work", when: humanAdminOf, build: (ctx, save) => ownApprovalsForm(ctx, save) },
+    { tab: "work", when: humanAdminOf, build: (ctx, save) => outsideClaimsForm(ctx, save) },
     { tab: "work", when: (ctx) => ctx.canAdmin && !!M.projectSetup, build: (ctx, save) => memoryPanel(ctx, save, humanAdminOf(ctx)) },
     { tab: "work", when: humanAdminOf, build: (ctx, save) => keepTheWhyForm(ctx, save) },
     { tab: "work", when: humanAdminOf, build: (ctx, save) => keepTheWhyDefaultsForm(ctx, save) },
@@ -1396,6 +1397,99 @@ window.Maity = window.Maity || {};
     picker,
     error,
     h("label", { for: "own-approvals-reason" }, M.t("settings.reason")), reason,
+    h("button", { type: "submit" }, M.t("board.save")));
+  }
+
+  // §6.1 looking_for_coders, outside_claims and outside_claims_max, §6.5 "An outsider's claim":
+  // which cards an outsider's agent may claim, who confirms its claim, and how many one outsider's
+  // agents may hold or ask for. A human with project:admin, with a reason; `agent` and `direct`
+  // only a human owner's (owner_only), and the form says in plain words what they hand over.
+  const LOOKING_FOR_CODERS = () => [["per_card", M.t("settings.looking_for_coders.per_card")], ["all", M.t("settings.looking_for_coders.all")],
+    ["off", M.t("settings.looking_for_coders.off")]];
+  const OUTSIDE_CLAIMS = () => [["human", M.t("settings.outside_claims.human")], ["agent", M.t("settings.outside_claims.agent")],
+    ["direct", M.t("settings.outside_claims.direct")]];
+  const OUTSIDE_CLAIMS_ERRORS = {
+    owner_only: () => M.t("settings.outside_claims.error.owner_only"),
+    out_of_range: () => M.t("settings.outside_claims.error.out_of_range"),
+  };
+  function outsideClaimsForm(ctx, save) {
+    const pol = ctx.project.policy;
+    const looking = pol.looking_for_coders || "per_card";
+    const claims = pol.outside_claims || "human";
+    const max = Number.isInteger(pol.outside_claims_max) ? pol.outside_claims_max : null;
+    const owner = ctx.isOwner;
+    const lookingSelect = h("select", { id: "looking-for-coders-select" }, LOOKING_FOR_CODERS().map(([v, l]) => h("option", { value: v }, l)));
+    lookingSelect.value = looking;
+    // Only a human owner chooses agent or direct: for anyone else both stay shown and switched off, the stored one
+    // selected too, so an unchanged save sends nothing for the field, and human is the one choice left.
+    const claimsSelect = h("select", { id: "outside-claims-select" },
+      OUTSIDE_CLAIMS().map(([v, l]) => h("option", { value: v, disabled: owner || v === "human" ? null : true }, l)));
+    claimsSelect.value = claims;
+    const warning = h("p", { class: "flag", id: "outside-claims-warning", role: "status" });
+    const update = () => {
+      warning.textContent = claimsSelect.value === "agent" ? M.t("settings.outside_claims.warn_agent")
+        : claimsSelect.value === "direct" ? M.t("settings.outside_claims.warn_direct") : "";
+      warning.hidden = !warning.textContent;
+    };
+    claimsSelect.addEventListener("change", update);
+    update();
+    const maxInput = h("input", { id: "outside-claims-max", type: "number", min: "1", max: "2147483647", step: "1", placeholder: M.t("settings.outside_claims_max.none"),
+      "aria-describedby": "outside-claims-error" });
+    maxInput.value = max === null ? "" : String(max);
+    const reason = h("input", { id: "outside-claims-reason", required: true, placeholder: M.t("settings.reason_placeholder"),
+      "aria-describedby": "outside-claims-error" });
+    const error = h("p", { class: "field-error", id: "outside-claims-error", role: "alert" });
+    const fieldError = (code) => (Object.hasOwn(OUTSIDE_CLAIMS_ERRORS, code || "") ? OUTSIDE_CLAIMS_ERRORS[code]() : null);
+    return h("form", {
+      class: "inline-form outside-claims-form",
+      novalidate: true,
+      onsubmit: (e) => {
+        e.preventDefault();
+        error.textContent = "";
+        maxInput.removeAttribute("aria-invalid");
+        reason.removeAttribute("aria-invalid");
+        const policy = {};
+        const typed = maxInput.value.trim();
+        // An unfinished number reads as "" with badInput: that is no wish to clear the limit.
+        const bad = !!(maxInput.validity && maxInput.validity.badInput);
+        const n = typed === "" && !bad ? null : Number(typed);
+        if (bad || (n !== null && (!Number.isSafeInteger(n) || n < 1 || n > 2147483647))) {
+          error.textContent = fieldError("out_of_range");
+          maxInput.setAttribute("aria-invalid", "true");
+          maxInput.focus();
+          return;
+        }
+        if (lookingSelect.value !== looking) policy.looking_for_coders = lookingSelect.value;
+        if (claimsSelect.value !== claims) policy.outside_claims = claimsSelect.value;
+        if (n !== max) policy.outside_claims_max = n;
+        if (!Object.keys(policy).length) return;
+        // novalidate turns the browser's own `required` off: the form says a missing reason itself.
+        if (!reason.value.trim()) {
+          error.textContent = M.t("settings.reason_needed");
+          reason.setAttribute("aria-invalid", "true");
+          reason.focus();
+          return;
+        }
+        save({ policy, reason: reason.value.trim() }, { saved: M.t("settings.outside_claims.saved"), notSaved: M.t("settings.outside_claims.not_saved") }, (err) => {
+          const fields = (err.details || {}).fields || {};
+          const atMax = fieldError(fields.outside_claims_max || fields["policy.outside_claims_max"]);
+          const said = fieldError((err.details || {}).reason) || atMax;
+          if (!said) return false;
+          error.textContent = said;
+          if (atMax && said === atMax) maxInput.setAttribute("aria-invalid", "true");
+          return true;
+        });
+      },
+    },
+    h("h2", { class: "panel-title" }, M.t("settings.outside_claims.title")),
+    h("p", { class: "hint" }, M.t("settings.outside_claims.hint")),
+    h("label", { for: "looking-for-coders-select" }, M.t("settings.looking_for_coders.label")), lookingSelect,
+    h("label", { for: "outside-claims-select" }, M.t("settings.outside_claims.label")), claimsSelect,
+    owner ? null : h("p", { class: "hint" }, M.t("settings.outside_claims.owner_only")),
+    warning,
+    h("label", { for: "outside-claims-max" }, M.t("settings.outside_claims_max.label")), maxInput,
+    error,
+    h("label", { for: "outside-claims-reason" }, M.t("settings.reason")), reason,
     h("button", { type: "submit" }, M.t("board.save")));
   }
 
