@@ -1579,6 +1579,78 @@
     "en": "7b7c2cd238073bb7",
     "text": "3f4fb542848f61bb"
   },
+  "board.claim_request.asks": {
+    "en": "c80395c7f09ca70c",
+    "text": "e396b9d04b30054b"
+  },
+  "board.claim_request.confirm": {
+    "en": "f66dc4fe259c8634",
+    "text": "76cf672c432141cc"
+  },
+  "board.claim_request.conflict.gone": {
+    "en": "fe8ccc89bb0c7d81",
+    "text": "ac53c175abe7252d"
+  },
+  "board.claim_request.conflict.isolated": {
+    "en": "b35c6935c5fe3f79",
+    "text": "824197842717fd70"
+  },
+  "board.claim_request.conflict.not_open_to_outsiders": {
+    "en": "8c6a83cd25073458",
+    "text": "4e89a4909bf91754"
+  },
+  "board.claim_request.conflict.not_public": {
+    "en": "5dda9e5df1006d79",
+    "text": "fcf83215e24de87c"
+  },
+  "board.claim_request.conflict.outside_claims_max": {
+    "en": "c8331f0ed1662b05",
+    "text": "4ce47e6d2a79a2d2"
+  },
+  "board.claim_request.conflict.taken": {
+    "en": "173732a0ab24dce5",
+    "text": "b94f10b16fd9561a"
+  },
+  "board.claim_request.decline": {
+    "en": "b88e576d659a82d2",
+    "text": "9861ec52a2a85d97"
+  },
+  "board.claim_request.not_a_confirmer": {
+    "en": "2b7961533b7e1347",
+    "text": "d20e38b54ffde585"
+  },
+  "board.claim_request.not_confirmed": {
+    "en": "342f534a59461d37",
+    "text": "b5e81c3b74bd215f"
+  },
+  "board.claim_request.not_declined": {
+    "en": "838961d157c2fa5b",
+    "text": "44f55b4eae67170d"
+  },
+  "board.claim_request.objection_open": {
+    "en": "2a8c90053b6410d3",
+    "text": "80ff72135346e1c3"
+  },
+  "board.claim_request.paused": {
+    "en": "bfe8b16d12272be7",
+    "text": "9483ed9db176047e"
+  },
+  "board.claim_request.reason": {
+    "en": "dafc3476fe7d3275",
+    "text": "9c2abc48f96f855f"
+  },
+  "board.claim_request.reason.declined": {
+    "en": "ddce62c26eed8109",
+    "text": "c12edb36dd179ffa"
+  },
+  "board.claim_request.reason.duplicate": {
+    "en": "34dc96fe77a31e51",
+    "text": "8bc94088795548ee"
+  },
+  "board.claim_request.reason.not_a_fit": {
+    "en": "f1d79b02b30780e3",
+    "text": "fae75ca1cae02841"
+  },
   "board.closed.failed": {
     "en": "76ff07448abbd4a4",
     "text": "ef0ba45e47c3c634"
@@ -2955,6 +3027,10 @@
     "en": "764e427d5dbd60dd",
     "text": "e1da27a77b81d386"
   },
+  "cards.open_to_outsiders.tag": {
+    "en": "d66e7cef54425094",
+    "text": "8704bbf122ea935e"
+  },
   "cards.place.bottom": {
     "en": "782f0aa5d721ff83",
     "text": "f7c84e3bf91ec49f"
@@ -3022,6 +3098,10 @@
   "cards.refused.outside_trust": {
     "en": "8b0aad0293d43b82",
     "text": "60d33a5c89e344a2"
+  },
+  "cards.refused.own_outsider": {
+    "en": "a805e3af08d41133",
+    "text": "29245e4e069b482a"
   },
   "cards.refused.project_closed": {
     "en": "4205ad383022da26",
@@ -6106,6 +6186,22 @@
   "inbox.chat_with": {
     "en": "08d2ac3fa99907ab",
     "text": "c1a9a8a4155d2306"
+  },
+  "inbox.claim_requests.confirmed": {
+    "en": "d183363ffe90f230",
+    "text": "2831b60eba49706c"
+  },
+  "inbox.claim_requests.declined": {
+    "en": "475abc3b9999a141",
+    "text": "18b64c34c5ef9b07"
+  },
+  "inbox.claim_requests.failed": {
+    "en": "405eecd51ff0686d",
+    "text": "7ef378bff70a4729"
+  },
+  "inbox.claim_requests.title": {
+    "en": "ca424f8515dda427",
+    "text": "2f757dd5685a2ebb"
   },
   "inbox.class.consent": {
     "en": "35ca87267044e395",
@@ -13210,6 +13306,10 @@
   "outsider.join.role": {
     "en": "f24b9087d8951d8a",
     "text": "f9021b4c591631cf"
+  },
+  "outsider.open_cards": {
+    "en": "339d2ebfff5979f6",
+    "text": "2e816402a9447235"
   },
   "outsider.reason.blocked": {
     "en": "903a7ae9cc8ff6d8",
