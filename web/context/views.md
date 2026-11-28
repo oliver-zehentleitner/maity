@@ -8111,3 +8111,40 @@ for nothing more.
   off the screen.
 - A finding on the Runners view's line too: that answer carries `state` only, and adding the
   finding there is a hub change the card leaves out.
+
+## Pair a runner is one button at the Runners page's head, its form open at once without a runner or at /runners/pair
+
+**Id:** a7a3cb2a-317f-4939-b18b-8a74dd87856e
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's card tsk-raghxwjf3e0e, 2026-11-28 (the panel works like Join an agent: one button at the head, the panel hidden until pressed; every way it opens today stays; the empty state left to the implementation to decide and say in the pull request); the dashboard's implementation, 2026-11-28
+**See:** views.md#join-an-agent-is-one-form-the-agents-profile-first-a-start-on-a-runner-its-last-part — 6a3baa58-467c-4e73-855b-9e8447854738 — as of 2026-11-28
+**Revisit when:** the Runners page gets tabs or a second form at its head, the empty state gets its own words about pairing, or the project's Agents page stops opening its join panel without an agent of one's own
+
+On `/runners`, **Pair a runner** is a button at the page head (`M.pageHead`, as on the Agents
+and Team pages). It is a disclosure for the pairing form under the head: `aria-expanded`,
+`aria-controls`, the focus in the name field when pressed, **Cancel** or a second press closes it
+and gives the focus back to the button. The form is the one shown before, and what is typed stays
+across a close. It is closed by default and open at once in two cases: at `/runners/pair`, where
+the header's **"+"** › **Runner** and a project's **Pair one on the Runners page** now lead (the
+name focused, since the person asked for the form), and when no runner is paired yet (no focus
+move, since nothing was pressed).
+
+**Reason:** the maintainer asked for the Join an agent behaviour. The empty state, "No runner
+yet. A runner is a small service on your machine that starts agents for you.", says what a runner
+is but not how to get one, and on an empty page the only thing to do is to pair. The project's
+Agents page opens its join panel at once without an agent of one's own; the Runners page does
+the same, so the two pages behave alike. The "+" menu's Runner, and the project's link to
+pairing, used to land on a form that was always open; with the form closed by default, a plain
+`/runners` link would have needed a second click, so they lead to an address that opens it.
+
+**Rejected alternatives:**
+- The form closed on an empty page as well, with only the button: the empty state does not point
+  to the button, so a first-time visitor reads a definition and has to find the way to pair
+  themselves.
+- A new sentence in the empty state pointing to the button: new text in ten catalogs for what
+  opening the form says without words, and still one click more.
+- A query (`/runners?pair`) instead of a path: the dashboard's other "open this form" addresses
+  are paths (`/<owner>/<slug>/agents/join`), and the hub already serves the shell under
+  `/runners/…`.

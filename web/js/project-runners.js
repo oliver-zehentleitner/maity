@@ -112,7 +112,7 @@ window.Maity = window.Maity || {};
       clear(allow);
       append(allow, h("h3", null, M.t("prunners.allow.title")));
       if (!free.length) {
-        const pair = h("a", { href: "/runners" }, M.t("prunners.pair_link"));
+        const pair = h("a", { href: "/runners/pair" }, M.t("prunners.pair_link")); // the form open
         append(allow, h("p", { class: "muted" }, mine.some((r) => !r.removed_at && r.owner_id === ctx.me.id)
           ? M.tn("prunners.all_allowed", { pair }) : M.tn("prunners.none_yet", { pair })));
         return;

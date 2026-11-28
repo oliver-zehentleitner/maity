@@ -4685,6 +4685,7 @@ window.MAITY_I18N["nl"] = {
   "runners.open.title": "Openstaande koppelingen",
   "runners.pair.allow_in": "Toestaan in",
   "runners.pair.aside": "Zet eerst de oude toegangsgegevens opzij (hier uit de standaard statusmap): pair weigert zolang die er zijn, en deze koppeling trekt ze toch in.",
+  "runners.pair.cancel": "Annuleren",
   "runners.pair.check": "Controleer het: {command} zegt wat er nog ontbreekt, zoals de login van de tool.",
   "runners.pair.config_label": "Startconfiguratie",
   "runners.pair.copy_command": "Kopiëren als commando dat het bestand schrijft",

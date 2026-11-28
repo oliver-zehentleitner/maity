@@ -3244,8 +3244,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(main.querySelector(".error") && !text(main).includes("cannot allow runners"), "project runners: a 404 is an error, not a missing feature");
   win.Maity.api.getAll = (p) => (p === "/projects/maintainer/maity/runners" || p === "/runners" ? Promise.resolve({ items: [], next_cursor: null }) : prAll(p));
   await go("#/maintainer/maity/inbox"); await go(PR); await tick();
-  expect(text(main).includes("No runner is allowed in this project yet.") && text(main).includes("You have no runner yet. Pair one on the Runners page."),
-    "project runners: the empty state points to pairing");
+  expect(text(main).includes("No runner is allowed in this project yet.") && text(main).includes("You have no runner yet. Pair one on the Runners page.")
+    && main.querySelectorAll("a").some((a) => text(a) === "Pair one on the Runners page" && a.getAttribute("href") === "#/runners/pair"),
+    "project runners: the empty state points to pairing, the Runners page with its form open");
   win.Maity.api.getAll = prAll;
   const prGet = win.Maity.api.get;
   win.Maity.api.get = (p) => (p === "/me" ? prGet(p).then((m) => { m.projects.find((x) => x.slug === "maity").trust = "member"; return m; }) : prGet(p));
@@ -3371,6 +3372,51 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     expect(olLines.length === 3 && olLines[0].startsWith("agent-b#wqe2 in maintainer/maity") && olLines[1].startsWith("agent-b#k7mq in maintainer/maity")
       && olLines[2].startsWith("agent-b in maintainer/maity · no instance yet"),
       "runners: the owner's list names each instance as handle#id, two of one agent apart, none yet before the first pickup " + JSON.stringify(olLines));
+  }
+  // Pair a runner is one button at the head, like Join an agent (tsk-raghxwjf3e0e): with runners
+  // listed the form is closed; the button says so and opens it, the focus in its name field;
+  // Cancel and a second press close it, the focus back on the button.
+  {
+    const prProto = Object.getPrototypeOf(main);
+    const prFocus = prProto.focus;
+    prProto.focus = function () { document.activeElement = this; };
+    const prOpen = () => main.querySelector(".page-head-actions button.pair-open");
+    const prSlot = () => byId("pair-form-slot");
+    expect(prOpen() && text(prOpen()) === "Pair a runner" && prOpen().getAttribute("aria-expanded") === "false"
+      && prOpen().getAttribute("aria-controls") === "pair-form-slot" && main.querySelector(".page-head h2") && text(main.querySelector(".page-head h2")) === "Runners"
+      && prSlot() && prSlot().hidden && prSlot().querySelector("form.pair-form"),
+      "runners: Pair a runner is one button at the head, the form closed by default with runners listed");
+    // Null-safe, so that without the button each check fails on its own instead of stopping the run.
+    const prPress = async () => { if (prOpen()) prOpen().click(); await tick(); };
+    const prExpanded = () => (prOpen() ? prOpen().getAttribute("aria-expanded") : null);
+    const prShown = () => !!prSlot() && !prSlot().hidden;
+    await prPress();
+    expect(prShown() && prExpanded() === "true" && document.activeElement === byId("pair-name"),
+      "runners: the button opens the pairing form, says expanded, the focus in the name field");
+    byId("pair-name").value = "draft-name";
+    const prCancel = prSlot() ? btn(prSlot(), "Cancel") : null;
+    if (prCancel) prCancel.click();
+    await tick();
+    expect(prCancel && !prShown() && prExpanded() === "false" && document.activeElement === prOpen(),
+      "runners: Cancel closes the form, says collapsed, the focus back on the button");
+    await prPress();
+    expect(prShown() && byId("pair-name").value === "draft-name", "runners: opened again, what was typed is still there");
+    await prPress();
+    expect(prOpen() && !prShown() && prExpanded() === "false", "runners: a second press closes the form");
+    // Opened directly from the "+" menu's Runner (and the project's Pair one link): /runners/pair.
+    document.activeElement = undefined;
+    await go("#/all"); await tick();
+    const prAdd = header.querySelector(".add-menu");
+    prAdd.click(); await tick();
+    const prItem = header.querySelectorAll(".menu-box").find((b) => b.querySelector(".add-menu")).querySelectorAll("a").find((a) => text(a) === "Runner");
+    const prHref = prItem ? prItem.getAttribute("href") : null;
+    prAdd.click(); await tick();
+    await go(prHref || "#/runners"); for (let k = 0; k < 4; k++) await tick();
+    await new Promise((r) => setTimeout(r, 5));
+    expect(prHref === "#/runners/pair" && prShown() && prExpanded() === "true" && document.activeElement === byId("pair-name")
+      && main.querySelectorAll("article.runner").length === 3 && plainTitle() === "Runners · Maity",
+      "runners: the \"+\" menu's Runner opens the page with the form open, the focus in the name field, the runners listed " + JSON.stringify(prHref));
+    prProto.focus = prFocus; document.activeElement = undefined;
   }
   // Pair: the name is checked first; the line is shown once, with the starter configuration.
   byId("pair-name").value = "New Laptop";
@@ -3549,8 +3595,10 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const realAll2 = win.Maity.api.getAll;
   win.Maity.api.getAll = (p) => (p === "/runners" || p === "/runners/enrollments" ? Promise.resolve({ items: [], next_cursor: null }) : realAll2(p));
   await go("#/all"); await go("#/runners"); await tick();
-  expect(text(main).includes("No runner yet. A runner is a small service on your machine that starts agents for you.") && byId("pair-name"),
-    "runners: the empty state, with the pairing form");
+  expect(text(main).includes("No runner yet. A runner is a small service on your machine that starts agents for you.") && byId("pair-name")
+    && byId("pair-form-slot") && !byId("pair-form-slot").hidden && main.querySelector("button.pair-open")
+    && main.querySelector("button.pair-open").getAttribute("aria-expanded") === "true",
+    "runners: the empty state, with the pairing form open at once (tsk-raghxwjf3e0e)");
   win.Maity.api.getAll = realAll2;
   // Leaving a view: until the next one is drawn, the old one stays on screen but takes no
   // click (inert), so an action there cannot be answered into a view that is gone.
@@ -15783,8 +15831,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   addBtn.click(); await tick();
   const addItems = header.querySelectorAll(".menu-box").find((b) => b.querySelector(".add-menu")).querySelectorAll("a").map((a) => text(a) + "=" + a.getAttribute("href"));
   expect(addBtn.getAttribute("aria-label") === "Add an agent, a person, a runner or a project"
-    && JSON.stringify(addItems) === JSON.stringify(["Agent=#/agents", "User=#/invite", "Runner=#/runners", "Project=#/new"]),
-    "header: the + menu leads to the agents page, the invitations page, the runners page and the create form " + JSON.stringify(addItems));
+    && JSON.stringify(addItems) === JSON.stringify(["Agent=#/agents", "User=#/invite", "Runner=#/runners/pair", "Project=#/new"]),
+    "header: the + menu leads to the agents page, the invitations page, the runners page with its pairing form open and the create form " + JSON.stringify(addItems));
   // The + is drawn, not a text glyph: a glyph followed the font's metrics and sat off-centre in Edge (tsk-m9ew7v609fq0).
   expect(addBtn.querySelector("svg") && text(addBtn).trim() === "",
     "header: the + is an icon, no text glyph " + JSON.stringify(text(addBtn)));

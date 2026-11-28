@@ -1761,7 +1761,8 @@ a.bell:hover, .menu-button.bell:hover { border-color: var(--accent); }
    panel is read, New agent profile while its form is open. As specific as that rule and after it:
    :is() counts its most specific argument (a.button), so a bare [hidden] loses (#1919 web-e2e). */
 .page-head-actions :is(button, a.button)[hidden] { display: none; }
-.page-head-actions button.join-open { padding: 6px 14px; border-radius: var(--radius); }
+/* Pair a runner at the head of /runners is drawn as Join an agent (tsk-raghxwjf3e0e). */
+.page-head-actions :is(button.join-open, button.pair-open) { padding: 6px 14px; border-radius: var(--radius); }
 .page-head .view-tabs { width: 100%; margin-top: 0; }
 .join-slot > .send-status:empty { min-height: 0; margin: 0; }
 /* The project's name in the hint may be one long word (63 characters): it wraps rather than widening

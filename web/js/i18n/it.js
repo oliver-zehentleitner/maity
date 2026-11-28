@@ -4685,6 +4685,7 @@ window.MAITY_I18N["it"] = {
   "runners.open.title": "Associazioni aperte",
   "runners.pair.allow_in": "Consentilo in",
   "runners.pair.aside": "Metti prima da parte la vecchia credenziale (qui dalla directory di stato predefinita): pair rifiuta finché ce n'è una, e questa associazione la revoca comunque.",
+  "runners.pair.cancel": "Annulla",
   "runners.pair.check": "Controllalo: {command} dice cosa manca ancora, come il login dello strumento.",
   "runners.pair.config_label": "Configurazione iniziale",
   "runners.pair.copy_command": "Copia come comando che scrive il file",
