@@ -668,3 +668,80 @@ def test_a_filing_that_keeps_colliding_writes_nothing_and_answers_internal(
     with migrated.connect() as conn:
         after = conn.execute(select(func.count()).select_from(t.event)).scalar_one()
     assert after == before and requests(migrated, other.id) == []
+
+
+# tsk-v8z45qae5627: an owner's allow entry for a side that names that side's human only
+# (`their_agents: "none"`, `their_human: true`), permanent and with both texts, admits the
+# owner's agent to the human alone. An agent of that side that comes to meet the owner's agent
+# leaves it waiting, and the owner gets the request all the same: the partial entry is no
+# answer for that side.
+
+
+def human_only_entry(
+    make_client: ClientFactory, migrated: Engine
+) -> tuple[flow.Human, flow.Human, Any, Any, str]:
+    """The owner (`other`) with an agent in a chat with the side's human (`guest`) only: the
+    owner's add writes the entry for that side, the human alone; the owner then gives it texts.
+    Returns the owner, the side's human, the owner's agent, the side's agent and the chat."""
+    other = other_human(make_client, migrated, "other")
+    guest = other_human(make_client, migrated, "guest")
+    mine = flow.agent(make_client, other)
+    theirs = flow.agent(make_client, guest)
+    chat = create(other, mine.id, guest.id)
+    [entry] = other.get("/me/chat-access").json()["allow"]
+    assert entry["owner_id"] == guest.id and entry["agents"] == [mine.id]
+    assert entry["their_agents"] == "none" and entry["their_human"] is True
+    assert entry["duration"] is None
+    patched = other.patch(
+        f"/me/chat-access/allow/{entry['id']}", {"allowed": "some topic", "denied": "another"}
+    )
+    assert patched.status_code == 200, patched.text
+    assert waiting_for(other, chat["id"], mine.id) == []
+    assert requests(migrated, other.id) == []
+    return other, guest, mine, theirs, chat["id"]
+
+
+def assert_one_open_request(engine: Engine, owner_id: str, side: str, agent_id: str) -> None:
+    [row] = requests(engine, owner_id, status=None)
+    assert row.status == "open" and row._mapping["class"] == "consent"
+    assert row.filed_by == "hub" and row.personal and row.proposal["side"] == side
+    held = [a for h in row.proposal.get("held", []) for a in h["agents"]]
+    assert agent_id in held or "waits in" in row.summary
+
+
+@pytest.mark.parametrize("adder", ["side", "owner"])
+def test_a_human_only_entry_still_asks_when_an_agent_of_that_side_joins_the_chat(
+    adder: str, owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    other, guest, mine, theirs, chat_id = human_only_entry(make_client, migrated)
+    who = guest if adder == "side" else other
+    added = who.post(f"{BASE}/{chat_id}/participants", {"member_id": theirs.id})
+    assert added.status_code in (200, 201), added.text
+    assert waiting_for(other, chat_id, mine.id) == [guest.id]
+    assert mine.get(f"{BASE}/{chat_id}").status_code == 404
+    assert_one_open_request(migrated, other.id, guest.id, mine.id)
+    [row] = requests(migrated, other.id)
+    shown = other.get(f"/requests/{row.id}").json()["chat_access_request"]
+    assert [(a["id"], a["waiting"]) for a in shown["agents"]] == [(mine.id, True)]
+
+
+def test_a_human_only_entry_still_asks_when_that_side_opens_a_chat_with_both_agents(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    other, guest, mine, theirs, _ = human_only_entry(make_client, migrated)
+    chat = create(guest, mine.id, theirs.id, title="Second")
+    assert waiting_for(other, chat["id"], mine.id) == [guest.id]
+    assert_one_open_request(migrated, other.id, guest.id, mine.id)
+
+
+def test_a_human_only_entry_still_asks_when_an_agent_of_that_side_sends_a_work_message(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    other, guest, mine, theirs, _ = human_only_entry(make_client, migrated)
+    sent = theirs.post(
+        f"{PROJECT}/events", {"kind": "message", "type": "notice", "to": mine.id, "body": "x"}
+    )
+    assert sent.status_code == 201, sent.text
+    assert_one_open_request(migrated, other.id, guest.id, mine.id)
+    [row] = requests(migrated, other.id)
+    assert [h["agents"] for h in row.proposal["held"]] == [[mine.id]]
