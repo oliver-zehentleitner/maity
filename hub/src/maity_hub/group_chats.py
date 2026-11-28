@@ -58,6 +58,7 @@ def stays(conn: Connection, conversation_id: str, *, current: bool = True) -> li
             *chat_gate.stay_columns(),
             t.membership.c.agent_id,
             t.membership.c.human_id,
+            t.membership.c.trust,  # an agent with trust `outside` brings no owner in
         )
         .join(t.membership, t.membership.c.id == t.conversation_participant.c.membership_id)
         .where(t.conversation_participant.c.conversation_id == conversation_id)
@@ -152,10 +153,19 @@ def people(conn: Connection, membership_ids: Iterable[int]) -> dict[int, dict[st
     }
 
 
+def _reads_along_through(stay_row: Any) -> bool:
+    """Whether the stay's agent brings its owner in as an observer (§9.2): any agent but one
+    with trust `outside`, which takes part in no group chat, also one a human added it to
+    (§2.3 "Outside"), so its owner, an outsider, reads no chat through it. Every list of
+    stays read for it selects the membership's `trust` (`stays`, the conversation list)."""
+    return bool(stay_row.agent_id) and stay_row.trust != OUTSIDE
+
+
 def observers(conn: Connection, current: list[Any]) -> list[str]:
     """The owners of agent participants who are not participants themselves, member of
-    the project or not (§9.2), in the order their first agent joined."""
-    agents = [s.agent_id for s in current if s.agent_id]
+    the project or not (§9.2), in the order their first agent joined; never through an
+    agent with trust `outside` (`_reads_along_through`)."""
+    agents = [s.agent_id for s in current if _reads_along_through(s)]
     if not agents:
         return []
     owners = dict(
@@ -170,7 +180,7 @@ def observers(conn: Connection, current: list[Any]) -> list[str]:
 
 def observers_of(current: list[Any], owners: dict[str, str]) -> list[str]:
     """`observers` from the owners of the agents already read (agent id → owner id)."""
-    agents = [s.agent_id for s in current if s.agent_id]
+    agents = [s.agent_id for s in current if _reads_along_through(s)]
     inside = {s.human_id for s in current if s.human_id}
     return list(dict.fromkeys(owners[a] for a in agents if owners[a] not in inside))
 

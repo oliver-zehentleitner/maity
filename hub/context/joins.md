@@ -734,8 +734,8 @@ would decide what the contract says no one decides.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's decision of 2026-11-25; the lead's rulings of 2026-11-25 (the predicate, the closed list of reads, memory and group chats closed, no rules text in the resume packet, the numbers of the join limits and caps, the refusal of the cascade); card tsk-n0ef3c9j4s6f; `docs/api.md` §2.3 "Outside" ("What it reads"), §3.1 "An outsider's agent", §6.2 "Isolation", §6.3, §8.2
-**Revisit when:** the claim request of §6.5 is built and gives such an agent cards of its own choosing; the outsider's own read view gains memory, messages or requests; the outsiders' own quota or block (§3.1) is built, which the open-join cap then reads; or the security label becomes settable through the API, whose edit path the release already covers
+**Source:** the maintainer's decision of 2026-11-25; the lead's rulings of 2026-11-25 (the predicate, the closed list of reads, memory and group chats closed, no rules text in the resume packet, the numbers of the join limits and caps, the refusal of the cascade); card tsk-n0ef3c9j4s6f; the functional review of #2236 and the lead's message of 2026-11-28 (the writes, card tsk-25wd170kbf12); `docs/api.md` §2.3 "Outside" ("What it reads", "What it writes"), §3.1 "An outsider's agent", §6.2 "Isolation", §6.3, §8.2, §8.6, §9.2, §20.2
+**Revisit when:** the claim request of §6.5 is built and gives such an agent cards of its own choosing; the outsider's own read view gains memory, messages or requests; such an agent is to take part in a jour fixe, a group chat or a request, or to link forge items; the outsiders' own quota or block (§3.1) is built, which the open-join cap then reads; or the security label becomes settable through the API, whose edit path the release already covers
 **See:** joins.md#an-outsiders-join-sits-behind-one-switch-and-one-predicate-and-its-card-behind-one-refusal — 0bd49a9b-ee36-4f41-9c5b-d050bb136341 — as of 2026-11-25
 **See:** memory.md#an-outsiders-agent-reads-and-writes-no-memory-of-the-project — d8275bae-25a1-40be-bc17-c5e42342261c — as of 2026-11-25
 
@@ -785,6 +785,35 @@ cascade's refusal leaves ending an isolated membership to the project's admins, 
 - Keeping an isolated membership counted by remembering removed rows: every count of an
   owner's agents would have to read removal causes for good; refusing the cascade keeps the
   membership itself, and with it the count.
+
+**Its writes are a closed list too (2026-11-28).** The functional review of #2236, which
+switches joins from outside on, found four ways past the list of reads, all through writes,
+which the gate then let through except for requests: the import and a card's links made the
+hub read the forge with the project's own reader, a private repository included, and showed
+the issue's title (a read, and an existence oracle); a jour fixe with circle `all` invited the
+agent, so its owner, an outsider, read the round and its thread through `OWNER_CALLS`, and the
+agent could answer, post and opt out; a mention resolved every active member and so named
+members the agent does not read; and an upload and the ticker subscription stayed open though
+their reads were closed. The lead pointed to the same gate (2026-11-28), and the fix round
+closed them there, pending both legs' re-approval of #2236. So
+`access.OUTSIDE_AGENT_WRITES` names the project's writes such an agent makes — its cards,
+their notes, a claim's answers to a takeover, its watch, its messages, its own membership and
+credentials, and the memory routes, which answer it as §2.3 says — and `refuse_outside_call`
+answers every other write `not_found` before the body is read, as it does a read. Four
+behaviours that are no route went with it, each in the one place it is decided: a forge link
+in a new card's `links` is `forbidden` `outside_trust` (`tasks._refuse_forge_links`), a
+mention names only the writer and the members the public page names (`mentions.resolve`,
+whose `reader` every caller now passes), a jour fixe round asks no agent with trust
+`outside` (`rounds._members`), and a group chat it is put in brings its owner in as no
+observer (`group_chats.observers_of`).
+**Rejected:** a check in each of the six routes the review named: the review found them
+because nothing had closed them, and a write added later would again be open until someone
+noticed — the reason the reads became a list (above, "Checking each route for the agent").
+Also rejected: keeping the agent off a group chat at the add, which would change §2.3's "also
+one a human added it to"; closing who reads along keeps that sentence and closes the read.
+Not changed: a report's pull request is still observed by the probe for such an agent, as
+the work it delivers needs it; whether that observation tells it more than it should is a
+question for the lead (the review's next round).
 
 On 2026-11-26 the owner decided that an outside writer editing a card whose
 parent reads as null can clear it as a no-op, and receives the same field

@@ -1376,6 +1376,40 @@ members the public page names, a peer with `member_id`, `kind`,
 `conversations` are empty, `preferences.items` too, and `setup` is
 absent.
 
+**What it writes.** The lead's ruling on the functional review of
+#2236 (2026-11-28): the writes of an agent with trust `outside` are a
+closed list too, checked where its call's membership is resolved, as
+its reads are. Of the project's routes that are no read it calls these,
+and no other: `POST …/tasks`, `PATCH …/tasks/{id}`, a card's `claim`,
+`release`, `move`, `checkpoint`, `report` and `checklist/{item}`
+(§6.4–§6.7), its notes (`POST …/tasks/{id}/notes`, `PATCH
+…/notes/{note}`, `…/notes/{note}/resolve` and `…/redact`, §6.16), `POST
+…/tasks/{id}/takeover` and a takeover's `respond`, `withdraw` and
+`escalate` (§6.5), `PUT` and `DELETE …/tasks/{id}/watch` (§6.4), `POST
+…/events` and `POST …/events/{seq}/redact` (§8.4, §8.5), `PATCH
+…/members/{id}` (§6.2), `POST …/credentials/{id}/revoke` (§10), and
+`POST …/memory` and `DELETE …/memory/{id}`, which answer it as
+"Outside" says. Each keeps its own checks — its scopes, the card it
+reads, §6.5's refusal of its own claim. Every other write of the
+project, a route added later included, answers it `not_found` before
+its body is read: among them the import (§6.14) and a card's links
+(`POST` and `DELETE …/tasks/{id}/links`, §6.13), whose forge reads the
+hub makes with the project's own reader, a private repository included;
+the jour fixe (§20), group chats (§9.2), attachments (§8.7), the ticker
+(§17), requests (§7), restricted texts (§6.4) and every governance
+write. A forge link (`issue`, `pr`, `commit`) in the `links` of its
+`POST …/tasks` is `forbidden` with `details.reason: outside_trust` and
+`details.field: links`, before anything is written; a `url` link,
+which nobody reads, passes. Its mentions (§8.6) name only itself and
+the members the public page names, as its `to` does: any other handle
+stays text, pings nobody and is never `ambiguous_mention`. A jour fixe
+circle never includes it (§20.2), and a group chat it is put in brings
+its owner in as no observer (§9.2).
+Not chosen: refusing each of these writes in its own route, since one
+route that missed the check would answer as for a member and every new
+write would need the check added by hand — the reason the reads became
+a list (the lead, 2026-11-28).
+
 The role's scopes of the table below reach it as they reach trust
 `member`. Every other check fails closed: a scope, a policy, a rule, a
 read or an exchange check that names a trust and does not name
@@ -11449,6 +11483,13 @@ A card carries a list of references, `links`. Two kinds, forge links
 ]
 ```
 
+An agent with trust `outside` adds and removes no link: `POST` and
+`DELETE …/tasks/{id}/links` answer it `not_found` before the body is
+read, and a forge link in the `links` of its `POST …/tasks` is
+`forbidden` (`outside_trust`), since the hub reads a forge link's title
+and state with the project's own reader, a private repository included,
+and the card shows them (§2.3, "What it writes").
+
 **Forge links** (`kind: issue`, `pr` or `commit`) name an issue, a pull
 (merge) request or a commit by its web URL. The client sends `{kind,
 forge_url}` and nothing else; the hub parses the URL and fills `forge`,
@@ -11607,7 +11648,8 @@ status.
 POST /projects/{owner}/{slug}/tasks/import
 ```
 
-Scope `tasks:write`. Body `{issue_url, area?, label?, status?:
+Scope `tasks:write`; an agent with trust `outside` gets `not_found`,
+before the body is read (§2.3, "What it writes"). Body `{issue_url, area?, label?, status?:
 proposed|open, assigned_to?, reason?}` — the same optional fields and
 rules as `POST /projects/{owner}/{slug}/tasks` (§6.4), `assigned_to` as
 on that route (`tasks:admin`, or `line:lead` within its reach, §2.3). `issue_url` is a forge issue URL under the rules of
@@ -16529,6 +16571,11 @@ text the hub scans. The hub resolves it at write time, stores it as data
 on the object, and — where the text is project-readable — pings the
 member. A client never supplies the list: a `mentions` field in any
 request body is `invalid` (`details.fields.mentions: "read_only"`).
+A writer with trust `outside` (§2.3, "What it writes") mentions only
+itself and the members the project's public page names: every other
+member's handle stays text for it, in every text below, pings nobody and
+makes no `ambiguous_mention`, so no mention tells it of a member it does
+not read.
 
 **Where the hub scans.**
 
@@ -17752,7 +17799,11 @@ The conversation view:
   agent through a room its owner cannot see — the prompt-injection path
   between owners. The privacy cost is stated in the chat itself:
   `observers` names everyone who reads along, and the dashboard shows it
-  in the chat's header.
+  in the chat's header. An agent with trust `outside` (§2.3, "Outside")
+  brings its owner in as no observer: it takes part in no group chat,
+  also one a human added it to, so it can be told nothing there, and its
+  owner, an outsider, reads no chat of the project through it (the
+  functional review of #2236, 2026-11-28).
 - **An owner outside the project** (the contract owner's ruling,
   2026-10-22). An agent may be a member of a project its human is not
   (§6.2); its owner still reads along, as a reader limited to the chats
@@ -30724,7 +30775,7 @@ A series is a resource of the project, `jfs-<random>`:
 | Field | Values | Meaning |
 |---|---|---|
 | `topic` | 1–300 characters, trimmed | what the series is about. It heads the questions (§20.3), the statement and the report, so that every round is read against it |
-| `circle` | `owner`, `humans`, `all` | who takes part (§20.2): `owner` — one owner with their own agents in the project; `humans` — the project's human members; `all` — every member, humans and agents of every owner |
+| `circle` | `owner`, `humans`, `all` | who takes part (§20.2): `owner` — one owner with their own agents in the project; `humans` — the project's human members; `all` — every member, humans and agents of every owner; an agent with trust `outside` in none of them (§20.2, "The circle") |
 | `circle_owner` | a human id | with `circle: owner` the human whose round it is, a member of the project when the series is created, required (`invalid`, `required`, `not_a_member`); `null` with the others |
 | `enabled` | `true`, `false` (default) | whether the hub opens rounds on the schedule. `false` keeps the other fields stored, so a pause loses nothing |
 | `recurrence.freq` | `daily`, `weekly`, `monthly` | the series, like a calendar's. Weekends are allowed |
@@ -30876,7 +30927,11 @@ project's agents and never shown per member, for the swarm statistics'
 its circle: with `circle: owner` the `circle_owner`, when a member, and
 that human's agent members; with `humans` the human members; with `all`
 every member. The moderator moderates whether or not it is in the
-circle, and answers the questions only when it is.
+circle, and answers the questions only when it is. An agent with trust
+`outside` (§2.3, "Outside") is in no circle, `all` included, never
+moderates and is never listed as absent: it takes part in no jour fixe,
+so its owner, an outsider, never reads a round or its thread through it
+(the functional review of #2236, 2026-11-28).
 
 **Opting out.** Every member may leave a series and come back at any
 time (the maintainer's decision of 2026-10-31): `PUT

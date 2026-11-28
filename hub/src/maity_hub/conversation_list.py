@@ -397,7 +397,12 @@ def group_entries(conn: Connection, mines: Sequence[Any], observed: bool) -> lis
         return []
     stays: dict[str, list[Any]] = defaultdict(list)
     for row in conn.execute(
-        select(*chat_gate.stay_columns(), t.membership.c.agent_id, t.membership.c.human_id)
+        select(
+            *chat_gate.stay_columns(),
+            t.membership.c.agent_id,
+            t.membership.c.human_id,
+            t.membership.c.trust,  # read by `group_chats.observers_of`
+        )
         .join(t.membership, t.membership.c.id == t.conversation_participant.c.membership_id)
         .where(
             t.conversation_participant.c.conversation_id.in_({c for _, c in pairs}),

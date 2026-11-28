@@ -161,18 +161,26 @@ def resolve(
     text: str | None,
     field: str,
     *,
+    reader: Any,
     among: set[str] | None = None,
 ) -> list[dict[str, Any]]:
     """The mentions of one text field, oldest offset first; `invalid` past the caps and
     for a short handle two active members share (`ambiguous_mention`, with the global
     names it could mean in `details.mentions`). `among` narrows the members a mention
     may name (a group chat's participants); anyone else's handle stays text, as an
-    unknown one does."""
+    unknown one does. `reader` is the writer's membership (None where nobody's is): a
+    writer who reads the project from outside (`access.reads_from_outside`, an agent with
+    trust `outside`) mentions only itself and the members the public page names, so that
+    neither a stored mention, a ping nor an `ambiguous_mention` names a member it does not
+    read (§2.3 "What it writes", §8.6)."""
     if not text:
         return []
     found = candidates(text)
     if not found:
         return []
+    visible = _visible_to(conn, project_id, reader)
+    if visible is not None:
+        among = visible if among is None else among & visible
     from maity_hub import handles as handle_book  # a module of its own; not at import
 
     owner = t.human.alias("owner")
@@ -274,6 +282,18 @@ def resolve(
     if len({m["member_id"] for m in mentions}) > MAX_MEMBERS or len(mentions) > MAX_OCCURRENCES:
         raise invalid({field: "too_many_mentions"}, "too many mentions in one text")
     return mentions
+
+
+def _visible_to(conn: Connection, project_id: str, reader: Any) -> set[str] | None:
+    """The member ids a writer who reads the project from outside may mention: itself and the
+    members the public page names (`public_members`, as `POST …/events` judges its `to`).
+    None for any other writer, who may mention every active member."""
+    from maity_hub import access, public_members  # both reach this module through their imports
+
+    if reader is None or not access.reads_from_outside(reader):
+        return None
+    shown = public_members.members(conn, project_id)
+    return {p.principal for p in shown.values() if p.shown} | {reader.principal_id}
 
 
 class _Candidate(NamedTuple):

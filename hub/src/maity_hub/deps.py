@@ -114,11 +114,12 @@ async def _resolve(
                 conn, caller, facts.headers["maity-for"], path, slug, renew_leases
             )
         if caller.kind == "agent" and slug is not None:
-            # An agent with trust `outside` reads the project's routes `access.
-            # OUTSIDE_AGENT_READS` names and no other (§2.3 "Outside"), refused as an outsider
-            # is, here where its membership is resolved; through a bridge, either side's trust.
+            # An agent with trust `outside` calls the project's routes `access.
+            # OUTSIDE_AGENT_READS` and `OUTSIDE_AGENT_WRITES` name and no other (§2.3
+            # "Outside"), refused as an outsider is, here where its membership is resolved,
+            # before the body is read; through a bridge, either side's trust.
             bridge = caller.bridge.membership_id if caller.bridge is not None else None
-            access.refuse_outside_read(
+            access.refuse_outside_call(
                 conn, request.method, facts.route, (caller.membership_id, bridge)
             )
         if caller.kind == "human":

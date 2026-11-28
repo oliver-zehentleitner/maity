@@ -12,9 +12,9 @@ routes"): a route is open to an outsider only when its endpoint calls `reader` a
 `@outside_read`, and `ProjectRoute` answers an outsider's call to any other project route
 `not_found` before its body or query is read (`gate`). An agent with trust `outside` reads
 the project as its owner reads it from outside (§2.3 "Outside"): `reads_from_outside` is the
-one predicate the read paths ask, and its reads of the project are `OUTSIDE_AGENT_READS`,
-refused `not_found` otherwise where its call's membership is resolved (`refuse_outside_read`,
-from `deps`). A human who
+one predicate the read paths ask, and its calls to the project are `OUTSIDE_AGENT_READS` and
+`OUTSIDE_AGENT_WRITES`, refused `not_found` otherwise where its call's membership is resolved
+(`refuse_outside_call`, from `deps`). A human who
 owns an agent or a runner in the project passes the gate on `OWNER_CALLS` alone (§1.3), and
 reads not-done `security` cards no more than any outsider does (`public_cards.shown`). The
 joins routes for an outsider's own agent (`OUTSIDE_JOINS`, §3.1) pass the gate only while
@@ -233,12 +233,51 @@ OUTSIDE_READS = frozenset(
 # template): an outsider's reads, and beyond them only its own credentials and the events it
 # reads (§8.2, `events.readable_by`). A list, closed by construction as `OUTSIDE_READS` is: a
 # read of the project not named here, a route added later included, answers such an agent
-# `not_found` (`refuse_outside_read`). Request writes are closed as well.
+# `not_found` (`refuse_outside_call`).
 OUTSIDE_AGENT_READS = OUTSIDE_READS | frozenset(
     {
         ("GET", f"{API_PROJECT}/events"),
         ("GET", f"{API_PROJECT}/events/{{seq}}"),
         ("GET", f"{API_PROJECT}/members/{{member_id}}/credentials"),
+    }
+)
+
+# The project routes an agent with trust `outside` writes (§2.3 "Outside", "What it writes"), as
+# (method, path template), closed by construction as its reads are: a write of the project not
+# named here, a route added later included, answers it `not_found` before its body is read
+# (`refuse_outside_call`), and each route named keeps its own checks (its scopes, the card's
+# visibility, `outsiders.refuse_taking`, the memory's `outside_trust`). What it works with: the
+# cards it reads and their notes, its claim's answers to a takeover, its watch, its messages
+# (`POST …/events`, whose recipients and mentions are the members it reads), its own membership
+# and credentials, and the memory routes, which answer it as §2.3 says. Not here, so not found:
+# the import and a card's links (the forge would read what it may not), the jour fixe, group
+# chats, attachments, the ticker, requests, restricted texts and every governance write.
+OUTSIDE_AGENT_WRITES = frozenset(
+    {
+        ("POST", f"{API_PROJECT}/tasks"),
+        ("PATCH", f"{API_PROJECT}/tasks/{{card_id}}"),
+        ("POST", f"{API_PROJECT}/tasks/{{card_id}}/claim"),
+        ("POST", f"{API_PROJECT}/tasks/{{card_id}}/release"),
+        ("POST", f"{API_PROJECT}/tasks/{{card_id}}/move"),
+        ("POST", f"{API_PROJECT}/tasks/{{card_id}}/checkpoint"),
+        ("POST", f"{API_PROJECT}/tasks/{{card_id}}/report"),
+        ("POST", f"{API_PROJECT}/tasks/{{card_id}}/checklist/{{item_id}}"),
+        ("POST", f"{API_PROJECT}/tasks/{{card_id}}/notes"),
+        ("PATCH", f"{API_PROJECT}/tasks/{{card_id}}/notes/{{note_id}}"),
+        ("POST", f"{API_PROJECT}/tasks/{{card_id}}/notes/{{note_id}}/resolve"),
+        ("POST", f"{API_PROJECT}/tasks/{{card_id}}/notes/{{note_id}}/redact"),
+        ("POST", f"{API_PROJECT}/tasks/{{card_id}}/takeover"),
+        ("POST", f"{API_PROJECT}/takeovers/{{takeover_id}}/respond"),
+        ("POST", f"{API_PROJECT}/takeovers/{{takeover_id}}/withdraw"),
+        ("POST", f"{API_PROJECT}/takeovers/{{takeover_id}}/escalate"),
+        ("PUT", f"{API_PROJECT}/tasks/{{task_id}}/watch"),
+        ("DELETE", f"{API_PROJECT}/tasks/{{task_id}}/watch"),
+        ("POST", f"{API_PROJECT}/events"),
+        ("POST", f"{API_PROJECT}/events/{{seq}}/redact"),
+        ("PATCH", f"{API_PROJECT}/members/{{member_id}}"),
+        ("POST", f"{API_PROJECT}/credentials/{{credential_id}}/revoke"),
+        ("POST", f"{API_PROJECT}/memory"),
+        ("DELETE", f"{API_PROJECT}/memory/{{entry_id}}"),
     }
 )
 
@@ -399,26 +438,25 @@ def reads_from_outside(mine: Any) -> bool:
     return getattr(row, "trust", None) == OUTSIDE
 
 
-def outside_agent_may_read(method: str, route: str) -> bool:
-    """Whether an agent with trust `outside` may make this call as far as the reads go: a call
-    that is no read (not `GET` or `HEAD`), one outside the project's routes, or one of
-    `OUTSIDE_AGENT_READS`. `route` is the template of the route that answers
+def outside_agent_may_call(method: str, route: str) -> bool:
+    """Whether an agent with trust `outside` may make this call: one outside the project's
+    routes, a read (`GET` or `HEAD`) of `OUTSIDE_AGENT_READS`, or a write of
+    `OUTSIDE_AGENT_WRITES`. `route` is the template of the route that answers
     (`request_stats.route_of`)."""
-    if method not in ("GET", "HEAD"):
-        requests = f"{API_PROJECT}/requests"
-        return route != requests and not route.startswith(requests + "/")
     if route != API_PROJECT and not route.startswith(API_PROJECT + "/"):
         return True
-    return ("GET", route) in OUTSIDE_AGENT_READS
+    if method in ("GET", "HEAD"):
+        return ("GET", route) in OUTSIDE_AGENT_READS
+    return (method, route) in OUTSIDE_AGENT_WRITES
 
 
-def refuse_outside_read(conn: Connection, method: str, route: str, membership_ids: Any) -> None:
-    """`not_found` for a read of the project an agent with trust `outside` may not make
-    (`outside_agent_may_read`), as an outsider is answered (§2.3): decided where the call's
-    membership is resolved, before any route runs and before its query is read. `membership_ids`
-    are the call's own membership and, for a bridge's call, the bridge's: either with trust
-    `outside` closes the read. One read, only for a read not on the list."""
-    if outside_agent_may_read(method, route):
+def refuse_outside_call(conn: Connection, method: str, route: str, membership_ids: Any) -> None:
+    """`not_found` for a call to the project an agent with trust `outside` may not make
+    (`outside_agent_may_call`), as an outsider is answered (§2.3): decided where the call's
+    membership is resolved, before any route runs and before its body or query is read.
+    `membership_ids` are the call's own membership and, for a bridge's call, the bridge's:
+    either with trust `outside` closes the call. One read, only for a call not on the lists."""
+    if outside_agent_may_call(method, route):
         return
     ids = [i for i in membership_ids if i is not None]
     if not ids:

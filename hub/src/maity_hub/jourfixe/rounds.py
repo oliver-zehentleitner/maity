@@ -24,6 +24,7 @@ from maity_hub.events import Actor, emit, lock_project
 from maity_hub.ids import new_id
 from maity_hub.jourfixe import circle, schedule
 from maity_hub.policy import CLOSED_STATES
+from maity_hub.scopes import OUTSIDE
 
 OPEN = ("answering", "statement", "exchange", "reporting")  # not yet final
 MANUAL_PER_DAY = 2
@@ -295,10 +296,18 @@ def _in_circle(conn: Connection, series: Any, members: list[Any]) -> set[int]:
 
 
 def _members(conn: Connection, project_id: str) -> list[Any]:
+    """The members a round may ask, moderate or list as absent: every active one but an
+    agent with trust `outside`, which takes part in no jour fixe, whatever the circle (§2.3
+    "Outside", §20.2): it is never invited, so its owner, an outsider, never reads a round or
+    its thread through it."""
     return list(
         conn.execute(
             select(t.membership)
-            .where(t.membership.c.project_id == project_id, t.membership.c.active.is_(True))
+            .where(
+                t.membership.c.project_id == project_id,
+                t.membership.c.active.is_(True),
+                t.membership.c.trust != OUTSIDE,
+            )
             .order_by(t.membership.c.id)
         ).all()
     )

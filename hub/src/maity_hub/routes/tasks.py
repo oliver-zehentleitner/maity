@@ -599,6 +599,24 @@ def _open_to_outsiders(mine: Membership, given: set[str], value: Any) -> bool | 
     return value
 
 
+def _refuse_forge_links(mine: Membership, links: list[card_links.LinkIn]) -> None:
+    """A forge link on a new card from an agent with trust `outside` (§2.3 "What it writes",
+    §6.13): `forbidden` `outside_trust` with `field: links`, before anything is written. The
+    probe reads a forge link's title and state with the project's own reader, which also
+    reads a private repository, and the card shows them to the writer, so such a link would
+    read for it what it may not read; a plain `url` link is read by nobody and passes. Its
+    route of its own, `POST …/tasks/{id}/links`, is not in `access.OUTSIDE_AGENT_WRITES`."""
+    if not access.reads_from_outside(mine):
+        return
+    if any(link.kind in card_links.FORGE_KINDS for link in links):
+        raise ApiError(
+            403,
+            "forbidden",
+            "a forge link is added by the project's own members",
+            {"reason": "outside_trust", "field": "links"},
+        )
+
+
 def _check_needs(project: Any, needs: str | None) -> None:
     """The role a card is for (§6.4): it routes nothing, so it only has to be a role."""
     if needs is not None and needs not in (*cards.NEEDS, *project_roles.names(project)):
@@ -1150,6 +1168,7 @@ def create_card(
     mine = membership(conn, caller, slug)
     mine.require("tasks:write")
     open_to_outsiders = _open_to_outsiders(mine, body.model_fields_set, body.open_to_outsiders)
+    _refuse_forge_links(mine, body.links)
     if body.kind not in cards.KINDS:
         raise invalid({"kind": "unknown"})
     if body.kind == "setup":
@@ -1193,7 +1212,7 @@ def create_card(
         if routed_cover is not None:
             extra = {**extra, "cover": routed_cover}
     assigned_instance = _assigned_instance(conn, assigned)
-    found = mentions.resolve(conn, mine.project.id, body.body, "body")
+    found = mentions.resolve(conn, mine.project.id, body.body, "body", reader=mine)
     now = clock.now()
     card_id = new_id({"release": "release", "contract": "contract"}.get(body.kind, "task"))
     status = body.status
@@ -1432,7 +1451,7 @@ def patch_task(
                 values[field] = getattr(body, field)
         found = None
         if "body" in values:
-            found = mentions.resolve(conn, mine.project.id, values["body"], "body")
+            found = mentions.resolve(conn, mine.project.id, values["body"], "body", reader=mine)
             values["mentions"] = found
         if "label" in given:
             _check_label(body.label)
@@ -2500,7 +2519,7 @@ def report(
             if not (mine.may("tasks:review") and mine.may("tasks:test")):
                 empty = SimpleNamespace(approvals=None)
                 signatures = cards.sign(conn, mine, empty, None, revision)
-        found = mentions.resolve(conn, mine.project.id, body.summary, "summary")
+        found = mentions.resolve(conn, mine.project.id, body.summary, "summary", reader=mine)
         now = clock.now()
         stored = {
             "summary": body.summary,

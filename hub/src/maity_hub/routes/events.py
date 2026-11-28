@@ -745,7 +745,9 @@ def post_message(
         # Against the chat's participants only; anyone else's handle stays text, and
         # each participant mentioned but the writer counts one ping (§8.6).
         inside = {group_chats.principal(s) for s in current if not s.waiting}  # §9.6
-        mentioned = mentions.resolve(conn, mine.project.id, body.body, "body", among=inside)
+        mentioned = mentions.resolve(
+            conn, mine.project.id, body.body, "body", reader=mine, among=inside
+        )
         mentions.charge(conn, mine.id, len([m for m in mentions.members(mentioned) if m != me]))
         # An instance mention wakes the instance it comes down to, a successor when the one
         # named was replaced (§8.2, §8.6): `events.wakes` reads that token, not the written id.
@@ -764,7 +766,7 @@ def post_message(
             )
         )
     elif body.type != "chat":  # a direct chat stays between its two parties (§8.6)
-        mentioned = mentions.resolve(conn, mine.project.id, body.body, "body")
+        mentioned = mentions.resolve(conn, mine.project.id, body.body, "body", reader=mine)
         roles = _roles(conn, mine.project.id, mentions.members(mentioned))
         # Only what `to` does not reach already, judged per token (§8.2): a team mention
         # is reached by `all`, its role or its own `member:`; an instance mention only by
