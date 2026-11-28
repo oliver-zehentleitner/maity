@@ -473,11 +473,14 @@ window.Maity = window.Maity || {};
   const isSilentAgent = (member) => !!member && member.kind === "agent"
     && ["away", "offline", "paused", "revoked"].includes(member.presence);
 
+  // "silent since 22:40" only for today in the shown zone; an older moment carries its date
+  // ("silent since Nov 25, 2026, 22:40"), since a time alone reads as today (tsk-5t6heqsahmfv).
   function silentSince(member, warn) {
     if (!isSilentAgent(member)) return null;
     const date = member.last_seen_at && new Date(member.last_seen_at);
     const known = date && !Number.isNaN(date.getTime());
-    const text = known ? M.t("member.silent_since", { time: M.fmt.time(date) })
+    const today = known && M.fmt.day(date) === M.fmt.day(new Date(Date.now()));
+    const text = known ? M.t("member.silent_since", { time: today ? M.fmt.time(date) : M.fmt.dateTime(date) })
       : M.t("member.silent_unknown");
     return h("span", { class: "member-silence " + (warn ? "flag-inline" : "muted"),
       title: known ? M.t("member.last_call", { time: formatTime(member.last_seen_at) }) : M.t("member.no_last_call") }, text);

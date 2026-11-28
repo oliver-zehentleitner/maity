@@ -19679,6 +19679,13 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && !silenceDom.isSilentAgent({ kind: "agent" }), "silence: humans, online and unknown presence are not inferred silent");
   const noCall = silenceDom.silentSince({ kind: "agent", presence: "away" }, true);
   expect(text(noCall).includes("last call unknown") && noCall.className.includes("flag-inline"), "silence: no timestamp stays unknown");
+  // Today says the time alone; three days ago says the date too (tsk-5t6heqsahmfv).
+  const silentNow = new Date(Date.now()), silentOld = new Date(Date.now() - 3 * 86400000);
+  const silentToday = text(silenceDom.silentSince({ kind: "agent", presence: "offline", last_seen_at: silentNow.toISOString() }, false));
+  expect(silentToday === "silent since " + win.Maity.fmt.time(silentNow), "silence: today names the time alone " + silentToday);
+  const silentDays = text(silenceDom.silentSince({ kind: "agent", presence: "offline", last_seen_at: silentOld.toISOString() }, false));
+  expect(silentDays === "silent since " + win.Maity.fmt.dateTime(silentOld) && silentDays !== "silent since " + win.Maity.fmt.time(silentOld),
+    "silence: three days ago names the date and the time " + silentDays);
   const silentGet = win.Maity.api.get, silentAll = win.Maity.api.getAll;
   let silentOnline = false, silentAdmin = true;
   const silenceMembers = (value) => ({ ...value, items: value.items.map((m) => m.kind === "agent"
