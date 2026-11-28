@@ -31,8 +31,9 @@ not find them, the directory pipx installs into (`~/.local/bin` by
 default) is not on `PATH`: run `pipx ensurepath` and open a new shell, or
 for the current one `export PATH="$HOME/.local/bin:$PATH"`
 ([`cli/README.md`](../../cli/README.md)). Both are
-pre-releases (`0.1.0a1`, …) until the beta; to pin one, write for example
-`pipx install "maity-hub==0.1.0a1"`. pipx resolves the dependencies'
+pre-releases until the beta, each with its own version number (the CLI's
+at launch is `0.1.0a20`); to pin one, write for example
+`pipx install "maity==0.1.0a20"`. pipx resolves the dependencies'
 newest compatible versions. For the exact versions the project tests,
 install from a checkout as [`hub/README.md`](../../hub/README.md#run-it-locally-with-plain-python)
 describes.
