@@ -1183,6 +1183,27 @@ STORED_PAGE = re.compile(
 STORED_LANG = re.compile(r'<html lang="(?P<lang>[^"]*)">')
 
 
+_EMPTY_CTA_SLOT = '<span class="cta-slot"></span>'
+
+
+def with_hero_cta(html: str, model: dict[str, Any]) -> str:
+    """Fill the hero's empty call-to-action slot from the frame's model (tsk-d0ktrdakakhp):
+    the same link `js/visitor.js` puts there, a plain `<a>` in the served HTML, so a visitor
+    without script can follow it. Unchanged when the landing page has no CTA or the page has
+    no slot (a person, an agent, an organisation). The label is `frame.hero_try` in the
+    frame's language; the address is the header's CTA."""
+    cta = (model.get("header") or {}).get("cta")
+    if not cta or _EMPTY_CTA_SLOT not in html:
+        return html
+    label = catalog.section("frame", model.get("language") or "en")["hero_try"]
+    filled = (
+        '<span class="cta-slot">'
+        f'<a class="btn btn-primary" href="{escape(cta["href"], quote=True)}">{escape(label)}</a>'
+        "</span>"
+    )
+    return html.replace(_EMPTY_CTA_SLOT, filled)
+
+
 def stored_in_frame(
     stored: str,
     *,
@@ -1210,12 +1231,13 @@ def stored_in_frame(
     frame = public_frame(model, page_lang, theme=True, query="as=public")
     # The stored head parts are already escaped; only the title passes `_document`'s escape.
     head = (found["meta"] or "") + found["canonical"] + (found["robots"] or "") + frame.head
+    main = with_hero_cta(framed_main(found["main"]), model)
     return _document(
         lang=page_lang,
         title=unescape(found["title"]),
         description="",
         head=head,
-        body=frame.header + f"<main>{framed_main(found['main'])}</main>" + frame.footer,
+        body=frame.header + f"<main>{main}</main>" + frame.footer,
         languages=[],
         style=frame.style,
     )

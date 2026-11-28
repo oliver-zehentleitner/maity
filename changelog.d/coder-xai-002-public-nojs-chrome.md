@@ -7,7 +7,9 @@
   (`?lang`, else `Accept-Language`, so the answer also varies by it), with Sign in coming back to the page and the
   footer's languages on the page's own path; the app's bar is hidden, and the dashboard's script takes the same
   markup over. The theme switch is in that served header too, visible without script so the layout matches
-  (it only changes the theme once a script runs; the shell does not load landing.js). The header's section
+  (it only changes the theme once a script runs; the shell does not load landing.js). The hero's
+  "Try it — create your account" is the header's call to action, a plain link in the served HTML
+  (filled at serve time from the frame, not stored). The header's section
   links and the footer's extra columns follow the landing page and the legal pages as configured, the same as
   with script. No stored page is rendered again for this. Without script the organisation page shows at once
   instead of after three seconds.

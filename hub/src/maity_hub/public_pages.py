@@ -214,7 +214,9 @@ def answer(
         raise rate_limited(wait)
     shelled = None
     if inside_shell is not None and request.query_params.get("as") != "public":
-        shelled = inside_shell(page.body, _shell_frame(request, page.body))
+        parts = _shell_frame(request, page.body)
+        filled, frame = parts if parts is not None else (page.body, None)
+        shelled = inside_shell(filled, frame)
     if shelled is not None:
         # The shell's files change with a deploy: its digest is part of the tag.
         tag = '"' + hashlib.sha256(shelled).hexdigest() + '"'
@@ -284,7 +286,7 @@ def _in_frame(request: Request, body: str) -> str | None:
         )
 
 
-def _shell_frame(request: Request, body: str) -> render.Frame | None:
+def _shell_frame(request: Request, body: str) -> tuple[str, render.Frame] | None:
     """The landing page's header and footer for a stored page that comes inside the app shell
     (tsk-d0ktrdakakhp): from the frame's inputs as they are now and in the visitor's language
     (`?lang`, else the reader's), as `_in_frame` makes them for `?as=public`, so the shell's
@@ -294,7 +296,9 @@ def _shell_frame(request: Request, body: str) -> render.Frame | None:
     a link that is a bare query (the footer's languages) is this page's own path first, which
     the shell's `<base href="/assets/">` would otherwise lead into `/assets/`; and the theme
     switch is in the header without `hidden` and without `landing.js`, which the shell must
-    not load (its own script draws a working switch)."""
+    not load (its own script draws a working switch). The returned body is `body` with the
+    hero's call-to-action slot filled from the model, a plain link, so a visitor without
+    script can follow it."""
     from urllib.parse import quote
 
     from maity_hub import landing, landing_stats, legal
@@ -323,7 +327,8 @@ def _shell_frame(request: Request, body: str) -> render.Frame | None:
     # script) and without `hidden`, so a visitor without script still has the layout slot.
     frame = render.public_frame(model, unescape(tagged["lang"]), theme=True, theme_script=False)
     own = escape(path, quote=True)
-    return frame._replace(footer=frame.footer.replace('href="?', f'href="{own}?'))
+    frame = frame._replace(footer=frame.footer.replace('href="?', f'href="{own}?'))
+    return render.with_hero_cta(body, model), frame
 
 
 def read(request: Request, path: str) -> Response:

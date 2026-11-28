@@ -1916,7 +1916,10 @@ does; a footer link that is a bare query (the languages) is this page's own path
 `<base href="/assets/">` would lead `?lang=de` into `/assets/`; and the theme switch stands in the header
 without `hidden` and without `landing.js` (the shell already has its own script, which replaces the served
 header with a working switch). A visitor without script still has the same layout slot; the button does not
-change the theme until a script runs. The header's section links and the footer's extra columns are whatever
+change the theme until a script runs. The hero's empty `cta-slot` is filled at the same time, from the frame's
+CTA, as a plain `btn-primary` link whose label is `frame.hero_try` in the frame's language: a
+visitor without script can follow it. The stored `body` stays empty of the link, so a change of the
+landing CTA does not re-render every page. `js/visitor.js` still draws the same link over it. The header's section links and the footer's extra columns are whatever
 the landing page and the legal pages are configured to show: a hub with only a hero and no `nav_label`
 sections has none, which is configuration, not the frame leaving them out. `js/site-chrome.js` takes the elements over (`data-served-frame`):
 once its read of `/site/chrome` answers it replaces them with its own drawing of the same frame, leaves them

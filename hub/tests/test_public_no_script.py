@@ -360,3 +360,39 @@ def test_a_configured_landing_puts_its_nav_and_columns_in_the_served_html(world:
     explore = Frame(world.anyone.get("/explore").text, served=False)
     assert [label for label, _ in page.header] == [label for label, _ in explore.header]
     assert unbased(page.footer, path) == explore.footer
+
+
+def test_the_hero_cta_is_a_plain_link_without_script(world: World) -> None:
+    """The hero's "Try it" is the header's call to action, a plain link in the served HTML
+    (tsk-d0ktrdakakhp), so a visitor without script can follow it. The dashboard's script
+    may still replace it with the same link. Pages without a slot (a person, an agent, an
+    organisation) stay without one."""
+    found = families(world)
+    href = None
+    for kind in ("project", "project_views", "card"):
+        html = world.anyone.get(found[kind]).text
+        slots = re.findall(
+            r'<span class="cta-slot"><a class="btn btn-primary" href="([^"]+)">([^<]+)</a></span>',
+            html,
+        )
+        assert len(slots) == 1, kind
+        got_href, label = slots[0]
+        assert label == "Try it — create your account", kind
+        assert got_href.startswith("/register"), (kind, got_href)
+        if href is None:
+            href = got_href
+        else:
+            assert got_href == href, kind
+        # Also in `?as=public`, the page the frame wraps without the shell.
+        public = world.anyone.get(found[kind], params={"as": "public"}).text
+        assert (
+            f'<span class="cta-slot"><a class="btn btn-primary" href="{href}">{label}</a></span>'
+            in public
+        )
+    for kind in ("person", "agent", "organisation"):
+        html = world.anyone.get(found[kind]).text
+        assert "cta-slot" not in html, kind
+    # The label follows the frame's language; the address stays the header's CTA.
+    german = world.anyone.get(found["project"], params={"lang": "de"}).text
+    assert "Probier es aus – erstelle dein Konto" in german
+    assert '<span class="cta-slot"><a class="btn btn-primary" href="' in german
