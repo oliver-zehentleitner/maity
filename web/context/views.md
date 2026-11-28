@@ -896,7 +896,8 @@ two key forms in several places.
 
 **Id:** 2ff6afe9-ed47-4ffd-b12d-947cfb7774ca
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** fb89d1e4-8203-405a-9840-62f34485137e
 **Evidence:** confirmed
 **Source:** the maintainer's report and decision on tsk-430dnt8s25a8 (the Request updates section slow and noisy, the tab's count against an empty list), relayed by the coordinator, 2026-10-29; docs/api.md §7, §18.2, §18.3
 **Revisit when:** the hub gives the inbox a kind of activity that asks for an answer, or the bell no longer lists everything unread
@@ -8091,9 +8092,17 @@ for nothing more.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the lead's answer on card tsk-t4nm0e82aafh, 2026-11-28 (a web-only section, no contract change before the launch, one list call, the section's own count, the docs); docs/api.md §6.1 `agent_owners`, §6.4 `claim_requests`, §6.5 "An outsider's claim"
+**Source:** the lead's answers on card tsk-t4nm0e82aafh, 2026-11-28 (a web-only section, no contract change before the launch, one list call, the section's own count, the docs; this entry supersedes 2ff6afe9 and carries its reason); for the part taken over from 2ff6afe9, the maintainer's report and decision on tsk-430dnt8s25a8, 2026-10-29; docs/api.md §6.1 `agent_owners`, §6.4 `claim_requests`, §6.5 "An outsider's claim", §7, §18.2, §18.3
 **See:** views.md#the-inbox-is-the-requests-alone-activity-is-on-the-bell-the-chat-button-and-notifications — 2ff6afe9-ed47-4ffd-b12d-947cfb7774ca — as of 2026-11-28
-**Revisit when:** the contract files a request (§7) or another inbox item for a fresh claim request, gives the task list a filter for pending claim requests, or counts them in the inbox's count
+**Revisit when:** the contract files a request (§7) or another inbox item for a fresh claim request, gives the task list a filter for pending claim requests, or counts them in the inbox's count; or the hub gives the inbox another kind of item that asks for an answer, or the bell no longer lists everything unread
+
+The inbox, in a project and across them, holds what asks for an answer and nothing else: the
+requests, and in a project's inbox the outside agents' claim requests below. Unread activity is
+not in it (the block of Request updates, Conversations, Mentions and Account under the requests
+went in 2026-10): unread notifications are on the bell, conversations on the Chat button, every
+notification on `/notifications`. What 2ff6afe9 records beyond that (Mark read and Mark all read
+on `/notifications`, the free-text field above an open request's buttons, Talk) is unchanged and
+stays written there.
 
 A project's inbox (`web/js/inbox.js`) shows **Claim requests from outside** above the requests:
 every `open` card whose `claim_requests` holds a request the reader may confirm, with the
@@ -8107,12 +8116,17 @@ requests), and in a project whose `public_page` is `off` (no longer public, whic
 with `not_public`). The tab's inbox count stays the hub's (§5.1) and holds none of them; the
 inbox across all projects leaves them out.
 
-**Reason:** the contract delivers a fresh claim request only as the event `claim_requested` and
-the card's `claim_requests`; it becomes a request only when it lapses to `trust:admin`. A
-confirmer still needs one place where what asks for an answer waits, which is what the inbox is
-for (2ff6afe9); the cards the board already reads hold everything the section shows.
+**Reason:** the inbox is for what asks for an answer (2ff6afe9's reason, still valid): the
+activity block mostly repeated the hub's notices about agents not listening, held the page while
+it read up to four pages of 50, and made read and unread look alike. A claim request asks for an
+answer, but the contract delivers a fresh one only as the event `claim_requested` and the card's
+`claim_requests`; it becomes a request only when it lapses to `trust:admin`. A confirmer still
+needs it where answers wait, and the cards the board already reads hold everything the section
+shows.
 
 **Rejected alternatives:**
+- Keeping the activity block with read and unread told apart (2ff6afe9): it would still sit under
+  the requests and be read on every visit, while the bell already shows it.
 - A contract change so that the hub files a request (§7) per claim request: hub work outside
   the web card, and no contract change before the launch (the lead).
 - Leaving the requests on the board alone: a confirmer would have to find the card first.
