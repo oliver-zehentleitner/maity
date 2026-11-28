@@ -318,6 +318,33 @@ def test_a_file_with_other_keys_or_values_is_refused(
     assert not fake.signed()
 
 
+@pytest.mark.parametrize(
+    ("text", "says"),
+    [
+        (
+            "{oops",
+            "not JSON: Expecting property name enclosed in double quotes: line 1 column 2",
+        ),
+        ("[1]", "the body is one JSON object"),
+    ],
+)
+def test_an_answer_file_that_is_not_json_or_not_an_object_is_refused(
+    text: str,
+    says: str,
+    joined: Path,
+    fake: fakehub.FakeHub,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """`jourfixe answer --file` goes through `_answer_body`: a non-object and invalid JSON
+    are usage errors before any call, with the parser's full message when it is not JSON."""
+    path = tmp_path / "answer.json"
+    path.write_text(text, encoding="utf-8")
+    assert cli.main(["jourfixe", "answer", "--file", str(path)]) == cli.EXIT_USAGE
+    assert says in capsys.readouterr().err
+    assert not fake.signed()
+
+
 def test_a_second_answer_says_so(
     joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
 ) -> None:

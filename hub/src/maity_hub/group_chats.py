@@ -28,6 +28,7 @@ from maity_hub.events import Actor, emit, lock_project
 from maity_hub.ids import new_id
 from maity_hub.mentions import global_name
 from maity_hub.policy import CLOSED_STATES
+from maity_hub.scopes import OUTSIDE
 from maity_hub.views import principal_ids, ts
 
 PREFIX = "cnv-"
@@ -200,7 +201,11 @@ def shown_observers(
 
 def access(conn: Connection, conversation_id: str, mine: Any) -> str | None:
     """`participant`, `observer` (a human owning an agent participant), or None: then
-    the chat does not exist for the caller (§9.2)."""
+    the chat does not exist for the caller (§9.2). Never for an agent with trust `outside`,
+    which takes part in no group chat, read or write, also where a human added it (§2.3
+    "Outside")."""
+    if getattr(getattr(mine, "row", None), "trust", None) == OUTSIDE:
+        return None
     current = stays(conn, conversation_id)
     if any(s.membership_id == mine.id and not s.waiting for s in current):
         return "participant"

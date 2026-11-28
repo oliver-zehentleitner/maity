@@ -34,7 +34,7 @@ from maity_hub import tables as t
 from maity_hub.config import Settings
 from tests import factory, flow
 from tests.conftest import ClientFactory
-from tests.list_rows import same_for_3_and_30
+from tests.list_rows import flat_rows, same_for_3_and_30
 from tests.statements import count_statements, listening
 from tests.test_agent_owners import PROJECT, _friend, _isolated, _project, _remove
 from tests.test_public_project_views import World
@@ -142,6 +142,21 @@ def test_explore_costs_the_same_for_3_projects_and_for_30(world: World, migrated
         lambda: world.anyone.get("/explore"),
         Projects(world),
         rows=lambda answer: answer.text.count('class="xcard"'),
+        async_engines=True,
+    )
+
+
+@flat_rows("/public/explore")
+def test_public_explore_costs_the_same_for_3_projects_and_for_30(
+    world: World, migrated: Engine
+) -> None:
+    """`GET /public/explore` asks what `/explore` asks (`explore_rows`, §16.9)."""
+    same_for_3_and_30(
+        migrated,
+        "/api/v1/public/explore",
+        lambda: world.anyone.get("/api/v1/public/explore"),
+        Projects(world),
+        rows=lambda answer: len(answer.json()["projects"]),
         async_engines=True,
     )
 

@@ -19,6 +19,7 @@ from pydantic_core import PydanticCustomError
 from sqlalchemy import Connection, func, select
 
 from maity_hub import (
+    access,
     attachments,
     chat_gate,
     chat_meat_proxy,
@@ -238,7 +239,8 @@ def _party(conn: Connection, mine: Membership, agent_id: str, *, hidden: bool) -
 
 
 def _group(conn: Connection, mine: Membership, conversation_id: str) -> tuple[Any, str]:
-    """The group chat and the caller's access to it; `not_found` without access."""
+    """The group chat and the caller's access to it; `not_found` without access, an agent
+    with trust `outside` included (`group_chats.access`)."""
     group = group_chats.find(conn, mine.project.id, conversation_id)
     found = group_chats.access(conn, conversation_id, mine) if group is not None else None
     if found is None:
@@ -980,6 +982,8 @@ def send_message(
     def action(conn: Connection) -> idempotency.Outcome:
         mine = _locked(conn, caller, slug, conversation_id)
         if group_chats.is_group(conversation_id):
+            if access.reads_from_outside(mine):
+                raise not_found()  # no group chat is there for it, waiting or not (§2.3)
             if chat_gate.waiting(conn, conversation_id, mine.id):
                 raise chat_gate.refuse_waiting()  # it does not post before its owner's yes
             _group(conn, mine, conversation_id)  # not_found for anyone without access

@@ -292,6 +292,6 @@ def test_a_members_rename_leaves_a_transfer_of_someone_elses_project_open(
 ) -> None:
     """Only the namespace owner's rename changes the project's full name."""
     request = transfer(owner, anna.id).json()
-    done = anna.patch("/me", {"handle": "anne"})
+    done = anna.patch("/me", {"handle": "anne-marie"})
     assert done.status_code == 200, done.text
     assert status_of(owner, "maintainer/maity", request["id"]) == "open"

@@ -238,12 +238,13 @@ def test_a_lifted_hold_on_an_organisation_s_project_brings_its_board_and_cards_b
 
     admin = flow.human(pages(make_client), migrated)
     boss = flow.human(pages(make_client), migrated, "boss")
-    make_org(boss, "acme", "Acme")
+    make_org(boss, "acme-inc", "Acme")
     assert (
-        boss.post("/projects", {"slug": "tool", "name": "Tool", "owner": "acme"}).status_code == 201
+        boss.post("/projects", {"slug": "tool", "name": "Tool", "owner": "acme-inc"}).status_code
+        == 201
     )
-    assert boss.patch("/projects/acme/tool", {"public_page": "on"}).status_code == 200
-    card = boss.post("/projects/acme/tool/tasks", {"title": "Comes back"}).json()["id"]
+    assert boss.patch("/projects/acme-inc/tool", {"public_page": "on"}).status_code == 200
+    card = boss.post("/projects/acme-inc/tool/tasks", {"title": "Comes back"}).json()["id"]
     with migrated.connect() as conn:
         project_id = conn.execute(select(t.project.c.id)).scalar_one()
     pat = flow.human(pages(make_client), migrated, "pat")
@@ -256,7 +257,7 @@ def test_a_lifted_hold_on_an_organisation_s_project_brings_its_board_and_cards_b
 
     before = stored()
     assert {("project", project_id), ("project_views", project_id), ("card", card)} <= before
-    made = report(pat, {"type": "project", "id": "acme/tool"}, "spam")
+    made = report(pat, {"type": "project", "id": "acme-inc/tool"}, "spam")
     assert made.status_code == 201, made.text
 
     def resolved(action: str) -> None:

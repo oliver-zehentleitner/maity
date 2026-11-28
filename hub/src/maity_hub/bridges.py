@@ -275,6 +275,8 @@ def check(
         raise invalid({"member": "role"}, "a proxy is carried by no bridge")
     if bridge.agent_id is None:
         raise invalid({"bridge": "not_an_agent"}, "only an agent is a bridge")
+    if bridge.trust == "outside":
+        raise invalid({"bridge": "trust"}, "an outside agent cannot carry another agent")
     if bridge.id == served.id:
         raise invalid({"bridge": "self"}, "an agent is not its own bridge")
     if bridge.role_base == "proxy":
@@ -641,11 +643,13 @@ def settle(conn: Connection, s: proposals.Settlement) -> None:
             reason = stored if stored in HUB_REASONS else "withdrawn"
         withdraw(conn, _pair_of(conn, request), s.closer, reason)
         return
+    project = lock_project(conn, request.project_id)
+    bridge = conn.execute(select(t.membership).where(t.membership.c.id == proposal["bridge"])).one()
+    if bridge.trust == "outside":
+        raise invalid({"bridge": "trust"}, "an outside agent cannot carry another agent")
     if _pair_of(conn, request):
         return  # the other side is still to answer
-    project = lock_project(conn, request.project_id)
     served = conn.execute(select(t.membership).where(t.membership.c.id == proposal["served"])).one()
-    bridge = conn.execute(select(t.membership).where(t.membership.c.id == proposal["bridge"])).one()
     actor = s.proposer
     _project_consented(conn, project, request, proposal)
     if proposal.get("connection") is not None:
@@ -727,7 +731,7 @@ def not_your_bridge() -> ApiError:
 def still_live(conn: Connection, bridge_id: str) -> None:
     """Refuse a write made through a connection that has ended, or no longer carries, since the
     call was carried (§2.3): the connection live, the bridge an active member that is not
-    isolated and carries (`_carries`: no guest, the served agent's owner not suspended). Read
+    isolated and carries (`_carries`: eligible trust, the served agent's owner not suspended). Read
     under the project's lock, which an ending, a trust change and an isolation hold as well,
     so no write through the connection lands after one of them commits. Plain reads only: the
     account lock a suspension takes before the project's is never taken here, after it."""
@@ -760,12 +764,12 @@ def _never_carried(path: str) -> bool:
 
 
 def _carries(conn: Connection, bridge: int | None, served_owner: str | None) -> bool:
-    """A connection carries only while the bridge member is no guest and the served agent's
+    """A connection carries only while the bridge has eligible trust and the served agent's
     owner is not suspended (§2.3, §16.8): checked at every call, whatever path changed it."""
     from maity_hub import moderation
 
     trust = conn.execute(select(t.membership.c.trust).where(t.membership.c.id == bridge)).scalar()
-    return trust not in (None, "guest") and not moderation.suspended(conn, served_owner)
+    return trust not in (None, "guest", "outside") and not moderation.suspended(conn, served_owner)
 
 
 def carry(
@@ -805,12 +809,10 @@ def carry(
             m.active.is_(True),
         )
     ).first()
-    if found is None:
+    if found is None or not _carries(conn, caller.membership_id, found.served_owner):
         raise not_your_bridge()
     if found.isolated_since is not None:
         raise refusal(found)
-    if not _carries(conn, caller.membership_id, found.served_owner):
-        raise not_your_bridge()
     if renew_leases:
         _renew_carried(conn, found.id, caller.project_id)
     assert caller.membership_id is not None and caller.agent_id is not None

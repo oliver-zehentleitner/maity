@@ -549,15 +549,20 @@ def test_the_agents_user_records_it_through_sudo(
     assert not (Path.home() / ".claude.json").exists()  # never the runner's own
 
 
-def test_the_inode_of_a_path_reads_the_same_through_sudo(tmp_path: Path, fake_sudo: Path) -> None:
-    """The runner records `.git`'s inode at a start (adapters.launch); the agents' side may be
-    closed to the runner, so it is read there with `ls -di`, a link not followed."""
+def test_the_device_and_inode_of_a_path_read_the_same_through_sudo(
+    tmp_path: Path, fake_sudo: Path
+) -> None:
+    """The runner records `.git`'s device and inode at a start (adapters.launch); the agents'
+    side may be closed to the runner, so they are read there with `stat`, a link not
+    followed."""
     real = tmp_path / "dot-git"
     real.mkdir()
     link = tmp_path / "link"
     link.symlink_to(real, target_is_directory=True)
     for path in (real, link):
-        assert AsUser("maity-agent").inode(path) == AsUser().inode(path) == os.lstat(path).st_ino
-    assert "ls -di --" in fake_sudo.read_text()
-    with pytest.raises(OSError, match="inode"):
-        AsUser("maity-agent").inode(tmp_path / "missing")
+        found = os.lstat(path)
+        expected = (found.st_dev, found.st_ino)
+        assert AsUser("maity-agent").dev_inode(path) == AsUser().dev_inode(path) == expected
+    assert "stat -c %d %i --" in fake_sudo.read_text()
+    with pytest.raises(OSError, match="device and inode"):
+        AsUser("maity-agent").dev_inode(tmp_path / "missing")

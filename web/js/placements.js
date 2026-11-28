@@ -282,13 +282,17 @@ window.Maity = window.Maity || {};
         h("div", { class: "placement-head" },
           // The object, not the id: before its first pickup a profile is no member here and is
           // named by the placement's display_name, not its id (review A1878 of #2085).
-          p.agent.id ? M.dom.memberRef(ctx, p.agent) : h("span", null, p.agent.display_name),
+          // Which instance runs here, `handle#id` as the board names it (§15.5, §6.17): two
+          // placements of one agent on one runner are told apart; none before the first pickup.
+          p.agent.id ? M.dom.memberRef(ctx, p.agent, { instance: p.instance }) : h("span", null, p.agent.display_name),
           h("span", { class: "muted" }, " ", p.target
             ? M.tn("placements.on_target", { runner: h("strong", null, p.runner.name), target: p.target })
             : M.tn("placements.on", { runner: h("strong", null, p.runner.name) })),
+          p.instance ? null : h("span", { class: "muted placement-no-instance" }, " · ", M.t("placements.no_instance")),
           p.foreign ? h("span", { class: "muted" }, " · ", M.t("placements.foreign")) : null),
         h("dl", { class: "facts" },
-          h("dt", null, M.t("placements.runs")), h("dd", null, p.harness + (p.model ? " · " + p.model : "") + " · " + p.mode),
+          h("dt", null, M.t("placements.runs")), h("dd", null, p.harness + (p.model ? " · " + p.model : "") + " · " + p.mode,
+            p.workspace && p.workspace.clone ? [" · ", M.t("placements.clone", { clone: p.workspace.clone })] : null),
           h("dt", null, M.t("placements.wanted")), h("dd", null, p.desired === "running" ? M.t("placements.state.running") : M.t("placements.state.stopped")),
           // The generation is for the curious: folded into the reported line, muted.
           h("dt", null, M.t("placements.reported")), h("dd", null, stateLine(ctx, p),

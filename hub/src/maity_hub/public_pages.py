@@ -24,7 +24,7 @@ from fastapi import Request, Response
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import Connection, Engine, delete, insert, literal, select
 
-from maity_hub import clock, worker_runs
+from maity_hub import clock, render, worker_runs
 from maity_hub import tables as t
 from maity_hub.auth import caller as auth_caller
 from maity_hub.config import Settings
@@ -292,6 +292,42 @@ class Page:
     view: str
     data: dict[str, Any]
     indexed: bool = True  # false: `noindex` and out of the sitemap (§16.9)
+
+
+def page(
+    hub: Settings,
+    path: str,
+    title: str,
+    content: str,
+    inputs: Sequence[str],
+    view: str,
+    data: dict[str, Any],
+    *,
+    indexed: bool = True,
+    styled: bool = False,
+) -> Page:
+    """The `Page` of one address from its `content` (the kinds' common ending): the document in
+    the frame's markup with the canonical link on the hub's public address, `lastmod` now, and
+    `inputs` as the digest of what the page was made from: `path`, the `inputs` given (what
+    shows in the page besides its `content`, the name for one) and `content`, joined by NUL.
+    `styled` is for a page not in the dashboard's design (`render.page_document`)."""
+    digest = hashlib.sha256("\x00".join((path, *inputs, content)).encode())
+    return Page(
+        path=path,
+        body=render.page_document(
+            lang="en",
+            title=title,
+            canonical=f"{hub.public_url.rstrip('/')}{path}",
+            content=content,
+            indexed=indexed,
+            styled=styled,
+        ),
+        inputs=digest.hexdigest(),
+        lastmod=clock.now(),
+        view=view,
+        data=data,
+        indexed=indexed,
+    )
 
 
 class Targets(Protocol):

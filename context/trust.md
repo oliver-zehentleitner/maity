@@ -691,10 +691,10 @@ to `role:reviewer` never lands with the purple team.
 
 **Id:** dacf0267-548d-4620-8ee9-e87e5b721d23
 **Type:** decision
-**Status:** needs-review
+**Status:** active
 **Evidence:** confirmed
 **Source:** the maintainer's wish in the team chat, 2026-11-08, and the plan he approved in the inbox the same day ("Passt so, bauen"); the details settled with the team lead on the card; who sets the fields, the maintainer's inbox answer of 2026-11-11; contract `docs/api.md` §2.3, §6.2, §7, §17.3
-**Revisit when:** an expert needs to ask back or keep notes, or the hub starts checking that answers cite their sources. The first fired on 2026-11-25: the steward, a role built on the expert, asks back and follows up with the coder's scopes, and the expert itself is unchanged; whether that settles this entry is to be re-checked
+**Revisit when:** an expert itself needs to ask back or keep notes beyond what the steward does, or the hub starts checking that answers cite their sources. Re-checked on 2026-11-25, on the lead's instruction: the need to ask back and follow up went to the steward, a separate role built on the expert with the coder's scopes, and the expert itself is unchanged
 **See:** trust.md#the-security-teams-are-built-in-roles-red-blue-and-purple — 015bc7eb-2943-4f2d-8582-2c2cc13b40f0 — as of 2026-11-08
 **See:** trust.md#the-steward-role-keeps-the-reasoning-complete-built-on-the-expert-and-writes-nobodys-entries — ce22ba6d-ff2b-4196-808d-81baf9d6a3e9 — as of 2026-11-25
 
@@ -745,8 +745,12 @@ answering and posting, and no new review or merge rights.
 `steward` is a built-in role with the coder's scopes and the expert's
 fields `expert_for` and `expert_sources`, filled with `context/` by a
 join that names none. It answers why questions from the entries with
-the entry of each answer. Every ticker merge wakes every steward; it
-also sweeps at resume and when asked, with no scheduler in the hub. For
+the entry of each answer. Every ticker merge has every steward in its
+computed audience, and the ticker's delivery rules then apply as to any
+member: a matching mute removes it, unless a follow matches too, which
+keeps it listed with no wake; and a human steward sees the item in the
+dashboard rather than being woken. It also sweeps at resume and
+when asked, with no scheduler in the hub. For
 a decision without an entry, or an open, `needs-review` or
 `pending-confirmation` entry, it asks the member who owes it, a note on
 the card first, and sends its lead a short status. It opens cards with
@@ -789,9 +793,60 @@ can).
   the dashboard is enough, and a refusal would break a project that
   switches the provider later.
 
-**Workarounds:** until the role is built, a project role on `writer`
-with the area `context/` stands in. Without the ticker no merge wakes
-the steward, so it sweeps at resume and when asked.
+The upgrade that added the role renames an existing project role
+`steward` to `steward-custom` wherever the name or its `role:` token is
+stored, the places §2.3 lists: the role list, `outside_roles`,
+`check_in_with`, the `role:` tokens of
+`settings.ticker.contract_implementers`, memberships and their
+`substitutes`, joins, invitations, `needs`, a request's `to`, what an
+open request waits to apply, placements and the role memory. So a stored
+`role:steward` does not reach the built-in stewards, and a change
+proposed before the upgrade and approved after it applies the custom
+role, not the built-in one. Where the project role `steward` was
+removed while such a request waited, the upgrade has nothing to rename,
+and the old name would now resolve to the built-in steward. A go after
+it on a `role` would have made the agent a built-in steward, which its
+owner never agreed to (A2692 P2-1). On a `role:steward` token in
+`substitutes` it would have stored a token that now names the built-in
+stewards; cover would still not choose one, since the cover list skips
+every steward whatever a stored policy names (`cover.py`), but the
+policy would say something nobody agreed to. Only another owner's
+consent and an admin agent's change can carry either field; a
+manager's change sets neither. The upgrade marks such an open proposal
+`role_gone`, and every `go` on it is refused as `409 role_unknown`.
+Before the upgrade that answer came only from another owner's consent
+naming the removed `role`; an admin agent's change naming a removed
+`role:` token in `substitutes` was refused as `400 invalid`. An admin
+agent's change naming a removed `role` was applied as filed, except
+that for an outsider's agent under `agent_owners: anyone` the `go` was
+refused as `400 invalid` (`role: outside_owner`, since
+`admin_agents.py` checks the assignment before it files any consent),
+and for another owner's agent otherwise the `go` passed the role on to
+that owner's consent. A removed `role:` token in another owner's
+consent was applied as filed (A2733 P2, A2742 P2, A2746 P2). The common 409 is new, and chosen because the
+request fails for the same reason on every path.
+That fails closed and keeps the request open for a `no` or a withdrawal,
+and a new change asks again. Rejected: binding every proposal to what
+its role resolved to when it was filed. That would also change how a
+rebase made while a request waits applies at the go, which §2.3 reads
+again on purpose, and it would not reach the proposals already stored.
+Rejected too: closing the requests in the upgrade, which would need
+events and notices that a migration does not write. The event log is not rewritten: an event
+from before the upgrade that was addressed to a custom project role
+named `steward` keeps that audience, so the built-in stewards can see it
+in the history. The lead accepted this (seq 221640) and rejected
+rewriting the `role:steward` audiences in `event`: that scan of the
+largest table would run on every hub, and would help only the hubs that
+had a custom `steward` role, for history only. It
+renames rather than stopping as the
+expert's upgrade did: the lead chose the
+security teams' rename for it, and the members keep their base, so a
+project loses nothing it had. Where `steward-custom` is taken too, it
+takes the next free name (`steward-custom-2`, `-3`, …) and logs which
+project got which name. That is the lead's ruling (seq 221098), which
+rejects stopping the upgrade there: an upgrade that stops blocks the
+deploy of every hub that has both names, and the operator cannot fix
+that from the dashboard.
 
 ## A redaction notice reaches the event's audience, its reason only humans who may see it
 

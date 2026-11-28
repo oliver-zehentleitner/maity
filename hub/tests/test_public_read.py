@@ -10,7 +10,7 @@ from typing import Any
 import pytest
 from sqlalchemy import Engine, select, update
 
-from maity_hub import public_pages, public_projects
+from maity_hub import public_design, public_pages
 from maity_hub import tables as t
 from tests import flow
 from tests.conftest import ClientFactory
@@ -245,7 +245,7 @@ def _api_paths(world: World) -> dict[str, Any]:
 
 def test_the_route_is_the_only_public_read_it_adds(world: World) -> None:
     routes = {p: set(ops) for p, ops in _api_paths(world).items() if "/v1/public" in p}
-    assert routes == {"/api/v1/public/pages/{path}": {"get"}}
+    assert routes == {"/api/v1/public/pages/{path}": {"get"}, "/api/v1/public/explore": {"get"}}
 
 
 def test_every_read_of_a_public_project_stays_closed_without_a_session(world: World) -> None:
@@ -368,7 +368,131 @@ def test_explore_says_so_when_no_project_has_a_page(world: World) -> None:
     assert 'class="xgrid"' not in html and 'class="xcard"' not in html
 
 
+EXPLORE = "/api/v1/public/explore"
+
+
+def _cards(html: str) -> list[str]:
+    return re.findall(r'<a class="xcard" href="/([^"]+)">', html)
+
+
+def test_a_signed_in_human_gets_the_shell_at_explore(world: World) -> None:
+    """§16.9 "Explore, signed in", §16.11: the dashboard draws Explore for a session, so the hub
+    answers the shell, `no-cache` and `Vary: Cookie` as every shell, and no card of the page."""
+    got = world.owner.client.get("/explore")
+    assert got.status_code == 200
+    assert "<title>dashboard</title>" in got.text and 'class="xcard"' not in got.text
+    assert got.headers["cache-control"] == "no-cache"
+    assert "cookie" in got.headers["vary"].lower()
+    head = world.owner.client.head("/explore")
+    assert head.status_code == 200 and head.headers["cache-control"] == "no-cache"
+
+
+def test_explore_stays_the_page_signed_out_and_with_as_public(world: World) -> None:
+    """A visitor, and a signed-in human asking with `?as=public`, get the page as before, byte for
+    byte the same, under the public pages' caching."""
+    visitor = world.anyone.get("/explore")
+    as_public = world.owner.client.get("/explore", params={"as": "public"})
+    for got in (visitor, as_public):
+        assert got.status_code == 200
+        assert got.headers["cache-control"] == "public, max-age=60"
+        assert got.headers["vary"] == "Cookie, Accept-Language"
+        assert got.headers["content-security-policy"] == public_pages.FRAMED_CSP
+        assert "etag" not in got.headers
+        assert _cards(got.text) == [BASE]
+    assert as_public.content == visitor.content
+    assert world.anyone.get("/explore", params={"as": "public"}).content == visitor.content
+
+
+def test_public_explore_lists_what_the_page_lists_the_same_for_everyone(world: World) -> None:
+    """`GET /public/explore`: `{"projects": [{name, full_name}]}`, nothing more, in the page's
+    order, the same answer with a session as without, `public, max-age=60` with an `ETag` and no
+    `Vary: Cookie`."""
+    flow.project(world.owner, "alpha", public_page="on")
+    flow.project(world.owner, "zulu", public_page="on")
+    flow.project(world.owner, "hidden", public_page="off")
+    anonymous = world.anyone.get(EXPLORE)
+    signed_in = world.owner.client.get(EXPLORE)
+    assert anonymous.status_code == signed_in.status_code == 200, anonymous.text
+    assert anonymous.content == signed_in.content
+    for got in (anonymous, signed_in):
+        assert "set-cookie" not in got.headers
+        assert got.headers["cache-control"] == "public, max-age=60"
+        assert got.headers["content-type"] == "application/json"
+        assert "cookie" not in got.headers.get("vary", "").lower()
+        assert got.headers["etag"]
+    answer = anonymous.json()
+    assert set(answer) == {"projects"}
+    assert all(set(p) == {"name", "full_name"} for p in answer["projects"])
+    listed = [p["full_name"] for p in answer["projects"]]
+    assert "maintainer/hidden" not in listed
+    assert listed == _cards(world.anyone.get("/explore").text)
+    names = [p["name"].casefold() for p in answer["projects"]]
+    assert names == sorted(names)
+
+
+def test_public_explore_follows_the_page_when_a_project_leaves(
+    world: World, migrated: Engine
+) -> None:
+    assert [p["full_name"] for p in world.anyone.get(EXPLORE).json()["projects"]] == [BASE]
+    with migrated.begin() as conn:
+        conn.execute(update(t.project).values(state="archived"))
+    assert world.anyone.get(EXPLORE).json() == {"projects": []}
+    assert _cards(world.anyone.get("/explore").text) == []
+
+
+def test_public_explore_answers_304_to_its_etag(world: World) -> None:
+    tag = world.anyone.get(EXPLORE).headers["etag"]
+    again = world.anyone.get(EXPLORE, headers={"If-None-Match": tag})
+    assert again.status_code == 304 and again.headers["etag"] == tag
+    assert again.headers["cache-control"] == "public, max-age=60"
+    flow.project(world.owner, "second", public_page="on")
+    changed = world.anyone.get(EXPLORE, headers={"If-None-Match": tag})
+    assert changed.status_code == 200 and changed.headers["etag"] != tag
+
+
+def test_public_explore_is_not_found_while_pages_are_off(make_client: ClientFactory) -> None:
+    assert make_client(public_pages=False).get(EXPLORE).status_code == 404
+
+
+def test_public_explore_spends_the_page_bucket(world: World, monkeypatch: Any) -> None:
+    monkeypatch.setattr(public_pages.BY_ADDRESS, "hit", lambda _: 7)
+    assert world.anyone.get(EXPLORE).status_code == 429
+
+
+def test_the_shell_at_explore_spends_none_of_the_page_bucket(
+    world: World, monkeypatch: Any
+) -> None:
+    """#2227's review (4nuu): the session is checked before the page's rate limit, so a signed-in
+    human gets the shell with the bucket empty; a visitor and `?as=public` get the 429."""
+    monkeypatch.setattr(public_pages.BY_ADDRESS, "hit", lambda _: 7)
+    shell = world.owner.client.get("/explore")
+    assert shell.status_code == 200 and "<title>dashboard</title>" in shell.text
+    assert world.anyone.get("/explore").status_code == 429
+    assert world.owner.client.get("/explore", params={"as": "public"}).status_code == 429
+
+
+def test_a_visitor_at_explore_takes_no_connection_before_the_429(
+    world: World, monkeypatch: Any
+) -> None:
+    """#2227's review (4nuu): without a session cookie, `/explore` asks no session of the database,
+    so a rate-limited visitor gets the 429 without a pooled connection."""
+    assert world.anyone.get("/explore").status_code == 200  # the window is read and kept
+    engine = world.anyone.app.state.engine  # type: ignore[attr-defined]
+    begun: list[int] = []
+    begin = engine.begin
+
+    def counted() -> Any:
+        begun.append(1)
+        return begin()
+
+    monkeypatch.setattr(engine, "begin", counted)
+    monkeypatch.setattr(public_pages.BY_ADDRESS, "hit", lambda _: 7)
+    assert world.anyone.get("/explore").status_code == 429
+    assert begun == []
+
+
 def test_a_monogram_is_the_names_first_letter() -> None:
-    assert public_projects.monogram("a/web", "maity web") == "M"
-    assert public_projects.monogram("a/web", "2 · ünd") == "Ü"
-    assert public_projects.monogram("a/x9", "42") == "X"
+    assert public_design.monogram("maity web", "web") == "M"
+    assert public_design.monogram("2 · ünd", "web") == "Ü"
+    assert public_design.monogram("42", "x9") == "X"
+    assert public_design.monogram(None, "x9") == "X"

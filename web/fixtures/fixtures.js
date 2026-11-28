@@ -1724,7 +1724,7 @@ window.MAITY_FIXTURES = {
           "client": "maity-cli/0.1.0",
           "created_at": "2026-10-21T10:12:00Z",
           "id": "crd-b-0003",
-          "instance": "wle2",
+          "instance": "wme2",
           "last_used_at": "2026-10-21T13:39:30Z",
           "last_used_via": "bearer",
           "member_id": "agt-b",
@@ -2283,7 +2283,7 @@ window.MAITY_FIXTURES = {
           },
           {
             "handle": "agent-b",
-            "instance": "wle2",
+            "instance": "wme2",
             "kind": "agent",
             "member_id": "agt-b"
           },
@@ -3643,19 +3643,19 @@ window.MAITY_FIXTURES = {
         "id": "agt-b",
         "instances": [
           {
-            "address": "agt-b#wle2",
+            "address": "agt-b#wme2",
             "claims": 1,
             "created_at": "2026-10-21T10:12:03Z",
             "dormant": null,
             "harness": "Claude Code",
-            "id": "wle2",
+            "id": "wme2",
             "keep_the_why_acknowledge_by": "2026-10-21T10:42:00Z",
             "keep_the_why_acknowledged_at": null,
-            "label": "agent-b#wle2",
+            "label": "agent-b#wme2",
             "last_seen_at": "2026-10-21T11:20:00Z",
             "lead": false,
             "model": "claude-opus-5-5",
-            "name": "maintainer/agent-b#wle2",
+            "name": "maintainer/agent-b#wme2",
             "paused": null,
             "presence": "offline",
             "replaces": null,
@@ -3674,7 +3674,7 @@ window.MAITY_FIXTURES = {
           {
             "desired": "running",
             "id": "plc-0001",
-            "instance": "wle2",
+            "instance": "wme2",
             "runner_name": "home-laptop",
             "state": "running"
           }
@@ -3883,7 +3883,7 @@ window.MAITY_FIXTURES = {
         "generation": 4,
         "harness": "claude-code",
         "id": "plc-0001",
-        "instance": "wle2",
+        "instance": "wme2",
         "logs_hint": "maity runner logs plc-0001",
         "mode": "interactive",
         "model": "opus",
@@ -4263,10 +4263,13 @@ window.MAITY_FIXTURES = {
       "keep_the_why": "required",
       "keep_the_why_defaults": "adopt",
       "lease_seconds": 7200,
+      "looking_for_coders": "per_card",
       "max_placements": 8,
       "member_agents": "on",
       "member_agents_max": 3,
       "on_runner_revoke": "stop",
+      "outside_claims": "human",
+      "outside_claims_max": null,
       "outside_roles": [
         "coder"
       ],

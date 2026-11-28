@@ -59,8 +59,14 @@ _TAG = {
     "capability": "A member with the `tag` capability may tag a release.",
 }
 _STEWARD = {
-    "cards_only": "The Keep the Why steward opens cards for the owners of `context/` entries.",
-    "self": "The Keep the Why steward may write `context/` entries itself.",
+    "cards_only": (
+        "The Keep the Why steward asks the authors of missing `context/` entries and opens "
+        "cards for them; it writes no entry itself."
+    ),
+    "self": (
+        "The Keep the Why steward asks the authors of missing `context/` entries first; it "
+        "writes an entry itself, in its own pull request, only where no author can."
+    ),
 }
 # Trust × role (§2.3): how far the project trusts you, then what you do.
 _TRUST = {
@@ -116,6 +122,11 @@ _ROLE = {
         "from the sources you learned, with the source of each answer; you take no cards and "
         "file no request."
     ),
+    "steward": (
+        "Your role is steward: you keep the project's reasoning complete, answer why questions "
+        "from `context/` with the entry of each answer, and ask the authors of what is missing "
+        "or open until each item is done or someone has said why not."
+    ),
 }
 
 
@@ -168,6 +179,14 @@ REVIEW = (
     "`review_result` is the one that context wrote: send it as the client's check (§8.4) "
     "passed it, unchanged, with no summary or rewrite between the check and the send. List "
     "every command you ran, and what it printed, under a heading `Ran`."
+)
+
+
+# The steward line (§6.9): for a member whose role is `steward` (§2.3 "The steward").
+STEWARD = (
+    "Every member writes its own `context/` entries. For a decision without an entry, or an "
+    "open one, ask the member who owes it, first with a note on its card, and do not write it "
+    "for them. Never take, hold or change another member's card."
 )
 
 
@@ -305,6 +324,8 @@ def generate(
         lines += ["", "## On duty", "", DUTY_SELF]
     if reviews(project, role):
         lines += ["", "## Reviewing", "", REVIEW]
+    if role == "steward":
+        lines += ["", "## Stewarding", "", STEWARD]
     if project.keep_the_why:
         lines += ["", "## Keep the Why", "", KEEP_THE_WHY]
     lines += ["", "## Naming members", "", NAMING]
@@ -317,7 +338,7 @@ def generate(
 
 def text_digest() -> str:
     """The digest of the text the hub generates (§6.9): every text constant of this module
-    and eight rendered sample documents, so that a sentence written inside `generate` changes
+    and ten rendered sample documents, so that a sentence written inside `generate` changes
     it as well, the lines of a project role and the role lines of `settings.role_rules`
     included. The same on every start of the same code."""
     constants = {
@@ -340,7 +361,7 @@ def text_digest() -> str:
     )  # fmt: skip
     rendered = [
         generate(sample, "member", role, "the owner", supervised=supervised)
-        for role in ("coder", "sample", "reviewer", "tester")
+        for role in ("coder", "sample", "reviewer", "tester", "steward")
         for supervised in (False, True)
     ]
     text = json.dumps([constants, rendered], sort_keys=True, ensure_ascii=False, default=str)

@@ -12,7 +12,7 @@ window.Maity = window.Maity || {};
 (function (M) {
   const { h, append, clear } = M.dom;
 
-  // /explore is the hub's page (§16.11): js/route.js leaves a click on it to the browser.
+  // /explore opens the dashboard tab when signed in and the hub's page for a visitor (§16.11).
   const explore = () => h("a", { href: "/explore" }, M.t("not_found.explore"));
 
   // The ways on: the sign-in back to this address (a visitor), the start, the public projects.

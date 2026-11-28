@@ -191,6 +191,48 @@ def test_one_release_in_flight_per_project(conn: Connection) -> None:
         _card(conn, project_id, owner, release_version="0.2.0", **release)
 
 
+def _claim_request(conn: Connection, card_id: str, member: int, pending: bool | None) -> None:
+    project_id = conn.execute(select(t.card.c.project_id).where(t.card.c.id == card_id)).scalar()
+    owner_id = conn.execute(
+        select(t.membership.c.human_id).where(t.membership.c.id == member)
+    ).scalar()
+    conn.execute(
+        insert(t.claim_request).values(
+            id=new_id("claim_request"),
+            project_id=project_id,
+            task_id=card_id,
+            member_id=member,
+            instance="wle2",
+            owner_id=owner_id,
+            status="pending" if pending else "declined",
+            pending=pending,
+            requested_at=NOW,
+            lapses_at=NOW + timedelta(hours=1),
+        )
+    )
+
+
+def test_one_waiting_claim_request_per_card(conn: Connection) -> None:
+    """§6.5: at most one pending request per card, held by the database on every engine; any
+    number of settled ones (`pending` NULL), and another card's own."""
+    project_id = _project(conn)
+    owner = _membership(conn, project_id, human_id=_human(conn))
+    card_id, other = _card(conn, project_id, owner), _card(conn, project_id, owner)
+    _claim_request(conn, card_id, owner, None)
+    _claim_request(conn, card_id, owner, None)
+    _claim_request(conn, card_id, owner, True)
+    _claim_request(conn, other, owner, True)
+    with pytest.raises(IntegrityError):
+        _claim_request(conn, card_id, owner, True)
+
+
+def test_a_claim_request_is_pending_true_or_null_never_false(conn: Connection) -> None:
+    project_id = _project(conn)
+    owner = _membership(conn, project_id, human_id=_human(conn))
+    with pytest.raises(CHECK_FAILED):
+        _claim_request(conn, _card(conn, project_id, owner), owner, False)
+
+
 def test_a_release_version_is_unique_per_project(conn: Connection) -> None:
     project_id = _project(conn)
     owner = _membership(conn, project_id, human_id=_human(conn))

@@ -53,7 +53,14 @@ from maity_hub.errors import ApiError, forbidden, humans_only, invalid, not_foun
 from maity_hub.events import Actor, emit, lock_project
 from maity_hub.models import Strict, markdown
 from maity_hub.namespace import ProjectRoute
-from maity_hub.scopes import MEMBER_RULE_ROLES, OUTSIDE, ROLES, TRUSTS, in_admin_team
+from maity_hub.scopes import (
+    EXPERT_FIELD_ROLES,
+    MEMBER_RULE_ROLES,
+    OUTSIDE,
+    ROLES,
+    TRUSTS,
+    in_admin_team,
+)
 from maity_hub.views import (
     credential_view,
     human_paused,
@@ -558,13 +565,16 @@ def members_body(
         )
     ).all()
     admin = mine.may("members:admin")
-    outside = isinstance(mine, access.OutsideReader)
+    outside = access.reads_from_outside(mine)
+    # An agent with trust `outside` reads its own row as a member reads its own, every other
+    # one as its owner reads it from outside (§2.3 "Outside"); an outsider has no row (-1).
+    own = mine.id
     named: set[int] = set()
     pictures: dict[int, str | None] = {}
     if outside:  # the members the public page names, and only those (§2.3)
         people = outside_shown(conn, mine.project.id)
         named = set(people)
-        rows = [r for r in rows if r.id in named]
+        rows = [r for r in rows if r.id in named or r.id == own]
         pictures = outside_pictures(conn, people)
     # An outsider who owns an agent here reads it as any outsider does (§2.3): no details.
     owned: set[str] = set() if outside else _owned_agents(conn, mine)
@@ -581,7 +591,7 @@ def members_body(
         view["manages"] = counted[member_id]
     if outside:
         views = [
-            outside_member_view(v, r, named, picture=pictures.get(r.id))
+            v if r.id == own else outside_member_view(v, r, named, picture=pictures.get(r.id))
             for r, v in zip(rows, views, strict=True)
         ]
     views.sort(key=lambda v: (v["kind"] != "human", v["handle"]))
@@ -616,12 +626,16 @@ def get_member(slug: str, member_id: str, request: Request, caller: AnyCaller) -
         mine = access.reader(conn, caller, slug)
         mine.require("project:read")
         row = member_row(conn, mine.project.id, member_id)
-        if isinstance(mine, access.OutsideReader):
+        # Its own row an agent with trust `outside` reads as a member does (§2.3 "Outside").
+        if isinstance(mine, access.OutsideReader) or (
+            access.reads_from_outside(mine) and row.id != mine.id
+        ):
             people = outside_shown(conn, mine.project.id)
             if row.id not in people:  # one the public page does not name, as a hidden card
                 raise not_found()
             named = set(people)
-            view = member_view(conn, row, links=person_links.Reader(mine.principal_id))
+            reader = mine.principal_id if mine.kind == "human" else None
+            view = member_view(conn, row, links=person_links.Reader(reader))
             view["manages"] = instance_counts.for_member(conn, row, among=named)
             picture = outside_pictures(conn, {row.id: people[row.id]})[row.id]
             return JSONResponse(outside_member_view(view, row, named, picture=picture))
@@ -664,21 +678,21 @@ OUTSIDE_COUNT_KEYS = ("members", "instances")  # of `manages.direct` and `manage
 
 def outside_shown(conn: Connection, project_id: str) -> dict[int, Any]:
     """The members an outsider reads, by membership id: those the public page names (§16.9,
-    `public_project_views.members`), so never an isolated member nor one under a hold of
+    `public_members.members`), so never an isolated member nor one under a hold of
     moderation or whose account is not served."""
-    from maity_hub import public_project_views  # the public pages' modules, as `access` reads
+    from maity_hub import public_members  # the public pages' modules, as `access` reads
 
-    people = public_project_views.members(conn, project_id)
+    people = public_members.members(conn, project_id)
     return {membership_id: person for membership_id, person in people.items() if person.shown}
 
 
 def outside_pictures(conn: Connection, shown: dict[int, Any]) -> dict[int, str | None]:
     """The picture of each member an outsider reads, by membership id: the one the public page
-    shows (`public_project_views.shown_pictures`), null while a person's `public_profile` is
+    shows (`public_members.shown_pictures`), null while a person's `public_profile` is
     off. One read for the page."""
-    from maity_hub import public_project_views
+    from maity_hub import public_members
 
-    pictures = public_project_views.shown_pictures(conn, shown)
+    pictures = public_members.shown_pictures(conn, shown)
     return {membership_id: pictures.get(p.principal) for membership_id, p in shown.items()}
 
 
@@ -838,8 +852,9 @@ def apply_patch(
     # Again as the change is written, after any consent: an outsider's agent keeps no areas or
     # capabilities and reports to its owner or nobody (§2.3 "Outside").
     agent_owners.check_outside_fields(conn, target, values)
-    if values.get("role", "expert") != "expert":
-        # The fields belong to the role: any other role has none (§6.2).
+    if values.get("role", "expert") not in EXPERT_FIELD_ROLES:
+        # The fields belong to the expert and the steward: a change between the two keeps
+        # them, any other role has none (§6.2).
         values = {**values, "expert_for": None, "expert_sources": None}
     changed = {k: v for k, v in values.items() if getattr(target, k) != v}
     if line_consent and "reports_to" in values and not target.line_consent:
@@ -1340,8 +1355,9 @@ def _expert_fields(
 ) -> idempotency.Outcome:
     """An expert's `expert_for` and `expert_sources` (§2.3 "The expert", §6.2): set on their
     own, by a human member who owns the agent profile or holds `members:admin`, or by an
-    admin agent within ᵃ, and only on a member whose role is `expert`. They name what the
-    expert answers about; no consent waits for them, as they give the member no right."""
+    admin agent within ᵃ, and only on a member whose role is `expert` or `steward` (§2.3
+    "The steward"). They name what the expert answers about; no consent waits for them, as
+    they give the member no right."""
     if not given <= EXPERT_FIELDS:
         raise invalid({key: "alone" for key in sorted(given & EXPERT_FIELDS)}, "set them alone")
     mine = membership(conn, caller, slug)
@@ -1356,9 +1372,10 @@ def _expert_fields(
     target = member_row(conn, mine.project.id, member_id)
     if agent_admin:
         admin_agents.check_target(mine, target)  # an agent member, not itself (ᵃ)
-    if target.role != "expert":
+    if target.role not in EXPERT_FIELD_ROLES:  # the expert's and the steward's (§6.2)
         raise invalid(
-            {key: "expert_only" for key in sorted(given)}, "only an expert has these fields"
+            {key: "expert_only" for key in sorted(given)},
+            "only an expert or a steward has these fields",
         )
     values: dict[str, Any] = {}
     if "expert_for" in given:
@@ -1821,8 +1838,13 @@ def list_credentials(
 ) -> JSONResponse:
     with engine_of(request).begin() as conn:
         mine = membership(conn, caller, slug)
-        target = member_row_or_removed(conn, mine.project.id, member_id)
-        _may_manage_credentials(conn, mine, target)
+        if access.reads_from_outside(mine):
+            if mine.bridged or member_id != mine.principal_id:
+                raise not_found()
+            target = mine.row
+        else:
+            target = member_row_or_removed(conn, mine.project.id, member_id)
+            _may_manage_credentials(conn, mine, target)
         since = clock.now() - REVOKED_LISTED
         a = t.instance_attachment
         rows = conn.execute(

@@ -576,12 +576,12 @@
     "text": "4b6ceb41095fd41e"
   },
   "register_page.error_handle_invalid": {
-    "en": "3a330b6161a97216",
-    "text": "da1eee0139288fd8"
+    "en": "845e83b3720b154f",
+    "text": "fa387aa301e73bb9"
   },
   "register_page.error_handle_reserved": {
-    "en": "0852f629ceee0ad8",
-    "text": "255cc64b0de4463f"
+    "en": "b50921f41d56405e",
+    "text": "636a492d33afb02c"
   },
   "register_page.error_handle_taken": {
     "en": "64461ff8c8bd5d53",
@@ -608,8 +608,8 @@
     "text": "b7448c07e17ad1c7"
   },
   "register_page.handle_rule": {
-    "en": "91068c8308ff7d7d",
-    "text": "39e361c493ffffe9"
+    "en": "b83f07916d982f95",
+    "text": "78c4008355791625"
   },
   "register_page.intro": {
     "en": "3af54dd923e1059b",

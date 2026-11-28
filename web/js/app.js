@@ -161,6 +161,8 @@ window.Maity = window.Maity || {};
     if (parts[0] === "all" && parts[1] === "why") return { scope: "all-why" };
     if (parts[0] === "all") return { scope: "all" };
     if (parts[0] === "new") return { scope: "new" };
+    // Signed in, /explore is the Explore tab (§16.9, "Explore, signed in"); signed out the hub's page.
+    if (parts[0] === "explore" && !parts[1]) return { scope: "explore" };
     // /account/orgs[/<handle>]: organisations (§6.26), under the account (views.md).
     if (parts[0] === "account" && parts[1] === "orgs") return { scope: "orgs", args: parts.slice(2) };
     // /settings/forge: the account's Forge access (§11.4, §16.11), where the hub's setup redirect lands.
@@ -737,6 +739,7 @@ window.Maity = window.Maity || {};
     "blue-team": () => M.t("settings.onboarding.role.blue_team"),
     "purple-team": () => M.t("settings.onboarding.role.purple_team"),
     "expert": () => M.t("settings.onboarding.role.expert"),
+    "steward": () => M.t("settings.onboarding.role.steward"),
   };
   function onboardingForm(ctx) {
     const current = ctx.project.settings.onboarding || { check_in_with: "coordinator" };
@@ -838,6 +841,7 @@ window.Maity = window.Maity || {};
     { tab: "work", when: (ctx) => ctx.canAdmin && !!M.projectSetup, build: (ctx, save) => memoryPanel(ctx, save, humanAdminOf(ctx)) },
     { tab: "work", when: humanAdminOf, build: (ctx, save) => keepTheWhyForm(ctx, save) },
     { tab: "work", when: humanAdminOf, build: (ctx, save) => keepTheWhyDefaultsForm(ctx, save) },
+    { tab: "work", when: humanAdminOf, build: (ctx, save) => stewardWritesForm(ctx, save) },
     // The jour fixe's series and their moderators (§20.1, §20.2) are kept at the top of the jour fixe
     // view (the maintainer, 2026-11-06); here only where to find them.
     { tab: "work", when: humanAdminOf, build: (ctx) => h("section", { class: "jf-series-moved", "aria-labelledby": "jfs-moved-title" },
@@ -1428,7 +1432,7 @@ window.Maity = window.Maity || {};
     };
     claimsSelect.addEventListener("change", update);
     update();
-    const maxInput = h("input", { id: "outside-claims-max", type: "number", min: "1", step: "1", placeholder: M.t("settings.outside_claims_max.none") });
+    const maxInput = h("input", { id: "outside-claims-max", type: "number", min: "1", max: "2147483647", step: "1", placeholder: M.t("settings.outside_claims_max.none") });
     maxInput.value = max === null ? "" : String(max);
     const reason = h("input", { id: "outside-claims-reason", required: true, placeholder: M.t("settings.reason_placeholder") });
     const error = h("p", { class: "field-error", id: "outside-claims-error", role: "alert" });
@@ -1444,7 +1448,7 @@ window.Maity = window.Maity || {};
         // An unfinished number reads as "" with badInput: that is no wish to clear the limit.
         const bad = !!(maxInput.validity && maxInput.validity.badInput);
         const n = typed === "" && !bad ? null : Number(typed);
-        if (bad || (n !== null && (!Number.isSafeInteger(n) || n < 1))) { error.textContent = fieldError("out_of_range"); maxInput.focus(); return; }
+        if (bad || (n !== null && (!Number.isSafeInteger(n) || n < 1 || n > 2147483647))) { error.textContent = fieldError("out_of_range"); maxInput.focus(); return; }
         if (lookingSelect.value !== looking) policy.looking_for_coders = lookingSelect.value;
         if (claimsSelect.value !== claims) policy.outside_claims = claimsSelect.value;
         if (n !== max) policy.outside_claims_max = n;
@@ -1563,6 +1567,32 @@ window.Maity = window.Maity || {};
     h("label", { for: "ktw-defaults-select" }, M.t("settings.ktw_defaults.label")), select,
     h("label", { for: "ktw-defaults-reason" }, M.t("settings.ktw_defaults.reason")), reason,
     h("button", { type: "submit" }, M.t("settings.ktw_defaults.save")));
+  }
+
+  // How far the Keep the Why steward goes beyond asking the author (§6.1 `steward_writes`, §2.3
+  // "The steward"): with the other policy fields, under the provider keep-the-why only.
+  function stewardWritesForm(ctx, save) {
+    if ((ctx.project.memory || {}).provider === "none") return null;
+    const current = ctx.project.policy.steward_writes || "cards_only";
+    const select = h("select", { id: "steward-writes-select" },
+      [["cards_only", M.t("settings.steward_writes.cards_only")], ["self", M.t("settings.steward_writes.self")]]
+        .map(([v, l]) => h("option", { value: v, selected: v === current }, l)));
+    select.value = current;
+    const reason = h("input", { id: "steward-writes-reason", required: true, placeholder: M.t("settings.steward_writes.reason_placeholder") });
+    return h("form", {
+      class: "inline-form steward-writes-form",
+      onsubmit: (e) => {
+        e.preventDefault();
+        if (select.value === current) return;
+        if (!reason.value.trim()) { reason.focus(); return; }
+        save({ policy: { steward_writes: select.value }, reason: reason.value.trim() }, { saved: M.t("settings.steward_writes.saved"), notSaved: M.t("settings.steward_writes.not_saved") });
+      },
+    },
+    h("h2", { class: "panel-title" }, M.t("settings.steward_writes.title")),
+    h("p", { class: "hint" }, M.t("settings.steward_writes.hint")),
+    h("label", { for: "steward-writes-select" }, M.t("settings.steward_writes.label")), select,
+    h("label", { for: "steward-writes-reason" }, M.t("settings.steward_writes.reason")), reason,
+    h("button", { type: "submit" }, M.t("settings.steward_writes.save")));
   }
 
   function badgeForm(ctx, save) {
@@ -1697,7 +1727,7 @@ window.Maity = window.Maity || {};
       // The tabs this browser has open, in its order (js/tabs.js): dragged
       // into place, or moved with Alt+Shift+Arrow, or from the tabs menu.
       // A public project of which the human is no member is drawn dashed (outsiderTab).
-      M.tabs.row(ctx).map((p) => (p.outsider ? outsiderTab(ctx, p) : h("a", {
+      M.tabs.row(ctx).map((p) => (p.outsider ? outsiderTab(ctx, p, pill) : h("a", {
         href: projectLink(p.full_name, "inbox"),
         "aria-current": ctx.scope === "project" && p.full_name === ctx.slug ? "page" : null,
         "data-project": p.id,
@@ -1714,7 +1744,9 @@ window.Maity = window.Maity || {};
       p.name,
       privateMark(p),
       h("span", { class: "dot state-dot-" + p.state, title: M.dom.word("project", p.state), "aria-label": M.dom.word("project", p.state) }),
-      pill(p)))));
+      pill(p)))),
+      // Explore, last, while it is open in this browser session (exploreTab).
+      exploreTab(ctx));
     row.drawnAs = drawnAs(row);
     return row;
     // Runners belong to the person, not to a project (the maintainer's
@@ -1728,9 +1760,17 @@ window.Maity = window.Maity || {};
   // its place among the tabs (dragged and moved as they are) and carries a filled star whose
   // button takes the star off; this session's own tab carries an empty star that stars it, once
   // the project's view gave its id. The star is a button beside the link, not inside it: a
-  // link holds no other control.
-  function outsiderTab(ctx, p) {
+  // link holds no other control. Both sit in one dashed outline (`.outsider-tab`).
+  // It draws what a member's tab draws (the maintainer, tsk-q8s9dfjmjsxy): logo, name, lock, state
+  // dot and pill. The logo, the lock (a private project's only) and the state come from the
+  // project's view once read (`/me` `starred` carries no state); the pill comes from the counts
+  // (`pill`). The dot is left out while the state is not known.
+  const outsiderViews = {}; // a dashed tab's project view, kept once read while this page lives
+  function outsiderTab(ctx, p, pill) {
     const movable = !!p.starred;
+    if (ctx.scope === "project" && ctx.slug === p.full_name && ctx.project) outsiderViews[p.full_name] = ctx.project;
+    const view = (ctx.projectViews || {})[p.full_name] || outsiderViews[p.full_name] || null;
+    const state = view && view.state;
     const link = h("a", {
       href: projectLink(p.full_name, "overview"),
       class: "outsider" + (p.starred ? " starred" : ""),
@@ -1747,8 +1787,11 @@ window.Maity = window.Maity || {};
       ondragend: movable ? () => dragTab.end() : null,
       onkeydown: movable ? (e) => moveTabByKey(ctx, e, p) : null,
     },
-    projectMark(p.full_name, p.full_name.split("/").pop(), null, "small"),
+    projectMark(p.full_name, p.full_name.split("/").pop(), view, "small"),
     p.name,
+    privateMark(view),
+    state ? h("span", { class: "dot state-dot-" + state, title: M.dom.word("project", state), "aria-label": M.dom.word("project", state) }) : null,
+    pill ? pill(p) : null,
     h("span", { class: "visually-hidden" }, ", " + outsiderSaid(p)));
     // This session's tab of a project whose id no view of it has given yet: nothing to star.
     if (!p.starred && !p.id) return link;
@@ -1771,6 +1814,64 @@ window.Maity = window.Maity || {};
       },
     }, M.icons.star(14));
     return h("span", { class: "outsider-tab" }, link, star);
+  }
+
+  // Explore as a tab of its own (docs/api.md §16.9, "Explore, signed in"; the lead's decision of
+  // 2026-11-25 on the maintainer's design): last in the row while it is open in this browser
+  // session (js/tabs.js exploreOpen), current at /explore, never moved, with no project's views
+  // under it, and closed with its own ×, which sends nothing.
+  function exploreTab(ctx) {
+    if (!M.tabs.exploreOpen(ctx)) return null;
+    const link = h("a", { href: "/explore", class: "explore-tab", "aria-current": ctx.scope === "explore" ? "page" : null },
+      M.icons.compass(14), M.t("tabs.explore"));
+    const close = h("button", {
+      type: "button",
+      class: "tab-close",
+      "aria-label": M.t("tabs.explore_close"),
+      title: M.t("tabs.explore_close"),
+      onclick: () => closeExplore(ctx),
+    }, M.icons.close(12));
+    return h("span", { class: "explore-tab-box" }, link, close);
+  }
+  // The ×: the tab goes for this session; from its own page the reader lands on All projects.
+  function closeExplore(ctx) {
+    M.tabs.setExplore(ctx, false);
+    if (ctx.scope === "explore") { M.route.go("/all"); return; }
+    renderSwitcher(ctx);
+    document.getElementById("header").querySelector("a.explore-link")?.focus();
+    tabsSaid(M.t("tabs.closed", { name: M.t("tabs.explore") }));
+  }
+  // The way to Explore at the right end of the tab row, after the tabs menu: it opens the Explore
+  // tab, or goes to it where it is open (the drawing at /explore opens it). Humans only, as the tabs.
+  function exploreLink(ctx) {
+    if (!M.tabs.managed(ctx)) return null;
+    return h("a", { href: "/explore", class: "explore-link", title: M.t("tabs.explore_title") },
+      M.icons.compass(16), h("span", { class: "explore-link-words" }, M.t("tabs.explore")));
+  }
+  // The Explore tab's page: the projects `/explore` lists, from GET /public/explore, the same answer
+  // for everyone (§16.9). A member's project links to its inbox, its own tab; any other to its
+  // Overview, which opens as the outsider's dashed tab, where its star is (§2.3, §5.1): the list has
+  // none. Whether the reader is a member or starred it is /me's, by the full name.
+  async function exploreView(ctx, root) {
+    append(root, h("h2", null, M.t("explore.heading")), h("p", { class: "muted" }, M.t("explore.intro")));
+    let list;
+    try {
+      list = (await M.api.get("/public/explore")).projects || [];
+    } catch (err) {
+      // `not_found` while the instance serves no public pages.
+      if (err && err.code === "not_found") { append(root, h("p", { class: "explore-none" }, M.t("explore.off"))); return; }
+      throw err;
+    }
+    if (!list.length) { append(root, h("p", { class: "explore-none" }, M.t("explore.none"))); return; }
+    const starred = new Set((Array.isArray(ctx.me.starred) ? ctx.me.starred : []).map((s) => s.full_name));
+    append(root, h("ul", { class: "explore-list" }, list.map((p) => {
+      const member = ctx.projects.some((x) => x.full_name === p.full_name);
+      const mark = member ? M.t("explore.member") : starred.has(p.full_name) ? M.t("explore.starred") : null;
+      return h("li", null, h("a", { class: "explore-card", href: projectLink(p.full_name, member ? "inbox" : "overview"), "data-full-name": p.full_name },
+        projectMark(p.full_name, p.name, member ? (ctx.projectViews || {})[p.full_name] : null, "small"),
+        h("span", { class: "explore-name" }, h("strong", null, p.name), h("small", null, p.full_name)),
+        mark ? h("span", { class: "explore-mark" }, mark) : null));
+    })));
   }
 
   // What a dashed tab is, after its name: on the tab for a screen reader, in the tabs menu for all.
@@ -1932,8 +2033,10 @@ window.Maity = window.Maity || {};
 
   // Beside the row: which projects are tabs, moving the current one, and
   // the row as the account's start set (docs/api.md §5.1 "Start tabs").
+  // For every signed-in human, one without projects too: New project and Explore are in it
+  // (the lead's decision of 2026-11-25).
   function tabsMenu(ctx) {
-    if (!M.tabs.managed(ctx) || (!ctx.projects.length && !M.tabs.row(ctx).length && !M.tabs.starredClosed(ctx).length)) return null;
+    if (!M.tabs.managed(ctx)) return null;
     const menu = M.menuButton({
       label: M.t("tabs.menu"),
       class: "tabs-menu",
@@ -1955,7 +2058,18 @@ window.Maity = window.Maity || {};
         const outsiders = M.tabs.row(ctx).filter((p) => p.outsider).concat(M.tabs.starredClosed(ctx)
           .sort((a, b) => a.name.localeCompare(b.name)));
         const shown = M.tabs.row(ctx);
+        const projects = open.concat(closed).length + outsiders.length > 0;
         return [
+          // The actions first, then the projects (the lead's decision of 2026-11-25): a new project
+          // beside the projects, where one looks for it (the owner, 2026-11-10, tsk-c4dz5x6rb2h8; the
+          // "+" menu keeps its entry); Explore, which opens its tab or goes to it, an action and no
+          // switch; and the row as the start set.
+          { label: M.t("view.new_project"), href: "/new", current: ctx.scope === "new" },
+          { label: M.t("tabs.explore"), href: "/explore", current: ctx.scope === "explore" },
+          ctx.projects.length ? { label: M.t("tabs.keep_at_start"), onSelect: () => {
+            M.tabs.keepAsStart(ctx).then(() => tabsSaid(M.t("tabs.kept")), (err) => tabsSaid(M.t("tabs.keep_failed", { reason: err.message })));
+          } } : null,
+          projects ? { separator: true } : null,
           ...open.concat(closed).map((p) => ({
             label: [p.name, privateMark(p)],
             checkbox: true,
@@ -1985,14 +2099,6 @@ window.Maity = window.Maity || {};
           current && at > 0 ? { label: M.t("tabs.move_left"), onSelect: () => { if (M.tabs.move(ctx, current.id, -1)) tabsMoved(ctx, current.id); } } : null,
           current && at >= 0 && at < placed.length - 1
             ? { label: M.t("tabs.move_right"), onSelect: () => { if (M.tabs.move(ctx, current.id, 1)) tabsMoved(ctx, current.id); } } : null,
-          { separator: true },
-          { label: M.t("tabs.keep_at_start"), onSelect: () => {
-            M.tabs.keepAsStart(ctx).then(() => tabsSaid(M.t("tabs.kept")), (err) => tabsSaid(M.t("tabs.keep_failed", { reason: err.message })));
-          } },
-          // A new project here too, beside the projects, where one looks for it (the owner,
-          // 2026-11-10, tsk-c4dz5x6rb2h8); the "+" menu keeps its entry. Humans only, as there.
-          ctx.me.kind === "human" ? { separator: true } : null,
-          ctx.me.kind === "human" ? { label: M.t("view.new_project"), href: "/new", current: ctx.scope === "new" } : null,
         ].filter(Boolean);
       },
     });
@@ -2310,7 +2416,7 @@ window.Maity = window.Maity || {};
         brand,
         ctx.scope === "project"
           ? [projectMark(ctx.slug, ctx.project.name, ctx.project), h("span", { class: "project" }, ctx.project.name, privateMark(ctx.project))]
-          : h("span", { class: "project" }, ({ new: M.t("header.new"), account: M.t("header.account"), orgs: M.t("header.orgs"), agents: M.t("header.agents"), runners: M.t("header.runners"), invitations: M.t("header.invitations"),
+          : h("span", { class: "project" }, ({ new: M.t("header.new"), explore: M.t("tabs.explore"), account: M.t("header.account"), orgs: M.t("header.orgs"), agents: M.t("header.agents"), runners: M.t("header.runners"), invitations: M.t("header.invitations"),
             "instance-admin": M.t("header.instance_admin"), observe: M.t("header.observe"), person: M.t("header.person") })[ctx.scope] || M.t("header.all")),
         M.api.source === "fixtures"
           ? h("span", { class: "source", title: M.t("header.fixtures.title") }, M.t("header.fixtures"))
@@ -2321,7 +2427,8 @@ window.Maity = window.Maity || {};
       // The projects and their tabs menu.
       h("div", { class: "switcher-row" },
         switcher(ctx),
-        tabsMenu(ctx)),
+        tabsMenu(ctx),
+        exploreLink(ctx)),
       ctx.scope === "project" && ctx.project.state_note ? h("p", { class: "state-note" }, ctx.project.state_note) : null,
       // The time is in the block below; what holds meanwhile, here.
       absence
@@ -3266,6 +3373,9 @@ window.Maity = window.Maity || {};
       // The boot's reads are done: a part nobody asked for (a window read a minute ago) is dropped.
       if (primed) M.api.unprime(primed);
       ctx.projectViews = views;
+      // At /explore the Explore tab is open, also when the address was opened by a reload or a link;
+      // not by a drawing a newer one overtook (its × may have closed the tab meanwhile).
+      if (where.scope === "explore" && seq === renderSeq) M.tabs.setExplore(ctx, true);
       ctx.followRoute = (fn) => { if (seq === renderSeq) followingRoute = fn; };
       if (seq !== renderSeq) return;
       // What the next switch may start from: read just now, or kept and read again below; nothing
@@ -3291,10 +3401,10 @@ window.Maity = window.Maity || {};
     // view may still be loading. A failed read changed nothing to show (watch says it).
     countsRead.then((err) => { if (!err && seq === renderSeq) renderCounts(ctx); });
     const empty = where.scope === "all" && !ctx.projects.length;
-    const known = ["all", "all-jour-fixe", "all-why", "new", "account", "orgs", "agents", "runners", "instance-admin", "observe", "notifications", "chats", "person"].includes(where.scope)
+    const known = ["all", "all-jour-fixe", "all-why", "new", "explore", "account", "orgs", "agents", "runners", "instance-admin", "observe", "notifications", "chats", "person"].includes(where.scope)
       || (item && own(M.views, item.view || item.route) && offered(ctx, item));
     let viewName = "unknown";
-    if (["all", "all-jour-fixe", "all-why", "new", "account", "orgs", "agents", "runners", "instance-admin", "observe", "notifications", "chats", "person", "invitations"].includes(where.scope)) viewName = where.scope;
+    if (["all", "all-jour-fixe", "all-why", "new", "explore", "account", "orgs", "agents", "runners", "instance-admin", "observe", "notifications", "chats", "person", "invitations"].includes(where.scope)) viewName = where.scope;
     // `section`: a view whose tab stands for another (`current`) keeps its own name here.
     else if (known) viewName = (item && (item.section || item.current)) || where.route;
     // The account's tabs (Organisations among them) and a project's Settings (Project and Mine)
@@ -3340,6 +3450,8 @@ window.Maity = window.Maity || {};
         await M.views.observe(ctx, root, where);
       } else if (where.scope === "new") {
         await M.views.newProject(ctx, root);
+      } else if (where.scope === "explore") {
+        await exploreView(ctx, root);
       } else if (where.scope === "account") {
         await M.views.account(ctx, root, where.args);
       } else if (where.scope === "orgs") {
@@ -3386,6 +3498,7 @@ window.Maity = window.Maity || {};
     else if (where.scope === "all-jour-fixe") label = M.t("all.page.jour_fixe");
     else if (where.scope === "all-why") label = M.t("all.page.why");
     else if (where.scope === "new") label = M.t("view.new_project");
+    else if (where.scope === "explore") label = M.t("tabs.explore");
     else if (where.scope === "account") label = M.t("view.account");
     else if (where.scope === "orgs") label = where.args && where.args[0] ? M.t("view.org", { handle: M.orgs.handleOf(where.args[0]) }) : M.t("view.orgs");
     else if (where.scope === "runners") label = M.t("view.runners");

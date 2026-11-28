@@ -12,7 +12,7 @@ from fastapi.responses import JSONResponse
 from pydantic import Field, StringConstraints
 from sqlalchemy import Connection, and_, or_, select
 
-from maity_hub import attached, idempotency, memory, namespace, paging, project_roles
+from maity_hub import access, attached, idempotency, memory, namespace, paging, project_roles
 from maity_hub import tables as t
 from maity_hub.access import Membership, member_row_or_removed, membership
 from maity_hub.auth.caller import Caller, in_attachment
@@ -204,6 +204,7 @@ def post_memory(slug: str, body: EntryIn, request: Request, caller: AnyCaller) -
         mine = membership(conn, caller, slug)
         if mine.trust == "guest":  # writes no memory at all, its own team's included (§2.3)
             raise forbidden("tasks:write", "a guest writes no memory")
+        memory.refuse_outside_write(mine)  # nor does an outsider's agent (§2.3 "Outside")
         if body.store == "team":
             if mine.kind != "agent":
                 raise forbidden(message="team memory is written by the team's agents")
@@ -273,6 +274,8 @@ def delete_memory(
 ) -> JSONResponse:
     def action(conn: Connection) -> idempotency.Outcome:
         mine = membership(conn, caller, slug)
+        if access.reads_from_outside(mine):
+            raise not_found()  # it reads no memory of the project, so no entry is there for it
         row = conn.execute(
             select(t.memory_entry).where(
                 t.memory_entry.c.id == entry_id, t.memory_entry.c.project_id == mine.project.id

@@ -10,7 +10,11 @@ names, and only those, as an `OutsideReader`. Closed by construction (hub/contex
 3f9c2d71, "A signed-in outsider reads a public project through a closed list of member
 routes"): a route is open to an outsider only when its endpoint calls `reader` and carries
 `@outside_read`, and `ProjectRoute` answers an outsider's call to any other project route
-`not_found` before its body or query is read (`gate`). A human who
+`not_found` before its body or query is read (`gate`). An agent with trust `outside` reads
+the project as its owner reads it from outside (§2.3 "Outside"): `reads_from_outside` is the
+one predicate the read paths ask, and its reads of the project are `OUTSIDE_AGENT_READS`,
+refused `not_found` otherwise where its call's membership is resolved (`refuse_outside_read`,
+from `deps`). A human who
 owns an agent or a runner in the project passes the gate on `OWNER_CALLS` alone (§1.3), and
 reads not-done `security` cards no more than any outsider does (`public_cards.shown`). The
 joins routes for an outsider's own agent (`OUTSIDE_JOINS`, §3.1) pass the gate only while
@@ -37,7 +41,7 @@ from maity_hub.auth.caller import (
     session_id_hash,
 )
 from maity_hub.errors import ApiError, forbidden, not_found
-from maity_hub.scopes import GOVERNANCE, has_scope
+from maity_hub.scopes import GOVERNANCE, OUTSIDE, has_scope
 
 # What a bridge never calls under, for the agent it serves (§2.3, "The bridge").
 BRIDGE_WITHHELD = frozenset({*GOVERNANCE, "line:lead"})
@@ -225,6 +229,19 @@ OUTSIDE_READS = frozenset(
     }
 )
 
+# The project routes an agent with trust `outside` reads (§2.3 "Outside"), as (method, path
+# template): an outsider's reads, and beyond them only its own credentials and the events it
+# reads (§8.2, `events.readable_by`). A list, closed by construction as `OUTSIDE_READS` is: a
+# read of the project not named here, a route added later included, answers such an agent
+# `not_found` (`refuse_outside_read`). Request writes are closed as well.
+OUTSIDE_AGENT_READS = OUTSIDE_READS | frozenset(
+    {
+        ("GET", f"{API_PROJECT}/events"),
+        ("GET", f"{API_PROJECT}/events/{{seq}}"),
+        ("GET", f"{API_PROJECT}/members/{{member_id}}/credentials"),
+    }
+)
+
 # The outside reads open to an outsider only while the hub last found the project's repository
 # public, and only in a namespace the instance's token serves (§2.3, §11.4): `ProjectRoute` still
 # passes them through `gate`, which answers an outsider `not_found` before the query is read
@@ -367,6 +384,50 @@ def reader(conn: Connection, caller: Caller, slug: str) -> Membership | OutsideR
         if project.id not in public_projects.public_for_outsiders(conn, [project.id]):
             raise
         return OutsideReader(project, caller.human_id, OutsideRow(caller.human_id))
+
+
+def reads_from_outside(mine: Any) -> bool:
+    """Whether `mine` reads the project as an outsider does (§2.3): an `OutsideReader`, or a
+    membership with trust `outside`, an outsider's own agent ("Outside"), which reads at most
+    what its owner reads from outside. Its row's trust, not `Membership.trust`, and the trust
+    alone: an agent kept at `member` or `guest` whose owner is no member reads as a member.
+    The one predicate every read path asks of its reader for the cards, the project's view,
+    the members and the events."""
+    if isinstance(mine, OutsideReader):
+        return True
+    row = getattr(mine, "row", None)
+    return getattr(row, "trust", None) == OUTSIDE
+
+
+def outside_agent_may_read(method: str, route: str) -> bool:
+    """Whether an agent with trust `outside` may make this call as far as the reads go: a call
+    that is no read (not `GET` or `HEAD`), one outside the project's routes, or one of
+    `OUTSIDE_AGENT_READS`. `route` is the template of the route that answers
+    (`request_stats.route_of`)."""
+    if method not in ("GET", "HEAD"):
+        requests = f"{API_PROJECT}/requests"
+        return route != requests and not route.startswith(requests + "/")
+    if route != API_PROJECT and not route.startswith(API_PROJECT + "/"):
+        return True
+    return ("GET", route) in OUTSIDE_AGENT_READS
+
+
+def refuse_outside_read(conn: Connection, method: str, route: str, membership_ids: Any) -> None:
+    """`not_found` for a read of the project an agent with trust `outside` may not make
+    (`outside_agent_may_read`), as an outsider is answered (§2.3): decided where the call's
+    membership is resolved, before any route runs and before its query is read. `membership_ids`
+    are the call's own membership and, for a bridge's call, the bridge's: either with trust
+    `outside` closes the read. One read, only for a read not on the list."""
+    if outside_agent_may_read(method, route):
+        return
+    ids = [i for i in membership_ids if i is not None]
+    if not ids:
+        return
+    outside = conn.execute(
+        select(t.membership.c.id).where(t.membership.c.id.in_(ids), t.membership.c.trust == OUTSIDE)
+    ).first()
+    if outside is not None:
+        raise not_found()
 
 
 def _session_human(conn: Connection, cookie: str) -> str | None:

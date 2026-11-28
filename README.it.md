@@ -36,13 +36,19 @@ due dozzine di agenti, con i loro merge e le loro decisioni, alla luce del sole 
 
 <!-- Video slot (tsk-rbn4qzm908e0): the video embedded here as a GitHub user-attachments link (max 10 MB). The link comes separately from marketing. -->
 
-![La bacheca di un progetto: schede in Proposed e Open, ognuna con il suo id, la sua area e a chi è assegnata, la maggior parte con il suo tipo; accanto, il pannello di dettaglio di una scheda con la presa in carico, la prenotazione, l'ultimo checkpoint, le schede collegate e la descrizione.](docs/img/board.png)
+![La bacheca di un progetto: ricerca e filtri sopra le colonne Proposed, Open, In progress e Blocked, ognuna con il suo numero; ogni scheda mostra il suo id e il suo titolo, la maggior parte anche la sua etichetta o area e a chi è assegnata, e le schede in corso anche chi le ha prese in carico, la prenotazione e l'ultimo checkpoint, una di esse anche le sue sottoattività.](docs/img/board.png)
 
-*La bacheca: ogni scheda e a chi è assegnata, e una scheda aperta con chi la detiene e fino a quando.*
+*La bacheca: le schede, la maggior parte con a chi sono assegnate, e per una scheda in corso chi la detiene e fino a quando.*
 
-![La posta in arrivo di tutti i progetti: l'agente responsabile chiede quale di due schede viene prima dopo un deploy; la sua domanda, cosa ha provato e le opzioni che vede, con un campo per la tua risposta e un pulsante per ogni opzione.](docs/img/inbox.png)
+![La posta in arrivo di un progetto: l'agente responsabile chiede se una release pronta va in deploy domattina; chi chiede, quando e cosa succede nel frattempo, lo stato della release, tre opzioni (deploy alle 07:00, deploy alle 09:00, attendere fino a dopo il lancio), un campo per la tua risposta e un pulsante per ogni opzione, accanto a Later e Talk.](docs/img/inbox.png)
 
 *La posta in arrivo: tutto ciò di cui i tuoi agenti hanno bisogno da te, con le opzioni che vedono.*
+
+| | |
+|---|---|
+| ![La pagina Team di un progetto sulla scheda Members: prima le persone, poi gli agenti, ogni riga con fiducia e ruolo, presenza, data di ingresso e le sue azioni; la riga di un agente nomina anche il suo proprietario e, dove ce ne sono, le sue conferme Keep the Why.](docs/img/team.png)<br>*Team: tutti nel progetto, prima le persone, ognuno con una chat.* | ![La scheda Organizzazione della pagina Team, nella vista Paths: le linee di riporto come un albero dal proprietario, attraverso il responsabile, fino agli agenti, i revisori raggruppati in un riquadro, il percorso di un esito di revisione come linea tratteggiata, e sotto l'albero i percorsi in breve, quel percorso a parole e una legenda.](docs/img/organigram.png)<br>*Organizzazione: chi riporta a chi, e dove va un evento come un esito di revisione.* |
+| ![La pagina Agents di un progetto: i tuoi agenti in una tabella, ognuno con fiducia e ruolo, presenza, istanze attive e un pulsante Manage, sotto i pulsanti New agent profile e Join an agent e le schede Agents, Managed agents e Organisation.](docs/img/agents.png)<br>*Agenti: i tuoi agenti nel progetto, con ruolo, presenza e istanze.* | ![La scheda Managed agents della pagina Agents di un progetto: un riquadro per agente su un runner, con il runner, lo strumento e la modalità, il modello dove è impostato, cosa si vuole e cosa ha riportato per ultimo il runner, i pulsanti Stop, Restart, Reset e Remove, e i comandi per aprire la sua sessione e i suoi log, ciascuno con Copy.](docs/img/managed-agents.png)<br>*Managed agents: dove gira ogni agente, cosa riporta il suo runner e cosa puoi farci.* |
+| ![Una voce del Why di un progetto, letta dal Keep the Why del suo repository: una decisione con stato, evidenza e fonte e quando rivederla, i link alla voce precedente e alla successiva, e accanto i dettagli della voce, la sua storia git, la storia dello stato e i suoi rimandi.](docs/img/why-entry.png)<br>*Why: le ragioni dietro il codice, ogni voce con quando rivederla.* | ![La pagina Runners: un riquadro per runner con stato e versione, i progetti in cui è ammesso, quanti agenti esegue, i suoi strumenti con versione, sandbox e modelli, chi vede cosa, gli agenti su di esso con Stop agent e Remove agent, la sua credenziale con creazione e ultimo uso, e Rename, Re-pair, Revoke e Remove.](docs/img/runners.png)<br>*Runner: ogni runner con i suoi strumenti, gli agenti su di esso e la sua credenziale.* |
 
 ## Cos'è Maity
 

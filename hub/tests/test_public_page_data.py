@@ -11,7 +11,7 @@ from typing import Any
 import pytest
 from sqlalchemy import select
 
-from maity_hub import avatars, public_snapshot
+from maity_hub import avatars, public_design, public_members, public_pages, public_snapshot
 from maity_hub import tables as t
 from tests.test_avatar_public import digest
 from tests.test_avatars import image, put_agent, put_human
@@ -112,6 +112,50 @@ def test_the_online_names_carry_the_picture_their_page_shows(world: World, hub: 
     worker.run_once()
     (anna,) = [p for p in snapshot(world)["online"]["named"] if p["handle"] == "anna"]
     assert anna["picture"].endswith(digest(url))
+
+
+def test_a_project_render_reads_its_members_once(
+    world: World, hub: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The Members figure, the pictures and who is online come from one read of the members
+    (`public_members.members`), not one each (tsk-3q4kjw4dn610)."""
+    reads: list[str] = []
+    real = public_members.members
+
+    def counted(conn: Any, project_id: str, only: Any = None) -> Any:
+        reads.append(project_id)
+        return real(conn, project_id, only)
+
+    monkeypatch.setattr(public_members, "members", counted)
+    with world.migrated.begin() as conn:
+        public_pages.refresh(conn, hub, "project", world.project_id)
+    assert reads == [world.project_id]
+
+
+def test_a_member_without_a_page_of_its_own_is_no_link_in_any_card() -> None:
+    """`public_design.linked`: a route is a link, anything else a plain element of the same
+    class and attributes (§16.9); the cards of the Overview, the Team and a person's agents
+    differ only in what `member_card` is given."""
+    nobody = {"name": "N", "handle": "n", "page": None, "picture": None}
+    named = {**nobody, "page": "/n"}
+    for tag, page in (("a", "/n"), ("div", None), ("div", "https://evil.example/x")):
+        card = public_design.member_card({**nobody, "page": page}, "hu", attrs=' data-agent="n"')
+        assert card.startswith(f'<{tag} class="mcard"') and ' data-agent="n"' in card
+        assert ("href=" in card) == (tag == "a")
+    assert public_design.who(named) == '<a href="/n">N</a>'
+    assert public_design.who(nobody) == "<span>N</span>"
+    assert public_design.linked(None, "x", plain_attrs=' role="img"') == '<span role="img">x</span>'
+
+
+def test_the_figure_sets_are_one_list(world: World) -> None:
+    """An agent's statistics carry exactly `public_design.STAT_KEYS`, in this order, and a
+    person's page the first three counters of them (§16.9)."""
+    from maity_hub import public_agents
+
+    with world.migrated.connect() as conn:
+        assert list(public_agents.statistics(conn, [])) == list(public_design.STAT_KEYS)
+    assert list(public_design.PERSON_FIGURES) == list(public_design.STAT_KEYS[:3])
+    assert "handovers" not in public_design.PERSON_FIGURES
 
 
 def test_an_agent_s_page_names_its_owner_with_the_owner_s_picture(world: World) -> None:

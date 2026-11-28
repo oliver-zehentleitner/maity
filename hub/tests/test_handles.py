@@ -29,25 +29,25 @@ def test_a_human_renames_and_keeps_the_old_handle_as_an_alias(
 ) -> None:
     owner = flow.human(make_client, migrated)
     assert owner.get("/me").json()["member"]["aliases"] == []
-    response = owner.patch("/me", {"handle": "boss"})
+    response = owner.patch("/me", {"handle": "big-boss"})
     assert response.status_code == 200, response.text
     member = response.json()["member"]
-    assert (member["handle"], member["aliases"]) == ("boss", ["maintainer"])
+    assert (member["handle"], member["aliases"]) == ("big-boss", ["maintainer"])
     # A rename to the same handle is a no-op: 200, nothing changes.
-    again = owner.patch("/me", {"handle": "boss"})
+    again = owner.patch("/me", {"handle": "big-boss"})
     assert again.status_code == 200 and again.json()["member"]["aliases"] == ["maintainer"]
     # Taking an own alias back leaves the list and gives up the current handle.
     back = owner.patch("/me", {"handle": "maintainer"}).json()["member"]
-    assert (back["handle"], back["aliases"]) == ("maintainer", ["boss"])
+    assert (back["handle"], back["aliases"]) == ("maintainer", ["big-boss"])
 
 
 def test_a_handle_or_alias_of_another_is_taken(
     make_client: ClientFactory, migrated: Engine
 ) -> None:
     owner = flow.human(make_client, migrated)
-    factory.human(migrated, "other")
-    assert owner.patch("/me", {"handle": "boss"}).status_code == 200
-    taken = owner.patch("/me", {"handle": "other"})
+    factory.human(migrated, "other-one")
+    assert owner.patch("/me", {"handle": "big-boss"}).status_code == 200
+    taken = owner.patch("/me", {"handle": "other-one"})
     assert taken.status_code == 400 and _fields(taken) == {"handle": "taken"}
     # Nobody else can take the alias the maintainer gave up.
     third = flow.human(make_client, migrated, "third")
@@ -112,7 +112,7 @@ def test_a_rename_is_an_event_and_a_ticker_item(
     owner = flow.human(make_client, migrated)
     flow.project(owner)
     agent = flow.agent(make_client, owner, agent={"handle": "bee", "display_name": "Bee"})
-    assert owner.patch("/me", {"handle": "boss"}).status_code == 200
+    assert owner.patch("/me", {"handle": "big-boss"}).status_code == 200
     with migrated.connect() as conn:
         rows = conn.execute(select(t.event.c.kind, t.event.c.payload).order_by(t.event.c.seq)).all()
     updates = [
@@ -122,7 +122,7 @@ def test_a_rename_is_an_event_and_a_ticker_item(
     texts = [
         r.payload["text"] for r in rows if r.kind == "ticker" and r.payload["type"] == "rename"
     ]
-    assert "maintainer is now boss" in texts and "maintainer/bee is now boss/bee" in texts
+    assert "maintainer is now big-boss" in texts and "maintainer/bee is now big-boss/bee" in texts
     assert agent.id
 
 
@@ -149,8 +149,8 @@ def test_a_mention_of_an_alias_reaches_the_member_with_the_current_handle(
         (m["member_id"], m["handle"], m["name"]) for m in sent.json()["payload"]["mentions"]
     ] == [(agent.id, "wasp", "maintainer/wasp")] * 2
     # After the owner's rename either owner part names the same profile.
-    assert owner.patch("/me", {"handle": "boss"}).status_code == 200
-    again = _say(owner, "@maintainer/wasp and @boss/bee")
+    assert owner.patch("/me", {"handle": "big-boss"}).status_code == 200
+    again = _say(owner, "@maintainer/wasp and @big-boss/bee")
     assert [m["member_id"] for m in again.json()["payload"]["mentions"]] == [agent.id] * 2
 
 
@@ -183,11 +183,11 @@ def test_a_human_whose_current_handle_it_is_comes_first_but_not_through_an_alias
     first = _say(owner, "@maintainer")
     assert first.status_code == 201
     assert [m["member_id"] for m in first.json()["payload"]["mentions"]] == [owner.id]
-    assert owner.patch("/me", {"handle": "boss"}).status_code == 200
+    assert owner.patch("/me", {"handle": "big-boss"}).status_code == 200
     through_alias = _say(owner, "@maintainer")  # an alias of the human and the agent's handle
     assert through_alias.status_code == 400
     assert through_alias.json()["error"]["details"]["mentions"] == {
-        "maintainer": ["anna/maintainer", "boss"]
+        "maintainer": ["anna/maintainer", "big-boss"]
     }
 
 
@@ -196,22 +196,22 @@ def test_the_owner_part_of_a_project_address_follows_aliases_and_a_rename_keeps_
 ) -> None:
     owner = flow.human(make_client, migrated)
     flow.project(owner)
-    assert owner.patch("/me", {"handle": "boss"}).status_code == 200
+    assert owner.patch("/me", {"handle": "big-boss"}).status_code == 200
     # The old handle still opens the project, on every route under it.
     for path in ("", "/members", "/tasks", "/rules"):
         old = owner.get(f"/projects/maintainer/maity{path}")
-        new = owner.get(f"/projects/boss/maity{path}")
+        new = owner.get(f"/projects/big-boss/maity{path}")
         assert old.status_code == new.status_code == 200, (path, old.text)
     # The public badge keeps its old address as well.
     policy = {"policy": {"badge": "members"}, "reason": "show"}
-    assert owner.patch("/projects/boss/maity", policy).status_code == 200
+    assert owner.patch("/projects/big-boss/maity", policy).status_code == 200
     public = make_client()
     for prefix in ("/badge/{}/maity.svg",):
-        assert public.get(prefix.format("boss")).status_code == 200
+        assert public.get(prefix.format("big-boss")).status_code == 200
         assert public.get(prefix.format("maintainer")).status_code == 200, prefix
     # The login takes the address, not a handle (§2.1): the rename leaves it as it was.
     login = factory.login(make_client(), owner.id)
-    assert login.status_code == 200 and login.json()["member"]["handle"] == "boss"
+    assert login.status_code == 200 and login.json()["member"]["handle"] == "big-boss"
     # A new project cannot take a slug under the alias either: it is the same namespace.
     clash = owner.post("/projects", {"slug": "maity", "name": "Again"})
     assert clash.status_code in (400, 409)
@@ -233,10 +233,10 @@ def test_a_join_a_registration_and_the_operator_refuse_a_taken_handle_or_alias(
         "/projects/maintainer/maity/joins", {"agent": {"handle": "bee", "display_name": "Again"}}
     )
     assert joined.status_code == 400 and _fields(joined) == {"handle": "taken"}
-    assert owner.patch("/me", {"handle": "boss"}).status_code == 200
+    assert owner.patch("/me", {"handle": "big-boss"}).status_code == 200
     with migrated.connect() as conn:  # registration: the human's old handle is an alias now
         assert check_names(conn, "maintainer", "Someone") == {"handle": "taken"}
-        assert check_names(conn, "boss", "Someone") == {"handle": "taken"}
+        assert check_names(conn, "big-boss", "Someone") == {"handle": "taken"}
         assert check_names(conn, "fresh-one", "Someone") == {}
 
 
@@ -318,9 +318,9 @@ def test_the_admin_search_finds_an_account_by_an_alias(
     make_client: ClientFactory, migrated: Engine
 ) -> None:
     admin = flow.human(make_client, migrated)  # the earliest human: the instance admin
-    assert admin.patch("/me", {"handle": "boss"}).status_code == 200
+    assert admin.patch("/me", {"handle": "big-boss"}).status_code == 200
     found = admin.get("/admin/users", params={"q": "maintainer"})
-    assert [u["handle"] for u in found.json()["items"]] == ["boss"]
+    assert [u["handle"] for u in found.json()["items"]] == ["big-boss"]
 
 
 def test_an_agent_naming_a_handle_is_forbidden_even_when_it_is_null_and_a_human_needs_a_field(
@@ -346,12 +346,12 @@ def test_the_register_follows_a_rename_and_organisations_share_the_namespace(
     assert org.status_code == 201, org.text
     # A human cannot take an organisation's handle, as a rename or as a first handle.
     assert _fields(owner.patch("/me", {"handle": "oz-team"})) == {"handle": "taken"}
-    assert owner.patch("/me", {"handle": "boss"}).status_code == 200
+    assert owner.patch("/me", {"handle": "big-boss"}).status_code == 200
     with migrated.connect() as conn:
         register = dict(
             conn.execute(select(t.handle_register.c.owner_id, t.handle_register.c.handle)).all()
         )
-    assert register[owner.id] == "boss"
+    assert register[owner.id] == "big-boss"
     # The handle given up is an alias: an organisation cannot be created under it either.
     clash = owner.post("/orgs", {"handle": "maintainer", "display_name": "Old"})
     assert clash.status_code == 400 and _fields(clash) == {"handle": "taken"}
@@ -367,20 +367,20 @@ def test_lookups_by_handle_follow_aliases_where_a_person_is_named(
     owner = flow.human(make_client, migrated)
     profile = owner.post("/agents", {"handle": "bee", "display_name": "Bee"}).json()
     assert owner.patch(f"/agents/{profile['id']}", {"handle": "wasp"}).status_code == 200
-    assert owner.patch("/me", {"handle": "boss"}).status_code == 200
+    assert owner.patch("/me", {"handle": "big-boss"}).status_code == 200
     with migrated.begin() as conn:
         # An invitation by the handle given up still finds the account (§6.24).
         assert org_invitations._invitee(conn, "maintainer") == owner.id
-        assert org_invitations._invitee(conn, "boss") == owner.id
+        assert org_invitations._invitee(conn, "big-boss") == owner.id
         # A report's global name takes current names only, never an alias (§16.8).
-        assert reports._agent_by_name(conn, "boss/wasp")[0].id == profile["id"]
-        for former in ("maintainer/bee", "maintainer/wasp", "boss/bee", "nobody/wasp"):
+        assert reports._agent_by_name(conn, "big-boss/wasp")[0].id == profile["id"]
+        for former in ("maintainer/bee", "maintainer/wasp", "big-boss/bee", "nobody/wasp"):
             with pytest.raises(ApiError):
                 reports._agent_by_name(conn, former)
     # A project may be created under the namespace of one's own alias.
     created = owner.post("/projects", {"slug": "shop", "name": "Shop", "owner": "maintainer"})
     assert created.status_code == 201, created.text
-    assert created.json()["full_name"] == "boss/shop"
+    assert created.json()["full_name"] == "big-boss/shop"
 
 
 def test_a_null_handle_renames_nothing(make_client: ClientFactory, migrated: Engine) -> None:
@@ -483,7 +483,8 @@ def test_owner_create_refuses_a_load_test_handle(
     assert "is reserved" in capsys.readouterr().err
 
 
-@pytest.mark.parametrize("handle", ["lt-x", "lt-", "lt7", "alt-7", "lt-7a"])
+# Six characters at least: a shorter one is reserved for its length (§16.11).
+@pytest.mark.parametrize("handle", ["lt-xyz", "lt-abc", "lt7777", "alt-77", "lt-7ab"])
 def test_a_handle_near_the_load_test_pattern_may_still_be_taken(
     migrated: Engine, handle: str
 ) -> None:
@@ -496,9 +497,9 @@ def test_a_near_handle_is_accepted_on_rename_and_for_an_organisation(
     make_client: ClientFactory, migrated: Engine
 ) -> None:
     owner = flow.human(make_client, migrated)
-    renamed = owner.patch("/me", {"handle": "lt-x"})
+    renamed = owner.patch("/me", {"handle": "lt-xyz"})
     assert renamed.status_code == 200, renamed.text
-    made = owner.post("/orgs", {"handle": "alt-7", "display_name": "Alt"})
+    made = owner.post("/orgs", {"handle": "alt-77", "display_name": "Alt"})
     assert made.status_code == 201, made.text
 
 

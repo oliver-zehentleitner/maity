@@ -804,7 +804,8 @@ without the card history and the member and card fields the contract opens to an
 **Revisit when:** the login is no longer the way a mail link goes on after a sign-in
 
 The pages themselves worked; the shell around them does not know visitors and shows the login. So `/explore`,
-which the landing page's button named and nothing served, is now a page for everyone, a slash at the end of a
+which the landing page's button named and nothing served, is now a page for every visitor (a signed-in human
+gets the shell there since 2026-11-25, b723d46b), a slash at the end of a
 page's address leads to the page, and the join host keeps `/<owner>/<slug>…`. A dashboard address under a
 public project stays the login and links the page. A signed-in non-member first went to `?as=public`; since
 2026-11-02 they read the same view in the app at the same address (70c80e4f), and since 2026-11-03 the
@@ -1323,9 +1324,10 @@ the policy admits only `'self'`.
 point 5; contract `docs/api.md` §16.9
 **See:** public-pages.md — 3ebf3861-2939-45c2-a459-1949ddcf1cef — as of 2026-11-14
 
-`public_projects.team_details` adds to each entry of `people` and `agents` the picture, the membership's role and,
-for an agent, the harness. The picture follows the member's own page: a person's only while `public_profile` is on,
-an agent's always. The role is the one the Team tab shows, and the harness is `public_agents.latest_session` over the
+`public_projects.team_details` adds to each entry of `people` and `agents` the membership's role and, for an
+agent, the harness; `render_project` adds the picture, read once for the page with the other members' (entry
+`5fc710f7-f9c3-4622-91bb-146baab12f57`, below). The picture follows the member's own page: a person's only
+while `public_profile` is on, an agent's always. The role is the one the Team tab shows, and the harness is `public_agents.latest_session` over the
 agent's page's projects, the value its own page shows. `online.named` and the agent page's `owner` take the
 picture by the same rule. `members` is the length of the Team tab's list, both the members it names and those it only
 counts, and stands next to `statistics`, not inside it. Each ticker entry gets `merge`: `{pr, title, author,
@@ -1481,3 +1483,201 @@ drift apart, as the badge had already drifted from the page, which is the bug th
 
 The extraction and its reason are confirmed (the agreed plan); the rejected alternative is inferred, since the plan
 names none for this point, and it sets the entry's Evidence.
+
+## The page kinds end in one function, `public_pages.page`; the digest inputs stay as each kind had them
+
+**Id:** 1516e07e-b4ed-47d9-8c97-4cbe9e81295e
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the clean-up audit of the rendering and stored public pages (card tsk-hgnbapyw7hnh, items 8, 14, 17) and the card tsk-ahf9z6r8x8pa that carries it out; `public_pages.page`
+**See:** public-pages.md#the-hub-renders-the-public-project-pages-in-the-dashboards-design-as-a-pure-function-of-their-data-one-stylesheet-home-a-format-guard — 5262b6b7-c4bf-472e-9a05-06f1a139a177 — as of 2026-11-25
+
+The renderers of the person, agent, organisation, project, project-view and card kinds each ended with the same
+four steps: the canonical address from the hub's public URL, a SHA-256 over a NUL-joined tuple, `render.page_document`
+and a `Page` with `lastmod` now. They are `public_pages.page(hub, path, title, content, inputs, view, data, indexed,
+styled)` now: `inputs` is what the kind hashes besides the path and the content (the display name, or the project's
+name; the person page adds `on` or `off` for its switch), so every digest is the one the kind had: keeping the digest
+avoids a digest-driven rewrite and keeps the existing lastmod when the digests match; the startup render still runs.
+The organisation page keeps `styled=True`, the one kind still on the inline stylesheet.
+The three other places that built an agent page's address use `public_agents.path_of`, and a kind named
+beside its constant (`organisation`, `person`) uses the constant. The Board, Team, Organisation and Why pages
+register `public_projects.targets` as their own: the views follow the project's page, so the targets are the same
+query, and a second copy could drift from it.
+
+**Reason:** a change to the frame's arguments (a `lang`, a robots rule, the title form) is one place instead of six, and
+a kind that differs from the rest (the organisation page's `styled=True`) shows in its call instead of hiding in a copy.
+
+**Rejected alternative:** a helper that hashes the path, the name and the content itself, so that the kinds pass no
+`inputs`. The person page's switch is in its digest and its `indexed` follows it. Keeping the digest avoids a
+digest-driven rewrite and keeps the existing lastmod when the digests match; the startup render still runs. A
+digest that changed for every kind would not skip that startup render; it would only add a digest-driven rewrite
+and a new lastmod. Nothing is gained by that in a change that is meant to change no output.
+
+The audit's item 13 (the person page's statistics filter by hand over `STAT_LABELS`) no longer exists on `main`: the
+person page's figures come from `public_design`, and `public_projects.stat_labels` is gone, so nothing was changed for it.
+
+## The public pages name their members by one rule: pictures, one read of the members per render, one link, one card, one monogram, one figure list
+
+**Id:** 5fc710f7-f9c3-4622-91bb-146baab12f57
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the clean-up audit of the rendering and stored public pages (card tsk-hgnbapyw7hnh, round 3) and the card tsk-3q4kjw4dn610 that carries it out; the diff of every stored page, its `data` and the answers of the public routes on one world before and after
+**See:** public-pages.md#a-projects-page-data-names-its-members-with-picture-role-and-harness-a-new-picture-renders-it-at-once — 0e401fc9-0080-4289-8488-cb4a6fb5ad8f — as of 2026-11-25
+
+Each of these was written twice or more, and each copy could drift from the one the pages are drawn by.
+
+- **Pictures.** The one rule is `public_projects.member_pictures` (a person's only while `public_profile` is on, an
+  agent's always); the Team and Organisation tabs and the members view an outsider reads reach it through
+  `public_project_views.shown_pictures`. `public_snapshot.online` had a second copy that read `public_profile`
+  again, which `Person.profile_on` already holds; it takes the pictures now. `render_project` reads the members
+  once (`public_project_views.members`) and hands that read to `online`, to `shown_pictures` (the pictures of
+  `people`, `agents` and `online.named` are one read) and to the Members figure (`len`), where it read them twice and
+  asked the pictures twice. `team_details` no longer adds the picture, only the role and the harness. The shown
+  members of `members` and the humans and agents of `team` are the same set (the same served rule, an isolated agent
+  in neither), so no entry changes.
+- **Names the views share.** `public_project_views.shown_data`, `holder_data` and `pictured` are public: the
+  snapshot and the card pages imported them with a leading underscore.
+- **Monogram.** `public_design.monogram(name, slug)` only; the project card on `/explore` passes its slug
+  (the last segment of the full name). The second function of `public_projects` is gone.
+- **Link or plain.** `public_design.linked(page, inner, cls, plain, attrs, plain_attrs)` replaces the six places that
+  chose between a link to a route and a plain element. The fallback element stays what each place had (`span` for a
+  name, a face and an organisation node, `div` for a card), and so do the attributes.
+- **Member card.** `member_inner` (the picture, the name, the `@handle`, the facts) is the one markup; `member_card`
+  adds the dot and the link for the Overview, the Team tab and a person's agents (`team_card` and `agent_cards` only
+  say what the facts are), and the organisation node uses `member_inner` and `linked`.
+- **Figures.** `public_design.COUNTERS`, `MEDIANS`, `STAT_KEYS` (both, in the order `public_agents.statistics`
+  writes the totals) and `PERSON_FIGURES` (the first three counters) are the only lists. `public_projects.STAT_LABELS`
+  is gone: its English words were read nowhere, the pages take theirs from `visitor.stat.<key>`. The two counters
+  `public_agents.statistics` always fills (`cards_done`, `handovers`) stay named in place: they are a rule of that
+  function, not a figure set.
+
+**Reason:** the page's rules (who is named, which picture, which element) change in one place, and a kind that differs
+from the others shows in a call (`plain="div"`, a different pixel size) instead of in a copy that was not changed with
+the rest.
+
+**Rejected alternative:** one fallback element for every link (a `span` for the cards too), and one card builder with a
+switch for each place's shape. The first changes the HTML of every stored project and person page, which every page
+digest hashes, so each would be rewritten and dated again; the second needs five switches for the organisation node
+(the size, the class, the role after the name, the fallback, no facts) and hides what differs. A module for
+`shown_data` and `holder_data` was left out: they read `Person`, and stay beside it. A picture read for the page in
+`team()` itself was left out too: `team` is also the source of the names, owners and statistics.
+
+A mechanical change: the stored pages, their `data` and the public routes' answers on one world (people, agents, an
+organisation, a second project, cards, an online agent, a profile switched off) are the same before and after.
+
+## Who a public page names lives in one module; `team` is the shown members of that read
+
+**Id:** cc4685d4-6489-4858-bd5e-cb0f490e853f
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the clean-up audit of the rendering and stored public pages (card tsk-hgnbapyw7hnh, items 7, 9 and 11) and the card tsk-mtyyaqj39c22 that carries it out; the lead's scope on that card; the diff of every stored page, its `data` and the answers of the public routes on one world before and after; reviews A2755 and A2756 of PR #2246 (the handle order under a PostgreSQL locale), and a run of the team tests on a PostgreSQL database with a locale that weighs the hyphen last; reviews A2757 and A2758 (a membership change between the members read and the order read), and regression tests that fail with the earlier form; reviews A2770 and A2771 (what the shared read does and does not fix, the order of missing profiles)
+**See:** public-pages.md#the-public-pages-name-their-members-by-one-rule-pictures-one-read-of-the-members-per-render-one-link-one-card-one-monogram-one-figure-list — 5fc710f7-f9c3-4622-91bb-146baab12f57 — as of 2026-11-25
+
+Who a page names, and how it writes their name, lives in `public_members`: `Person`, `members`,
+`person_data`, `shown_data`, `holder_data`, `pictured` and `shown_pictures`, under the public
+names they already had. The snapshot, the card pages, the outsider's members view and the
+project page import them from there. A module for them was left out of the earlier clean-up
+because `Person` stayed in `public_project_views`; they move together now.
+
+`team` is those `members` shows, split by human, each list in the order the database's
+`ORDER BY handle` gives their own rows, read as ids for exactly those principals. Hidden
+members (a hold, an account not served) stay in `members` unnamed; `team` drops them. An
+isolated agent is in neither. `render_project` reads the members once and hands that read to
+`team`, to the pictures and to who is online, so who the page names, who the Members figure
+counts and whose pictures and presence are looked up cannot come from two membership reads.
+The shared read is a shared membership selection, not a snapshot of the page: the roles
+(`team_details`), the profile order, the pictures, the online state and the statistics are
+later reads, each as the database has it when it runs (`public_snapshot.online` reads the
+memberships again by the shared ids).
+
+The order read does not filter the memberships again. Under READ COMMITTED (and on MariaDB,
+where the render's `xact_lock` is no lock) a member can leave, or an agent be isolated,
+between `members` and `team`; a second membership read then lacked a principal the first one
+named, and `team` failed with a `KeyError`, taking the project's page offline (reviews A2757,
+A2758 of PR #2246). Now `team` names exactly the shown members of the read it is given, even
+one that changed since: who is named stays the shared selection, and the member change
+renders the page again (its own `touch`). Every member of the read comes back once, two
+memberships of one principal together at its handle; those whose profile row is gone
+meanwhile have no handle and follow the others, grouped by principal in the order each
+principal first appears, each group in its own order (missing principals A and B, input A1,
+B1, A2: A1, A2, B1), not the input's person order. `agent_statistics` still reads which
+agents count itself, so an agent isolated after the read is named but has no counters on
+that render: the statistics rightly leave it out.
+
+The audit's item 7, a set-based `served` over lists, is already on `main` as `served_of` /
+`served_among` / `standing_of` (since #2077). The landing page's count, the organisation
+page, a person's listed projects and an agent's memberships already pass their rows to
+`served_of`. The landing page only counts the served projects; `memberships` returns the
+rows and their membership ids and reads no names. The full names are read once, with
+`namespace.full_names`, by the callers that show them: the organisation page, a person's
+listed projects and an agent's page. `/explore` is left as it is, because #2227 and #2233
+rewrite it, and a follow-up after they merge is smaller.
+
+**Reason:** the rule for who is named changes in one place, and `team` cannot drift from the
+members the views use. The set-based served rule already had one function; renaming it would
+add a second name for the same thing. The order stays the database's because the change is
+mechanical: PostgreSQL compares text by its locale (persistence.md), and a locale such as
+`en_US.utf8` weighs a hyphen last (`aaaa-a`, `aaaaaa`, `aaaa-b`), where Python, SQLite and
+MySQL's binary tables compare code points (`aaaa-a`, `aaaa-b`, `aaaaaa`). A handle may hold a
+hyphen, so a Python sort would reorder `people` and `agents` on such a database and render
+every affected project page with a new digest.
+
+For the order of an earlier read, two other forms were in contention. The ordered
+intersection of a second membership read with the members shown would not fail, but drops
+from the names whoever changed in between, while the Members figure and who is online of the
+same render still come from the first read: one page from two reads. Reading visibility and
+order in one statement, by ordering `members` itself by handle, changes the order of the read
+its other users (the Team tab, the snapshot) iterate. Catching the `KeyError` would only move
+the failure to a silent guess.
+
+**Rejected alternative:** rewrite `/explore` in the same change, or introduce `served_projects`
+beside `served_of`. The first collides with #2227 and #2233; the second is a new name for a
+function that already exists. Reintroducing the old private names (`_shown`, `_holder`) when
+moving the helpers was left out: they are already public, and a move should not rename them
+back. Sorting `team` in Python by code point, as the Team tab's `members_data` does, was left
+out too: it is the cross-engine order, but it changes the pages on a PostgreSQL database with
+a locale, which this change was not to do; making the project page's order bytewise is a
+decision of its own.
+
+A mechanical change: the stored pages, their `data` and the public routes' answers on one
+world (people, agents, an organisation, a second project, cards, an online agent, a profile
+switched off) are the same before and after. A test compares `team` with the row-wise form
+on hyphenated handles of people and of several agents; on a PostgreSQL database with such a
+locale it fails for a Python sort and passes for the database's order.
+
+## A signed-in `/explore` is the shell, and `GET /public/explore` lists the projects the same for everyone
+
+**Id:** b723d46b-9810-4de0-b29c-0f1ad1f72c48
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-r6bk2py3ezwg (a signed-in Explore inside the dashboard, on the maintainer's design of 2026-11-25); the lead's decision of 2026-11-25 on the plan for it (the route, the reads, the cache rule, two pull requests); contract `docs/api.md` §16.9 "Explore, signed in", §16.11; `routes.pages.explore` and `read_explore`, `public_projects.explore_rows`
+**See:** public-pages.md#a-visitor-on-the-way-to-a-public-page-never-ends-at-the-login — 439a36e9-c05c-4c87-a3d3-1cd2ff5061d7 — as of 2026-11-25
+**Revisit when:** the dashboard's Explore needs something per reader that `GET /me` does not carry, or a shared cache in front of the hub stops honouring `Vary: Cookie`
+
+`/explore` answers a request with a live session, unless it asks `?as=public`, with the app shell (`no-cache`,
+`Vary: Cookie`, as every shell), and the dashboard draws Explore there as a tab of its own. A visitor, and anyone
+with `?as=public`, gets the page as before. The dashboard reads its list from `GET /public/explore`,
+`{"projects": [{name, full_name}]}`, the same answer for everyone (`public, max-age=60`, an `ETag`, no
+`Vary: Cookie`), from `public_projects.explore_rows`, the one listing the page draws as well. Whether the reader
+is a member of a listed project or has starred it, the dashboard takes from `GET /me`; a project's id for a new
+star from `GET /projects/{owner}/{slug}`, which an outsider reads (§2.3). The star stays in the dashed tab, not
+on the list. While a maintenance window runs the route decides, as `/` does: a visitor gets the 503 page, a
+signed-in reader the shell, whose app shows the full page; the middleware no longer refuses `/explore` for everyone.
+
+**Reason:** the same address keeps every link to it working (the frame's header, the not-found page) and needs no
+new reserved first segment, which would take a handle away. The answer already varied on the cookie, and stored
+public pages and `/` already hand a session the shell, so caches meet nothing new. A list the same for everyone can
+be cached publicly and stays a plain public read; what differs per reader is already in `/me`.
+
+**Rejected alternatives:**
+- A dashboard address of its own, such as `/all/explore`: Explore is a tab beside the projects, not a view of the
+  All projects scope; and a new first word would need a reserved segment that may already be a handle.
+- A signed-in list that marks each project as the reader's membership or star: it repeats `/me` and can only be
+  cached privately.
+- The project's id in the public list, so a star needs no further read: the public list carries what the pages
+  show, and one read per new star is cheap; the lead ruled the ids out.
+- The dashboard reading `/explore`'s HTML for its list: it would tie the app to the page's markup.

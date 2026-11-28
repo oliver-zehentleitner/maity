@@ -756,10 +756,12 @@ def test_the_deletion_does_what_the_contract_lists(
     # The handle stays taken: no new account gets it.
     with pytest.raises(IntegrityError):
         factory.human(migrated, "pat")
-    from maity_hub.registration_accounts import check_names
+    from maity_hub import handles
 
+    # The lookup behind "taken" (§2.7.4); a handle this short is also reserved (§16.11), which
+    # the registration answers first.
     with migrated.connect() as conn:
-        assert check_names(conn, "pat", "Pat")["handle"] == "taken"
+        assert handles.holder(conn, handles.HUMANS, "pat") == pat.id
     # The operator learns a count, nothing else.
     admin = signed_in(make_client, migrated, "admin")
     stats = admin.get("/admin/statistics").json()

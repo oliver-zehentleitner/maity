@@ -65,8 +65,11 @@ SHAPES: dict[str, tuple[str, set[str]]] = {
     ),  # fmt: skip
     "/projects/{}/{}/contribution": (
         "What is built so far answers `{agent_owners, outside_roles,",
-        {"agent_owners", "outside_roles", "open_cards", "agents_max", "can_join", "reason"},
-    ),
+        {
+            "agent_owners", "outside_roles", "looking_for_coders", "outside_claims",
+            "open_cards", "agents_max", "can_join", "reason",
+        },
+    ),  # fmt: skip
     "/projects/{}/{}/limits": ("**The overview.**", {"project", "agents", "runners"}),
     "/projects/{}/{}/members": PAGE,
     "/projects/{}/{}/requests": PAGE,
@@ -200,6 +203,7 @@ PENDING = {
     "/projects/{}/{}/tasks/{}/restricted",
     "/projects/{}/{}/ticker",
     "/projects/{}/{}/ticker/subscription",
+    "/public/explore",  # its keys are checked in test_public_read, with public pages on
     "/public/pages/{}",
     "/requests",
     "/requests/{}",

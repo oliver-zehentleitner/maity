@@ -7,6 +7,7 @@
   entries and on merges without an entry by asking their authors, with a short status to its
   lead. Every member still writes its own entries; `policy.steward_writes` says whether the
   steward may write one itself where no author can (`self`) or only opens cards
-  (`cards_only`). Every merge item of the ticker wakes it (§17.3). Its rules line (§6.9)
+  (`cards_only`). Every merge item of the ticker has it in its computed
+  audience, with the usual mutes (§17.3, §17.8). Its rules line (§6.9)
   says to ask the author first and not to write for others, and the dashboard hides the
   role where the memory provider is `none`.

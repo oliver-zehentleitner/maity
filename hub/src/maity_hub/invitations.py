@@ -35,7 +35,7 @@ from maity_hub.models import HANDLE_PATTERN
 from maity_hub.plain_text import plain_line
 from maity_hub.policy import CLOSED_STATES
 from maity_hub.ratelimit import Limiter
-from maity_hub.scopes import has_scope
+from maity_hub.scopes import has_scope, joined_expert_fields
 
 log = logging.getLogger(__name__)
 
@@ -313,6 +313,7 @@ def admit(
             role=row.role,
             # A role still named by an open invitation cannot be removed (§2.3).
             role_base=project_roles.base_of(project, row.role),
+            **joined_expert_fields(row.role),  # a steward's sources (§2.3 "The steward")
             areas=[],
             capabilities=[],
             joined_at=now,
