@@ -289,10 +289,12 @@ def _shell_frame(request: Request, body: str) -> render.Frame | None:
     (tsk-d0ktrdakakhp): from the frame's inputs as they are now and in the visitor's language
     (`?lang`, else the reader's), as `_in_frame` makes them for `?as=public`, so the shell's
     first byte already holds the links a visitor needs and `js/site-chrome.js` only takes
-    them over. None for a stored page of another shape. Two differences from `_in_frame`'s:
-    Sign in comes back to this page (`?next=`, as the dashboard's header link does, §16.7.5),
-    and a link that is a bare query (the footer's languages) is this page's own path first,
-    which the shell's `<base href="/assets/">` would otherwise lead into `/assets/`."""
+    them over. None for a stored page of another shape. Three differences from `_in_frame`'s:
+    Sign in comes back to this page (`?next=`, as the dashboard's header link does, §16.7.5);
+    a link that is a bare query (the footer's languages) is this page's own path first, which
+    the shell's `<base href="/assets/">` would otherwise lead into `/assets/`; and the theme
+    switch is in the header without `hidden` and without `landing.js`, which the shell must
+    not load (its own script draws a working switch)."""
     from urllib.parse import quote
 
     from maity_hub import landing, landing_stats, legal
@@ -317,7 +319,9 @@ def _shell_frame(request: Request, body: str) -> render.Frame | None:
         sign_in["href"] = f"{address}{joiner}next={quote(path, safe='')}" + (
             f"#{place}" if place else ""
         )
-    frame = render.public_frame(model, unescape(tagged["lang"]))
+    # The theme switch stands in the header, without landing.js (the shell has its own
+    # script) and without `hidden`, so a visitor without script still has the layout slot.
+    frame = render.public_frame(model, unescape(tagged["lang"]), theme=True, theme_script=False)
     own = escape(path, quote=True)
     return frame._replace(footer=frame.footer.replace('href="?', f'href="{own}?'))
 

@@ -1911,10 +1911,14 @@ mark only), no frame links and no footer. `public_pages.answer` now asks `_shell
 counters, `?lang` or `Accept-Language`), and `shell.page_in_shell` puts it into the document: the header after
 the app's bar (which is `hidden`), the footer after `<main>`, the frame's stylesheets in the head and the root
 marked `public-frame`, for every kind of page, the organisation page (not in the dashboard's design) included.
-Two differences from `?as=public`'s frame: Sign in carries `next=<this page>`, as the dashboard's header link
-does, and a footer link that is a bare query (the languages) is this page's own path first, since the shell's
-`<base href="/assets/">` would lead `?lang=de` into `/assets/`. Without a theme switch: that is the landing
-script's, and the shell's own script draws one. `js/site-chrome.js` takes the elements over (`data-served-frame`):
+Three differences from `?as=public`'s frame: Sign in carries `next=<this page>`, as the dashboard's header link
+does; a footer link that is a bare query (the languages) is this page's own path first, since the shell's
+`<base href="/assets/">` would lead `?lang=de` into `/assets/`; and the theme switch stands in the header
+without `hidden` and without `landing.js` (the shell already has its own script, which replaces the served
+header with a working switch). A visitor without script still has the same layout slot; the button does not
+change the theme until a script runs. The header's section links and the footer's extra columns are whatever
+the landing page and the legal pages are configured to show: a hub with only a hero and no `nav_label`
+sections has none, which is configuration, not the frame leaving them out. `js/site-chrome.js` takes the elements over (`data-served-frame`):
 once its read of `/site/chrome` answers it replaces them with its own drawing of the same frame, leaves them
 standing where the read fails (the frame is then still there, not the app's bar), and removes them when a view
 leaves the frame. The answer's tag covers the frame, and it varies by `Accept-Language` as the framed page does.

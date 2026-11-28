@@ -88,23 +88,98 @@ class Frame(HTMLParser):
 def world(make_client: ClientFactory, migrated: Engine, settings: Any) -> World:
     public_pages.configure(replace(settings, public_pages=True))
     made = World(make_client, migrated)
-    # The landing page on, in two languages, so that the frame has its sections as header links,
-    # its columns and its language switch: the instance admin is the world's owner.
-    hero = {
-        "type": "hero",
-        "enabled": True,
-        "title": "Bring your agents.",
-        "cta_primary": {"label": "Create your account", "href": "/register"},
-    }
+
+    # A landing page as on production: the four header links, open-source and social columns,
+    # legal pages and a language switch. The earlier screenshot's empty nav was only this
+    # fixture having a hero and no `nav_label` sections, not the served frame leaving them out.
+    def sections(works: str, teams: str, source: str, faq: str) -> list[dict[str, Any]]:
+        return [
+            {
+                "type": "hero",
+                "enabled": True,
+                "title": "Bring your agents.",
+                "cta_primary": {"label": "Create your account", "href": "/register"},
+            },
+            {
+                "type": "steps",
+                "enabled": True,
+                "title": works,
+                "nav_label": works,
+                "items": [{"title": "Join", "text": "Run it."}],
+            },
+            {
+                "type": "scales",
+                "enabled": True,
+                "title": teams,
+                "nav_label": teams,
+                "items": [
+                    {"tag": "You", "title": "You", "text": "One project.", "points": ["One"]}
+                ],
+            },
+            {
+                "type": "opensource",
+                "enabled": True,
+                "title": source,
+                "nav_label": source,
+                "tiles": [{"title": "MIT", "text": "Read it."}],
+                "links": [
+                    {"label": "GitHub", "href": "https://github.com/oliver-zehentleitner/maity"},
+                    {"label": "Keep the Why", "href": "https://keepthewhy.com"},
+                ],
+            },
+            {
+                "type": "faq",
+                "enabled": True,
+                "title": faq,
+                "nav_label": faq,
+                "items": [{"q": "What is it?", "a": "A hub."}],
+            },
+        ]
+
     pages = {
-        lang: {"title": "Maity", "description": "A hub", "sections": [hero]}
-        for lang in ("en", "de")
+        "en": {
+            "title": "Maity",
+            "description": "A hub",
+            "sections": sections("How it works", "For you & teams", "Open Source", "FAQ"),
+        },
+        "de": {
+            "title": "Maity",
+            "description": "Ein Hub",
+            "sections": sections("So funktioniert's", "Für dich & Teams", "Open Source", "FAQ"),
+        },
     }
     saved = made.owner.patch(
         "/admin/settings/landing",
-        {"enabled": True, "default_language": "en", "pages": pages, "footer": {"operator": "Op"}},
+        {
+            "enabled": True,
+            "default_language": "en",
+            "pages": pages,
+            "footer": {
+                "operator": "Oliver Zehentleitner",
+                "social": [
+                    {"label": "X", "href": "https://x.com/maityteam"},
+                    {"label": "Mastodon", "href": "https://mastodon.social/@maityteam"},
+                ],
+            },
+        },
     )
     assert saved.status_code == 200, saved.text
+    # One legal page per call (`one_page_per_call`).
+    for key, en, de in (
+        ("imprint", "Imprint", "Impressum"),
+        ("privacy", "Privacy", "Datenschutz"),
+        ("terms", "Terms", "Nutzungsbedingungen"),
+    ):
+        done = made.owner.patch(
+            "/admin/settings/legal",
+            {
+                key: {
+                    "en": {"title": en, "markdown": "Maity."},
+                    "de": {"title": de, "markdown": "Maity."},
+                }
+            },
+        )
+        assert done.status_code == 200, done.text
     return made
 
 
@@ -206,7 +281,7 @@ def test_the_languages_of_the_footer_stay_on_this_page(world: World, migrated: E
     assert setting["enabled"]
     path = families(world)["project"]
     page = Frame(world.anyone.get(path).text)
-    langs = [h for _, h in page.footer if h.split("?")[0] not in ("/login", "/register")]
+    langs = [h for _, h in page.footer if h.startswith(f"{path}?lang=")]
     assert langs and all(h.startswith(f"{path}?lang=") for h in langs)
 
 
@@ -247,3 +322,41 @@ def test_the_crumb_of_a_project_page_links_the_owner_and_the_project(world: Worl
     assert inputs and all(public_pages.format_of(i) == public_pages.FORMAT >= 4 for i in inputs)
     # The owner's page is a stored page too, for a person (as here) and for an organisation.
     assert world.anyone.get("/maintainer").status_code == 200
+
+
+def test_a_configured_landing_puts_its_nav_and_columns_in_the_served_html(world: World) -> None:
+    """The frame is the landing page's, as on production: the header's section links, the
+    theme switch (visible, no `hidden`: the shell has no landing.js to unhide it), and the
+    footer's Platform, Open source, Legal and Follow columns. A hub with only a hero and no
+    `nav_label` sections has none of those links, which is configuration, not the frame
+    leaving them out (tsk-d0ktrdakakhp)."""
+    path = families(world)["project"]
+    html = world.anyone.get(path).text
+    page = Frame(html)
+    labels = [label for label, _ in page.header]
+    assert labels[:5] == ["maity", "How it works", "For you & teams", "Open Source", "FAQ"]
+    assert any(href.startswith("/login") for _, href in page.header)
+    assert any(href.startswith("/register") for _, href in page.header)
+    # The four section links go to the landing page, not this project's path.
+    by_label = dict(page.header)
+    for label, anchor in (
+        ("How it works", "#s1"),
+        ("For you & teams", "#s2"),
+        ("Open Source", "#s3"),
+        ("FAQ", "#s4"),
+    ):
+        assert by_label[label].endswith(anchor) and by_label[label].startswith("/"), label
+    # Theme switch in the served header, visible without script (layout slot).
+    header = html.split("<header ", 2)[2].split("</header>", 1)[0]  # the site-header, after the bar
+    assert 'class="theme-toggle"' in header and "data-lp-theme" in header
+    assert " hidden" not in header and "hidden " not in header.split("theme-toggle", 1)[1][:80]
+    # Footer columns as production has them.
+    foot = html.split('<footer id="site-footer"', 1)[1].split("</footer>", 1)[0]
+    for title in ("Platform", "Open source", "Legal", "Follow"):
+        assert f'aria-label="{title}"' in foot, title
+    assert "How it works" in foot and "GitHub" in foot and "Imprint" in foot
+    assert "https://x.com/maityteam" in foot and "Oliver Zehentleitner" in foot
+    # The same links as `/explore` (the hub-framed page), left out the theme switch.
+    explore = Frame(world.anyone.get("/explore").text, served=False)
+    assert [label for label, _ in page.header] == [label for label, _ in explore.header]
+    assert unbased(page.footer, path) == explore.footer

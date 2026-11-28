@@ -702,11 +702,16 @@ def _column(title: str, items: list[str]) -> str:
     return f'<nav class="foot-col" aria-label="{escape(title, quote=True)}"><h3>{escape(title)}</h3><ul>{rows}</ul></nav>'
 
 
-def _site_header(model: dict[str, Any], nav: str, cta: str, theme: str | None) -> str:
+def _site_header(
+    model: dict[str, Any], nav: str, cta: str, theme: str | None, *, hidden_switch: bool = True
+) -> str:
     """The landing page's header from the frame's model (§16.7.5); the theme switch only on a page
-    with the landing page's script."""
+    that asks for it. `hidden_switch` is for a page whose own script unhides the button
+    (landing.js); the app shell leaves it visible, so a visitor without script still has the
+    same layout slot (tsk-d0ktrdakakhp)."""
+    hidden = " hidden" if hidden_switch else ""
     switch = (
-        f'<button type="button" class="theme-toggle" data-lp-theme hidden aria-pressed="false" '
+        f'<button type="button" class="theme-toggle" data-lp-theme{hidden} aria-pressed="false" '
         f'aria-label="{escape(theme, quote=True)}">◐</button>'
         if theme is not None
         else ""
@@ -949,21 +954,31 @@ class Frame(NamedTuple):
 
 
 def public_frame(
-    model: dict[str, Any], lang: str, *, theme: bool = False, query: str = ""
+    model: dict[str, Any],
+    lang: str,
+    *,
+    theme: bool = False,
+    query: str = "",
+    theme_script: bool | None = None,
 ) -> Frame:
     """The frame for a page in `lang`, from `chrome`'s model. The mark comes without its
     `style` attributes, which a policy without inline styles would block: `public-pages.css`
     colours it. Where the frame's words are in another language than the page (the landing page
     has no `lang`), header and footer say theirs. With `theme`, the header has the landing
-    page's light/dark switch and the head its script (`landing.js`), for a page whose policy
-    allows the hub's own script; `query` goes before `lang=` in the footer's language links."""
+    page's light/dark switch; `theme_script` (default: the same as `theme`) also puts
+    `landing.js` in the head, which unhides the button, for a page whose policy allows the
+    hub's own script (a stored page with `?as=public`). The app shell already has its own
+    script, so it asks for the button without `landing.js` and without `hidden`, and a visitor
+    without script still has the same layout slot (tsk-d0ktrdakakhp). `query` goes before
+    `lang=` in the footer's language links."""
     nav = "".join(
         f'<a href="{escape(item["href"], quote=True)}">{escape(item["label"])}</a>'
         for item in model["header"]["nav"]
     )
     cta = _button(model["header"]["cta"], "btn-primary") if model["header"]["cta"] else ""
     switch = catalog.section("frame", model["language"])["theme"] if theme else None
-    header = _site_header(model, nav, cta, switch)
+    include_script = theme if theme_script is None else theme_script
+    header = _site_header(model, nav, cta, switch, hidden_switch=include_script)
     footer = _landing_footer(model, on_landing=False, query=query)
     mark = landing_files.svg("mark.svg")
     header = header.replace(mark, re.sub(r'\s+style="[^"]*"', "", mark), 1)
@@ -972,7 +987,7 @@ def public_frame(
         footer = footer.replace("<footer ", f'<footer lang="{escape(model["language"])}" ', 1)
     sheets = _frame_sheet_urls()
     head = frame_sheets()
-    script = landing_files.url("landing.js") if theme else None
+    script = landing_files.url("landing.js") if include_script else None
     if script:
         head += f'<script src="{escape(script, quote=True)}" defer></script>'
     return Frame(header, footer, head, "" if all(sheets) else STYLE)
