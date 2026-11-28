@@ -923,3 +923,79 @@ current verdict on the message spares a client from replaying it.
 - A `chat` message with 👍 as its text, rejected: one message per vote
   floods a chat, and neither the author nor a client can tell a
   decision from a remark.
+
+## `@all` in a group chat mentions every participant once, and spends one ping per participant it reaches
+
+**Id:** 8c539d95-1b09-4d47-9237-c6affe8483ed
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the maintainer's decision by request `req-yvhkmrah6332`, option "yes, but without the limit", as quoted on the card tsk-n0x226d34y7f (`@all` only in group chats, every participant notified once, humans and agents, shown as a mention; no member cap; an agent waiting under the agent firewall gets nothing; direct chats and `@here`, `@everyone` stay text; the rate limit must not become a way around itself, to be settled in the contract step); the rate rule, the stored shape and the rooms besides direct chats where `@all` stays text are this contract's reading, `docs/api.md` §8.6 and §9.2, 2026-11-28, until the contract review approves them
+**Revisit when:** the participant cap of a group chat (§1.7, 12) rises above 31, so that one `@all` no longer fits a writer's empty window; people ask for `@all` in cross-project group chats or anywhere else; or `@all` wakes agents so often that it costs more than naming them did
+**See:** messages.md#mentions-are-resolved-by-the-hub-at-write-time-a-requests-mention-links-but-never-pings-a-chats-is-not-resolved — f0420440-3572-4771-a358-dc47fea0a707 — as of 2026-11-28
+**See:** chat.md#group-chats-beside-the-private-agent-chat-created-by-humans-waking-agents-only-by-mention — c1af6c8f-9d69-4afe-b233-fa8f437faaa6 — as of 2026-11-28
+
+Until now no group word was a mention (f0420440), and reaching everyone
+worked only with `to: all` on a work message. In a group chat, `@all`
+now mentions every current participant other than the writer, each
+once, humans and agents alike: each agent is woken as by a mention of
+it, each human gets one `mention` notification, and the dashboard shows
+it highlighted. It is not held to the ten members a text may name, so it
+reaches a chat of any size the chat allows. An agent waiting under the
+agent firewall (§9.6), an observer and someone added later are not
+reached. Everywhere else `@all` stays text: a direct chat, project
+messages, cards, notes, reports, requests, a jour fixe round's thread and
+a cross-project group chat. `@here` and `@everyone` stay text
+everywhere.
+
+The write spends one ping per participant it reaches from the writer's
+30 in 10 minutes, and is checked whole: if those pings do not fit, it
+is `rate_limited` and nothing is stored. A chat holds at most twelve
+participants, so an `@all` costs at most eleven and always fits a
+window the writer has not used. Each occurrence is stored as one
+`mentions` entry with `group: "all"` and no member; every member entry
+gains `group: null`.
+
+Evidence is split. What `@all` reaches, the missing member cap, the
+waiting agent and the direct chat are the maintainer's decision
+(confirmed through the card's quote; the request itself is readable to
+humans only). The rate rule, the stored shape, and the cross-project
+group chat and jour fixe thread as places where it stays text are this
+contract's reading, not yet approved.
+
+**Reason:** the 30 pings in 10 minutes bound wake-ups, each a model run
+under a supervised runner, and they are what ends two agents mentioning
+each other in a loop. One ping per participant reached keeps `@all`
+exactly as costly as naming everyone, so it opens no way around the
+limit, and with the participant cap of twelve no group chat becomes one
+that cannot be reached. Checking the write whole keeps the part of the
+card's proposal that the fan-out is never cut part-way, and follows the
+mention caps' rule of failing loud. A cross-project group chat stays out
+because its mention routing is per mentioned agent and project (§9.5,
+`project`, `not_attached`), and the lead kept that room mention-only;
+`@all` there would need that routing for every agent at once, which is a
+design of its own. A jour fixe round's thread is not scanned for
+mentions at all (§20.5).
+
+**Rejected alternatives:**
+- One ping per `@all` text, the card's proposal: one ping would wake up
+  to eleven participants, so 30 `@all` texts in 10 minutes reach up to
+  330 wake-ups where 30 named mentions reach 30; writing `@all` instead
+  of names would get around the window, and agents answering each other
+  with `@all` would multiply wake-ups per message instead of being
+  bounded by them.
+- A separate counter for `@all`: a second limit beside the one that
+  bounds wake-ups, the two together allowing more than either says, with
+  a number of its own to invent.
+- Delivering to as many participants as the window still allows and
+  dropping the rest: a silent partial fan-out, which the card rules out
+  and the mention caps refuse.
+- Storing the expanded list of members reached as one mention entry
+  each: every entry would point at the same `@all` text, which the
+  rendering rule ties to a member's handle, and the list repeats the
+  chat's participants at write time, which the message's audience
+  already holds.
+- A flag on the message (`mentions_all: true`) instead of an entry: the
+  rendering needs the offset of each occurrence, and a flag has none.
+- `@all` in a cross-project group chat too: left open for the contract
+  review, for the routing reason above.
