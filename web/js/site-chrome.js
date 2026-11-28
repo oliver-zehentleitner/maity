@@ -59,12 +59,20 @@ window.Maity = window.Maity || {};
     const names = (root.className || "").split(/\s+/).filter((c) => c && c !== ON);
     root.className = (on ? names.concat(ON) : names).join(" ");
   }
+  // The header and the footer the hub put into the served page (data-served-frame, hub/src/
+  // maity_hub/shell.py `page_in_shell`): the same frame as drawn below, so a visitor without
+  // script has the links. Drawn once the read answers, they are replaced by this file's own;
+  // while the read is pending or fails, they stay. A view that leaves the frame removes them.
+  function served() {
+    return ["site-header", "site-footer"].map((id) => document.getElementById(id))
+      .filter((el) => el && el.getAttribute("data-served-frame") != null);
+  }
   function drop() {
     if (header) header.remove();
     if (footer) footer.remove();
     header = footer = null;
     const app = document.getElementById("header");
-    if (app) app.hidden = false;
+    if (app && !served().length) app.hidden = false;
     line();
   }
 
@@ -78,7 +86,7 @@ window.Maity = window.Maity || {};
   function line(wanted, held) {
     if (wanted !== undefined) lineWanted = !!wanted;
     if (held !== undefined) lineHeld = !!held;
-    if (M.productLine) M.productLine.show(lineWanted && !lineHeld && !footer);
+    if (M.productLine) M.productLine.show(lineWanted && !lineHeld && !footer && !document.getElementById("site-footer"));
   }
 
   // An address of the model as a link: an https URL, or a path of this host. A dashboard route
@@ -205,6 +213,7 @@ window.Maity = window.Maity || {};
     // A model without its header or footer is no frame: the page stands as it would without one.
     if (!model || !model.header || !model.footer) { lineHeld = false; drop(); return false; }
     drop();
+    served().forEach((el) => el.remove());
     const app = bar;
     const main = document.getElementById("main");
     header = siteHeader(model, current, options && options.next);
@@ -232,6 +241,7 @@ window.Maity = window.Maity || {};
   function leave() {
     round++;
     lineHeld = false;
+    served().forEach((el) => el.remove());
     drop();
     sheets(false);
     mark(false);

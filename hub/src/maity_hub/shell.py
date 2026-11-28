@@ -396,10 +396,17 @@ _CONTENT = re.compile(r'content="([^"]*)"')
 _SHELL_HTML = re.compile(rb"<html(?![^>]*\sclass=)(?=[\s>])")
 
 
-def page_in_shell(shell: bytes, body: str) -> bytes | None:
+def page_in_shell(shell: bytes, body: str, frame: render.Frame | None = None) -> bytes | None:
     """The shell carrying a stored page: its title, description and canonical link in the head,
     its text in `<main>`, for a crawler and until the dashboard draws the view. None when
-    either document is not of the shape expected: the caller serves the bare page."""
+    either document is not of the shape expected: the caller serves the bare page.
+
+    With `frame`, the landing page's header and footer for this visitor (§16.7.5) are part of
+    the document too (tsk-d0ktrdakakhp): the header after the app's bar, which is then hidden,
+    the footer after `<main>`, and the frame's stylesheets in the head, for every stored page.
+    A visitor without script (or a crawler, or a link preview) reads the same links in the same
+    layout as with it. `js/site-chrome.js` takes them over: it draws the same frame with the
+    theme switch and replaces them, and leaves them standing where its own read fails."""
     found = _PAGE.search(body)
     if found is None or not (_SHELL_TITLE.search(shell) and _SHELL_MAIN.search(shell)):
         return None
@@ -423,17 +430,49 @@ def page_in_shell(shell: bytes, body: str) -> bytes | None:
         # At the head's end, after the dashboard's own sheets, where js/site-chrome.js appends
         # them: landing.css sets the root's and the body's type as css/app.css does, and the
         # later one wins, so a page has the same type however the visitor came to it.
-        sheets = render.frame_sheets().encode()
+        sheets = (frame.head if frame else render.frame_sheets()).encode()
         done = _HEAD_END.sub(lambda _: sheets + b"</head>", done, count=1)
         # Marked as the dashboard marks a page in the frame (js/site-chrome.js), so the shell's
         # own `<main>` has the frame's measures (css/app.css, `.public-frame #main`) at once.
         done = _SHELL_HTML.sub(lambda _: b'<html class="public-frame"', done, count=1)
     else:
         inner = b'<div class="hub-page">' + found["main"].encode() + b"</div>"
+        if frame:
+            # In the stored pages' column, as the frame puts it around them (`framed_main`).
+            inner = (
+                b'<div class="hub-page">' + render.framed_main(found["main"]).encode() + b"</div>"
+            )
+            # Any other page has the frame around it too: its sheets and the root's mark, as the
+            # dashboard puts them when it draws the page over this one.
+            done = _HEAD_END.sub(lambda _: frame.head.encode() + b"</head>", done, count=1)
+            done = _SHELL_HTML.sub(lambda _: b'<html class="public-frame"', done, count=1)
     done = _SHELL_TITLE.sub(lambda _: title + head, done, count=1)
+    after = b""
+    if frame:
+        done = _SHELL_BAR.sub(
+            lambda bar: _hidden_bar(bar[0]) + _served(frame.header, b"header"), done, count=1
+        )
+        after = _served(frame.footer, b"footer")
     return _SHELL_MAIN.sub(
-        lambda _: b'<main id="main" data-public-page>' + inner + b"</main>", done, count=1
+        lambda _: b'<main id="main" data-public-page>' + inner + b"</main>" + after, done, count=1
     )
+
+
+# The app's own bar at the top of the shell (`<header id="header">`, web/index.html).
+_SHELL_BAR = re.compile(rb'<header id="header"[^>]*>.*?</header>', re.DOTALL)
+
+
+def _hidden_bar(bar: bytes) -> bytes:
+    """The app's bar, hidden: the frame's header stands in its place, as `js/site-chrome.js`
+    hides it once the frame is drawn."""
+    return bar.replace(b'<header id="header"', b'<header id="header" hidden', 1)
+
+
+def _served(markup: str, tag: bytes) -> bytes:
+    """One element of the frame as the shell serves it: with the id `js/site-chrome.js` draws it
+    under, and marked as drawn by the hub, which the script replaces once its own read is in."""
+    opened = b"<" + tag + b" "
+    return markup.encode().replace(opened, opened + b'id="site-' + tag + b'" data-served-frame ', 1)
 
 
 class ShellRoute(BaseRoute):
@@ -449,9 +488,9 @@ class ShellRoute(BaseRoute):
         self.public_url = public_url
         self.name = "shell"
 
-    def _inside_shell(self, body: str) -> bytes | None:
+    def _inside_shell(self, body: str, frame: render.Frame | None = None) -> bytes | None:
         shell = shell_document((self.web_dir / "index.html").read_bytes(), self.public_url)
-        return page_in_shell(versioned(shell, self.web_dir), body)
+        return page_in_shell(versioned(shell, self.web_dir), body, frame)
 
     def matches(self, scope: Scope) -> tuple[Match, Scope]:
         if scope["type"] != "http" or paths.is_hub_path(scope.get("path", "")):

@@ -270,7 +270,10 @@ window.Maity = window.Maity || {};
     }).filter(Boolean) : [];
     return h("section", { class: "phero hero dz" }, h("div", { class: "wrap" },
       h("div", { class: "ph-main" },
-        h("p", { class: "crumb" }, owner, " / ", answer.path === base ? slug : h("a", { href: base }, slug)),
+        // Both parts are links, as in the stored page (hub/src/maity_hub/public_design.py hero): the
+        // owner's public page, and the project's own, which is current on the Overview.
+        h("p", { class: "crumb" }, h("a", { href: "/" + owner }, owner), " / ",
+          h("a", { href: base, "aria-current": answer.path === base ? "page" : null }, slug)),
         h("div", { class: "ph-title" },
           answer.kind === "card" ? null : h("span", { class: "pmark", "aria-hidden": "true" }, monogram(overview ? d.name : "", slug)),
           h("h1", null, title),

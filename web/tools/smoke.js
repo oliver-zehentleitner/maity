@@ -19134,7 +19134,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       viPages["/public/pages/stranger/tool"] = plain;
       await go("#/stranger/tool/team"); for (let k = 0; k < 4; k++) await tick();
       const h3 = viView().querySelector("section.phero");
-      expect(viView().getAttribute("data-kind") === "team" && h3 && text(h3.querySelector("h1")) === "tool" && text(h3.querySelector("p.crumb a")) === "tool"
+      expect(viView().getAttribute("data-kind") === "team" && h3 && text(h3.querySelector("h1")) === "tool" && text(h3.querySelector("p.crumb a:last-child")) === "tool"
         && text(h3.querySelector("span.pmark")) === "T" && !viView().querySelector("section.band") && !h3.querySelector("span.chip")
         && viView().querySelector("nav.ptabs").querySelectorAll("a.view-tab").filter((a) => a.getAttribute("aria-current") === "page").length === 1
         && h3.querySelector("div.cta a.btn.btn-primary") && text(h3.querySelector("div.cta a.btn.btn-primary")) === "Try it — create your account"

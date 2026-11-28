@@ -323,6 +323,8 @@ button.small { padding: 2px 8px; font-size: 0.82rem; }
    loaded, or its read failed and the view keeps the hub's page); a crawler reads it either way. */
 .hub-page { visibility: hidden; animation: hub-page-shows 0s linear 3s forwards; }
 @keyframes hub-page-shows { to { visibility: visible; } }
+/* Where scripts are off, nothing replaces it: it is the page, at once (tsk-d0ktrdakakhp). */
+@media (scripting: none) { .hub-page { visibility: visible; animation: none; } }
 /* A switch: the view being left stays, inert, until the next one is drawn (js/app.js render).
    A bar and the dimmed view say at once that the click was taken. The bar stands in main's top
    padding, under the header and above the sign-in banner, and its margins give back the 3 px, so

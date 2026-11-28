@@ -372,7 +372,12 @@ def hero(kind: str, d: dict[str, Any], path: str, base: str) -> str:
     owner, slug = base.strip("/").split("/")[:2]
     overview = kind == "project"
     title = d.get("name") if overview else d.get("title") if kind == "card" else slug
-    crumb_slug = _e(slug) if path == base else f'<a href="{_e(base)}">{_e(slug)}</a>'
+    # Both parts are plain links, in the served HTML as without script (tsk-d0ktrdakakhp): the
+    # owner's public page (a person's or an organisation's, whichever the handle names) and
+    # this project's page, which is the one being read on its Overview.
+    here = ' aria-current="page"' if path == base else ""
+    crumb_owner = f'<a href="/{_e(owner)}">{_e(owner)}</a>'
+    crumb_slug = f'<a href="{_e(base)}"{here}>{_e(slug)}</a>'
     mark = (
         ""
         if kind == "card"
@@ -406,7 +411,7 @@ def hero(kind: str, d: dict[str, Any], path: str, base: str) -> str:
     about = d.get("about") if overview else None
     return (
         '<section class="phero hero dz"><div class="wrap"><div class="ph-main">'
-        f'<p class="crumb">{_e(owner)} / {crumb_slug}</p>'
+        f'<p class="crumb">{crumb_owner} / {crumb_slug}</p>'
         f'<div class="ph-title">{mark}<h1>{_e(title or "")}</h1>{state if overview else ""}</div>'
         + (f'<div class="sub about">{render.markdown(about, ugc=True)}</div>' if about else "")
         + f'<div class="cta"><span class="cta-slot"></span>{button}</div>'

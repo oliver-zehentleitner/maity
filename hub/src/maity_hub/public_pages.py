@@ -18,6 +18,7 @@ import time
 from collections.abc import Callable, Collection, Sequence
 from dataclasses import dataclass
 from datetime import datetime
+from html import escape, unescape
 from typing import Any, Protocol
 
 from fastapi import Request, Response
@@ -58,8 +59,9 @@ BY_ADDRESS = Limiter(60, 60, name="public_pages.BY_ADDRESS")
 # `f<FORMAT>:<digest>` (a row without it is format 1, before the dashboard's design, §16.9). A
 # row of a later format is never replaced by this process, and a row of an earlier one is
 # rendered again (`refresh`; hub/context/public-pages.md). 2: the project pages in the dashboard's
-# design; 3: the person and agent pages as well.
-FORMAT = 3
+# design; 3: the person and agent pages as well; 4: the crumb of a project's page, `owner / slug`,
+# as two links (tsk-d0ktrdakakhp).
+FORMAT = 4
 # What `public_page.inputs` holds (hub/src/maity_hub/tables.py).
 INPUTS_LENGTH = 64
 
@@ -167,13 +169,16 @@ def _robots(page: Any) -> dict[str, str]:
 
 
 def answer(
-    request: Request, inside_shell: Callable[[str], bytes | None] | None = None
+    request: Request, inside_shell: Callable[[str, render.Frame | None], bytes | None] | None = None
 ) -> Response | None:
     """The stored page of the request's path for a visitor, or None for the shell. A visitor
     is a request without a live session, or one made with `?as=public` (§16.9). Without that
-    query the page comes inside the app shell (`inside_shell`), so the dashboard takes over at
-    the same address; `?as=public` is the page on its own in the frame of §16.7.5 under
-    `FRAMED_CSP`, and bare under `CSP` only for a stored document of another shape."""
+    query the page comes inside the app shell (`inside_shell`, which is given the page's body and
+    the landing page's header and footer for this visitor, `_shell_frame`: part of the served
+    HTML, so a visitor without script reads the same links and layout; tsk-d0ktrdakakhp), so the
+    dashboard takes over at the same address; `?as=public` is the page on its own in the frame
+    of §16.7.5 under `FRAMED_CSP`, and bare under `CSP` only for a stored document of another
+    shape."""
     if not settings_of(request).public_pages:
         return None
     path = request.url.path
@@ -209,12 +214,18 @@ def answer(
         raise rate_limited(wait)
     shelled = None
     if inside_shell is not None and request.query_params.get("as") != "public":
-        shelled = inside_shell(page.body)
+        shelled = inside_shell(page.body, _shell_frame(request, page.body))
     if shelled is not None:
         # The shell's files change with a deploy: its digest is part of the tag.
         tag = '"' + hashlib.sha256(shelled).hexdigest() + '"'
         candidates = request.headers.get("if-none-match", "").split(",")
-        wrapped = {"Cache-Control": CACHE, "ETag": tag, "Vary": "Cookie", **_robots(page)}
+        # The frame's words follow `?lang` and the reader's language, so the answer varies by both.
+        wrapped = {
+            "Cache-Control": CACHE,
+            "ETag": tag,
+            "Vary": "Cookie, Accept-Language",
+            **_robots(page),
+        }
         if any(c.strip() == "*" or c.strip().removeprefix("W/") == tag for c in candidates):
             return Response(status_code=304, headers=wrapped)
         if request.method == "HEAD":
@@ -271,6 +282,44 @@ def _in_frame(request: Request, body: str) -> str | None:
             lang=request.query_params.get("lang"),
             accept_language=request.headers.get("accept-language"),
         )
+
+
+def _shell_frame(request: Request, body: str) -> render.Frame | None:
+    """The landing page's header and footer for a stored page that comes inside the app shell
+    (tsk-d0ktrdakakhp): from the frame's inputs as they are now and in the visitor's language
+    (`?lang`, else the reader's), as `_in_frame` makes them for `?as=public`, so the shell's
+    first byte already holds the links a visitor needs and `js/site-chrome.js` only takes
+    them over. None for a stored page of another shape. Two differences from `_in_frame`'s:
+    Sign in comes back to this page (`?next=`, as the dashboard's header link does, §16.7.5),
+    and a link that is a bare query (the footer's languages) is this page's own path first,
+    which the shell's `<base href="/assets/">` would otherwise lead into `/assets/`."""
+    from urllib.parse import quote
+
+    from maity_hub import landing, landing_stats, legal
+
+    tagged = render.STORED_LANG.search(body)
+    if tagged is None:
+        return None
+    with engine_of(request).begin() as conn:
+        setting = landing.stored(conn)
+        model = render.chrome(
+            setting,
+            legal.public(legal.stored(conn)),
+            lang=request.query_params.get("lang"),
+            accept_language=request.headers.get("accept-language"),
+            stats=landing_stats.for_frame(conn, setting),
+        )
+    path = request.url.path
+    sign_in = model["header"]["sign_in"]
+    if sign_in is not None and sign_in["href"].split("?")[0].split("#")[0] == "/login":
+        address, _, place = sign_in["href"].partition("#")
+        joiner = "&" if "?" in address else "?"
+        sign_in["href"] = f"{address}{joiner}next={quote(path, safe='')}" + (
+            f"#{place}" if place else ""
+        )
+    frame = render.public_frame(model, unescape(tagged["lang"]))
+    own = escape(path, quote=True)
+    return frame._replace(footer=frame.footer.replace('href="?', f'href="{own}?'))
 
 
 def read(request: Request, path: str) -> Response:

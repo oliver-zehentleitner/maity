@@ -1165,7 +1165,7 @@ STORED_PAGE = re.compile(
     r"<main class=\"wrap\">(?P<main>.*)</main></body>",
     re.DOTALL,
 )
-_STORED_LANG = re.compile(r'<html lang="(?P<lang>[^"]*)">')
+STORED_LANG = re.compile(r'<html lang="(?P<lang>[^"]*)">')
 
 
 def stored_in_frame(
@@ -1187,7 +1187,7 @@ def stored_in_frame(
     exists in one language, its content's. None when `stored` is not of the shape
     `page_document` writes: the caller serves it bare."""
     found = STORED_PAGE.search(stored)
-    tagged = _STORED_LANG.search(stored)
+    tagged = STORED_LANG.search(stored)
     if found is None or tagged is None:
         return None
     page_lang = unescape(tagged["lang"])
@@ -1200,7 +1200,7 @@ def stored_in_frame(
         title=unescape(found["title"]),
         description="",
         head=head,
-        body=frame.header + f"<main>{_framed_main(found['main'])}</main>" + frame.footer,
+        body=frame.header + f"<main>{framed_main(found['main'])}</main>" + frame.footer,
         languages=[],
         style=frame.style,
     )
@@ -1217,7 +1217,7 @@ def designed(main: str) -> bool:
     return _DESIGNED.match(main) is not None
 
 
-def _framed_main(main: str) -> str:
+def framed_main(main: str) -> str:
     """The stored content as `<main>` holds it in the frame: a page in the dashboard's design as
     it is, where the dashboard puts it too; any other in the stored pages' column."""
     if designed(main):
