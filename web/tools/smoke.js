@@ -15464,6 +15464,54 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   crAnswers.push(await crSay({ request_id: "clr-0001", reason: "rude" }, "decline"), await crSay({ request_id: "clr-9999" }, "confirm"));
   expect(JSON.stringify(crAnswers) === JSON.stringify(['forbidden:{"reason":"not_a_confirmer"}', 'invalid:{"fields":{"reason":"unknown"}}', "not_found:{}"]),
     "fixture hub: the agent's owner is no confirmer; an unknown reason and a request that is not pending are refused " + JSON.stringify(crAnswers));
+  // The project inbox lists the waiting request for a confirmer, with its count, from one read of the open cards
+  // and none per card; Decline there sends the same call and the card leaves the list. Its owner sees no list.
+  // Only where outsiders' agents may be (a stored agent_owners anyone, §6.1): elsewhere no card is read at all.
+  crCard.claim = null; crCard.status = "open"; crAsk(); crAgent.owner_id = "hum-other";
+  const crReads = [];
+  const crGetAll = win.Maity.api.getAll, crGet = win.Maity.api.get;
+  const crSpy = () => {
+    crReads.length = 0;
+    win.Maity.api.getAll = (p, f) => { if (String(p).includes("/tasks")) crReads.push(String(p)); return crGetAll(p, f); };
+    win.Maity.api.get = (p, o) => { if (String(p).includes("/tasks")) crReads.push(String(p)); return crGet(p, o); };
+  };
+  const crInbox = async () => {
+    win.Maity.onWrite("/projects/maintainer/maity");
+    // By way of All projects, so the project's view (its policy) is read again, not kept from the last drawing.
+    await go("#/all"); for (let k = 0; k < 4; k++) await tick();
+    crSpy(); await go("#/maintainer/maity/inbox"); for (let k = 0; k < 6; k++) await tick();
+    win.Maity.api.getAll = crGetAll; win.Maity.api.get = crGet;
+  };
+  const crSection = () => main.querySelector("section.claim-requests");
+  await crInbox();
+  const crClosedReads = crReads.slice();
+  expect(!crSection() && !crClosedReads.length, "inbox: no claim request list, and no card read, where the project takes no outsiders' agents " + JSON.stringify(crClosedReads));
+  // A public project (its page on, §5.1 public_page) that takes outsiders' agents.
+  const crMine = crFx["me.json"].projects.find((p) => p.full_name === "maintainer/maity");
+  const crPage = crMine.public_page;
+  crPolicy.agent_owners = "anyone"; crMine.public_page = "off";
+  await crInbox();
+  const crPrivateReads = crReads.slice();
+  expect(!crSection() && !crPrivateReads.length, "inbox: no claim request list, and no card read, in a project whose page is off " + JSON.stringify(crPrivateReads));
+  crMine.public_page = "on";
+  await crInbox();
+  const crHead = crSection() ? text(crSection().querySelector("h3")) : "";
+  expect(crSection() && crHead.startsWith("Claim requests from outside") && crHead.endsWith("1")
+    && crSection().querySelector("a").attrs.href.endsWith("/tasks/" + crCard.id) && byId("claim-confirm-" + crCard.id) && byId("claim-decline-" + crCard.id)
+    && crReads.length === 1 && crReads[0] === "/projects/maintainer/maity/tasks?status=open",
+    "inbox: a confirmer sees the claim request with its count, from one list read of the open cards " + JSON.stringify([crHead, crReads]));
+  const crInboxPosts = [];
+  win.Maity.api.post = (p, b) => { if (p.includes("/claim/")) crInboxPosts.push([p, b]); return crPost(p, b); };
+  byId("claim-decline-" + crCard.id).click(); for (let k = 0; k < 6; k++) await tick();
+  win.Maity.api.post = crPost;
+  const crSaid = main.querySelector(".claim-requests-said");
+  expect(JSON.stringify(crInboxPosts) === JSON.stringify([["/projects/maintainer/maity/tasks/" + crCard.id + "/claim/decline", { request_id: "clr-0001", reason: "declined" }]])
+    && !crSection() && crSaid && text(crSaid) === crCard.id + ": claim request declined.",
+    "inbox: Decline sends the request with declined; the card leaves the list and the answer is said " + JSON.stringify([crInboxPosts, crSaid && text(crSaid)]));
+  crAsk(); crAgent.owner_id = crOwner;
+  await crInbox();
+  expect(!crSection(), "inbox: the asking agent's own owner gets no claim request list");
+  delete crPolicy.agent_owners; crMine.public_page = crPage;
   crCard.claim_requests = []; crAgent.owner_id = crOwner; crCard.claim = null; crCard.status = "open";
   win.Maity.onWrite("/projects/maintainer/maity");
   await go("#/maintainer/maity/tasks/tsk-0006"); for (let k = 0; k < 6; k++) await tick();

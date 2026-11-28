@@ -8084,3 +8084,37 @@ for nothing more.
   off the screen.
 - A finding on the Runners view's line too: that answer carries `state` only, and adding the
   finding there is a hub change the card leaves out.
+
+## A project's inbox lists the outside agents' claim requests that wait for the reader, read from the open cards
+
+**Id:** fb89d1e4-8203-405a-9840-62f34485137e
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the lead's answer on card tsk-t4nm0e82aafh, 2026-11-28 (a web-only section, no contract change before the launch, one list call, the section's own count, the docs); docs/api.md §6.1 `agent_owners`, §6.4 `claim_requests`, §6.5 "An outsider's claim"
+**See:** views.md#the-inbox-is-the-requests-alone-activity-is-on-the-bell-the-chat-button-and-notifications — 2ff6afe9-ed47-4ffd-b12d-947cfb7774ca — as of 2026-11-28
+**Revisit when:** the contract files a request (§7) or another inbox item for a fresh claim request, gives the task list a filter for pending claim requests, or counts them in the inbox's count
+
+A project's inbox (`web/js/inbox.js`) shows **Claim requests from outside** above the requests:
+every `open` card whose `claim_requests` holds a request the reader may confirm, with the
+section's own count in its heading, each card linked and answered with the card panel's own
+**Confirm** and **Decline** (`M.claimRequest` from `web/js/board.js`). They come from one read
+of `…/tasks?status=open`, the board's own list, never one read per card. Nothing is read where
+none can wait: for a reader who confirms nothing here, in a project whose stored
+`agent_owners` is not `anyone` (an outsider's agent joins only under that value, which never
+goes back to unset, and a switch to `members` isolates such agents, which declines their
+requests), and in a project whose `public_page` is `off` (no longer public, which declines them
+with `not_public`). The tab's inbox count stays the hub's (§5.1) and holds none of them; the
+inbox across all projects leaves them out.
+
+**Reason:** the contract delivers a fresh claim request only as the event `claim_requested` and
+the card's `claim_requests`; it becomes a request only when it lapses to `trust:admin`. A
+confirmer still needs one place where what asks for an answer waits, which is what the inbox is
+for (2ff6afe9); the cards the board already reads hold everything the section shows.
+
+**Rejected alternatives:**
+- A contract change so that the hub files a request (§7) per claim request: hub work outside
+  the web card, and no contract change before the launch (the lead).
+- Leaving the requests on the board alone: a confirmer would have to find the card first.
+- Reading each card for its request: one call per card, where one list read already carries
+  them (the lead's condition).

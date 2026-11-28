@@ -131,12 +131,16 @@ window.Maity = window.Maity || {};
     objection_open: () => M.t("board.claim_request.objection_open"),
   };
   // §6.5 "Who confirms": the filter (never trust outside, isolated or a proxy; a manager's line confirms nothing).
-  function confirmer(ctx, request) {
+  // mayConfirm: whether the reader confirms any claim here at all, so the inbox reads no cards for one who does not.
+  function mayConfirm(ctx) {
     if (!M.trust.writes(ctx) || ctx.trust === "outside" || ctx.role === "proxy") return false;
-    const agent = (ctx.memberById || {})[request.member_id];
-    if (agent && agent.owner_id && agent.owner_id === ctx.me.id) return false;
     const coordinator = ((ctx.project || {}).policy || {}).coordinator;
     return M.trust.governs(ctx) || (!!coordinator && coordinator === ctx.me.id && !((ctx.memberById || {})[ctx.me.id] || {}).isolated);
+  }
+  function confirmer(ctx, request) {
+    const agent = (ctx.memberById || {})[request.member_id];
+    if (agent && agent.owner_id && agent.owner_id === ctx.me.id) return false;
+    return mayConfirm(ctx);
   }
   // The answer is given in the opened card only, as its other forms are: one set of ids on the page.
   function claimRequest(ctx, c, redraw, inPanel) {
@@ -153,7 +157,7 @@ window.Maity = window.Maity || {};
       button.disabled = true;
       said.busy(M.t("board.saving"));
       try {
-        redraw(await M.api.post(path + what, body), button.getAttribute("id"));
+        redraw(await M.api.post(path + what, body), button.getAttribute("id"), what);
       } catch (err) {
         button.disabled = false;
         // A paused agent leaves the request waiting (409 paused): said so, to be confirmed later.
@@ -170,6 +174,8 @@ window.Maity = window.Maity || {};
     return h("div", { class: "claim-request-box" }, line,
       h("div", { class: "actions" }, confirm, h("label", { for: reason.id }, M.t("board.claim_request.reason")), reason, decline), said.el);
   }
+  // The project inbox lists the same requests with the same answer (js/inbox.js).
+  M.claimRequest = { mayConfirm, confirmer, box: claimRequest };
 
   // Whose card it is, in its header: a small picture and the handle, the
   // full name as tooltip and as what a screen reader says.

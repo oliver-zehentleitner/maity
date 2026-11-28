@@ -652,6 +652,24 @@ window.Maity = window.Maity || {};
     return requests.items;
   }
 
+  // Outsiders' claim requests that wait for this reader (docs/api.md §6.5 "An outsider's claim"; §6.4
+  // claim_requests). No §7 request carries a fresh one (one that lapsed is also filed to trust:admin and listed
+  // with the requests), so the project inbox lists them from the open cards: one list call, the board's own,
+  // and none for a reader who confirms nothing here. Null: not read; else the cards, in the list's order.
+  // None waits unless outsiders' agents may be here: they join only under a stored agent_owners anyone (§6.1),
+  // which never goes back to unset, and a switch to members isolates them, which declines their requests
+  // (§6.2, §6.5); a project whose page is off is no public project, and that declines them too (not_public).
+  function takesOutsiders(ctx) {
+    const mine = (ctx.projects || []).find((p) => p.full_name === ctx.slug);
+    return ((ctx.project || {}).policy || {}).agent_owners === "anyone" && !(mine && mine.public_page === "off");
+  }
+  async function claimRequestsOf(ctx) {
+    if (ctx.scope !== "project" || !M.claimRequest || !takesOutsiders(ctx) || !M.claimRequest.mayConfirm(ctx)) return null;
+    const cards = await M.api.getAll(ctx.base + "/tasks?status=open");
+    return cards.items.filter((c) => Array.isArray(c.claim_requests) && c.claim_requests.length
+      && M.claimRequest.confirmer(ctx, c.claim_requests[0]));
+  }
+
   // A project's answered and withdrawn requests (§7: a comma list of statuses), read only when
   // Show asks for all of them: the first drawing reads the open ones alone, so its cost does not
   // grow with the history (tsk-y8gkq1kvt63c; three pages of history were 4.6 s of 7 s on prod).
@@ -667,7 +685,9 @@ window.Maity = window.Maity || {};
     // (review of #1519). Checked after every read of the way in, and in the Show handler.
     let left = false;
     if (ctx.onDispose) ctx.onDispose(() => { left = true; });
-    const items = await load(ctx);
+    // A failed read of the claim requests is said in their section; the requests still show.
+    let claimError = null;
+    const [items, claimCards] = await Promise.all([load(ctx), claimRequestsOf(ctx).catch((err) => { claimError = err; return null; })]);
     if (left) return;
     // What the open list lacks is read on its own: the answered ones when Show asks for all,
     // a linked request that is not open by its id (§7, GET …/requests/{id}).
@@ -753,7 +773,7 @@ window.Maity = window.Maity || {};
 
     // With no open entry on screen there is nothing being read or typed, so
     // a change of the counts reloads the list on its own (app.js, watch).
-    ctx.quietReload = () => !ordered().some((r) => r.status === "open");
+    ctx.quietReload = () => !ordered().some((r) => r.status === "open") && !(claimCards && claimCards.length);
     // The open tabs changed in the header (opened, closed, moved): the filter
     // to open tabs and the grouped order follow at once (app.js, tabsChanged).
     ctx.tabsChanged = () => { if (projectFilter() === TABS || grouped()) draw(); };
@@ -917,6 +937,36 @@ window.Maity = window.Maity || {};
     const groupBox = ctx.scope === "all" ? h("input", { type: "checkbox", id: "inbox-group", onchange: (e) => { ui.group = e.target.checked; draw(); } }) : null;
     if (groupBox) groupBox.checked = ui.group;
 
+    // The claim requests above the requests, with their own count in the heading (the tab's badge is the
+    // hub's count, §5.1, and holds none of them); a card answered here leaves the section, and the answer
+    // is said in its status line. No section where none waits and the read went well.
+    const claimBox = h("div", { class: "claim-requests-box" });
+    const claimStatus = M.statusLine();
+    if (claimError) claimStatus.fail(M.t("inbox.claim_requests.failed"), claimError);
+    // What the last answer here did, kept while the section redraws (and after it is gone).
+    const claimSaid = h("p", { class: "send-status claim-requests-said", role: "status" });
+    function drawClaims() {
+      M.dom.clear(claimBox);
+      const cards = claimCards || [];
+      if (!cards.length && !claimError) { append(claimBox, claimSaid); return; }
+      const answered = (card, id, what) => {
+        if (left) return;
+        const i = claimCards.findIndex((c) => c.id === card.id);
+        if (i >= 0 && !(card.claim_requests || []).length) claimCards.splice(i, 1);
+        else if (i >= 0) claimCards[i] = card;
+        claimSaid.textContent = what === "confirm" ? M.t("inbox.claim_requests.confirmed", { id: card.id })
+          : M.t("inbox.claim_requests.declined", { id: card.id });
+        drawClaims();
+      };
+      append(claimBox, h("section", { class: "entry-group claim-requests", "aria-labelledby": "inbox-claim-requests" },
+        h("h3", { id: "inbox-claim-requests" }, M.t("inbox.claim_requests.title"), h("span", { class: "count" }, String(cards.length))),
+        claimStatus.el, claimSaid,
+        cards.length ? h("ol", { class: "entries" }, cards.map((c) => h("li", { class: "entry claim-request-entry", "data-task": c.id },
+          h("p", null, h("a", { href: ctx.link("tasks", c.id) }, c.title), " ", h("span", { class: "muted" }, c.id)),
+          M.claimRequest.box(ctx, c, answered, true)))) : null));
+    }
+    drawClaims();
+
     // The project's banner (docs/api.md §11.2) heads its landing page.
     const banner = ctx.scope === "project" && M.api.imageUrl(ctx.slug, "banner", ctx.project.banner);
     if (banner) append(root, h("img", { class: "project-banner", src: banner, alt: "" }));
@@ -929,6 +979,7 @@ window.Maity = window.Maity || {};
           h("label", { class: "check", for: "inbox-group" }, groupBox, " " + M.t("inbox.group"))] : null),
       listStatus.el,
       wanted && !wantedReq ? h("p", { class: "muted wanted-note", role: "status" }, M.t("inbox.not_here", { id: wanted })) : null,
+      claimBox,
       list);
     draw();
     if (wantedReq) {
