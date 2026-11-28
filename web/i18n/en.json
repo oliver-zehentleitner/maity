@@ -4634,7 +4634,7 @@
   "runners.pair.allow_in": "Allow it in",
   "runners.pair.aside": "Move the old credential aside first (here from the default state directory): pair refuses while one is there, and this pairing revokes it anyway.",
   "runners.pair.cancel": "Cancel",
-  "runners.pair.check":"Check it: {command} says what is still missing, such as the tool's login.",
+  "runners.pair.check": "Check it: {command} says what is still missing, such as the tool's login.",
   "runners.pair.config_label": "Starter configuration",
   "runners.pair.copy_command": "Copy as a command that writes the file",
   "runners.pair.copy_config": "Copy the configuration",

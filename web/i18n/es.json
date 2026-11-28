@@ -4634,7 +4634,7 @@
   "runners.pair.allow_in": "Permitirlo en",
   "runners.pair.aside": "Aparta primero la credencial antigua (aquí del directorio de estado predeterminado): pair se niega mientras haya una, y este emparejamiento la revoca de todos modos.",
   "runners.pair.cancel": "Cancelar",
-  "runners.pair.check":"Compruébalo: {command} dice qué falta aún, como el inicio de sesión de la herramienta.",
+  "runners.pair.check": "Compruébalo: {command} dice qué falta aún, como el inicio de sesión de la herramienta.",
   "runners.pair.config_label": "Configuración inicial",
   "runners.pair.copy_command": "Copiar como un comando que escribe el archivo",
   "runners.pair.copy_config": "Copiar la configuración",
