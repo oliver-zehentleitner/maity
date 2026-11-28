@@ -26946,10 +26946,17 @@ dashboard links to the page where one exists. A visitor's `GET` answers
 the page inside the app shell: the page's title, description and canonical
 link in its head, for a page in the dashboard's design the frame's
 stylesheets (§16.7.5) linked there too, after the shell's own, its text
-in `<main>`, no `noindex`, so that a crawler reads it, a reader sees it at once
+in `<main>` between the frame's header and footer (§16.7.5, the same
+links, layout and language as `?as=public` has, the footer's language
+links on the page's own path, keeping the page's query; Sign in comes back to the page, and the
+app's own bar is hidden), no `noindex`, so that a crawler reads it, a reader sees it at once
 in its final design, and the dashboard then draws the same view read-only from
 "What visitors read in the dashboard" below, in the same structure; the shell's own security policy applies and the
-page's `ETag` also covers the shell. `?as=public` answers the page on its
+page's `ETag` also covers the shell and the frame; the answer carries
+`Vary: Cookie, Accept-Language`, since the frame's words follow `?lang`,
+else the reader's language. Header and footer are part of the served HTML:
+a visitor without script reads them, and the dashboard's script takes them
+over (a visitor's page is complete without it). `?as=public` answers the page on its
 own, in the frame of §16.7.5, under the headers below. Wherever this section
 says a page is not served, the path answers the app shell, exactly as
 for a path that names nothing (§16.11).
@@ -26973,7 +26980,10 @@ and its existence are theirs.
 | `public_page` | `on`, `off` | whether the page exists. `POST /projects` takes it (default `on` for a creator who is the namespace owner, `off` for anyone else, §6.1), and the hub decides once the project exists: when the `repository` given in the same call is private by the hub's first look, or one the hub cannot read (§11.4), the project is created with `off` whatever the call sent, so no creation publishes what the creator could not see the hub see. The `201` carries the value set; turning it on afterwards is a `PATCH` by the namespace owner. The same holds later: setting `repository` (§6.1) to one the hub finds private or cannot read turns a page that is `on` to `off`, with `project_updated`, and the namespace owner turns it on again if they want. The dashboard's create form shows "Private" (unchecked for the namespace owner; for anyone else checked and fixed, with the note that an owner can make it public) and, under the repository field, that a private repository keeps the project private; it sends `public_page: "off"` only when "Private" is checked and otherwise leaves the field out. A project created before 2026-10-31 keeps its value |
 | `public_about` | `null` or Markdown, at most 4 KiB | the page's text, under the landing page's Markdown rules (§16.7) |
 
-The page shows the project's `name` and `full_name`, `public_about`,
+The page shows the project's `name` and `full_name`, above the title the
+crumb `{owner} / {slug}` as two plain links, to the owner's public page
+(`/{owner}`, a person's or an organisation's, which exists only where
+that owner has one) and to the project's own page, `public_about`,
 the state (`build`, `release`, …), the repository URL only while the
 hub's last look at the repository found it public (below), the
 project's `links` (§6.11) — a link on the repository's host (compared
@@ -27482,7 +27492,7 @@ footer carry a `lang` of their own where the frame's differs. The
 frame has the landing page's controls: the header's light/dark switch,
 with the landing page's one script (§16.7, `/assets/landing/landing.js`,
 the only script the page loads), and the footer's language row, whose
-links keep `as=public` and set `lang`, changing the frame's language,
+links keep `as=public` and the rest of the page's query and set `lang`, changing the frame's language,
 not the page's. A change to the frame (the landing
 page, the legal pages, the counters, the hub's stylesheets) shows on
 the next answer, with no render. A stored page of another shape is
@@ -27854,7 +27864,8 @@ where the first segment is not reserved (below):
   shows the project, or its own view of the person or organisation, and
   offers **View public page** where a page is served, which opens the
   address with `?as=public` (§16.9).
-- Both answers carry `Vary: Cookie`.
+- Both answers carry `Vary: Cookie`; a visitor's page inside the shell carries
+  `Vary: Cookie, Accept-Language` (§16.9).
 
 **Reserved first segments.** A human's or an organisation's handle
 (§6.24, §6.26) is never a first segment the hub or the dashboard uses,

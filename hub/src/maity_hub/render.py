@@ -335,7 +335,8 @@ def _document(
 
 def _language_link(tag: str, query: str = "") -> str:
     """A language of the footer: this page with `?lang=<tag>`, after `query` where the page's
-    address needs one to stay itself (a stored page's `as=public`)."""
+    address needs one to stay itself (a stored page's `as=public`, or any other query the
+    request already had)."""
     name = LANGUAGE_NAMES.get(tag, tag)
     href = f"?{query}&lang={tag}" if query else f"?lang={tag}"
     return f'<a href="{escape(href, quote=True)}" lang="{escape(tag)}">{escape(name)}</a>'
@@ -702,15 +703,26 @@ def _column(title: str, items: list[str]) -> str:
     return f'<nav class="foot-col" aria-label="{escape(title, quote=True)}"><h3>{escape(title)}</h3><ul>{rows}</ul></nav>'
 
 
-def _site_header(model: dict[str, Any], nav: str, cta: str, theme: str | None) -> str:
+def _site_header(
+    model: dict[str, Any], nav: str, cta: str, theme: str | None, *, hidden_switch: bool = True
+) -> str:
     """The landing page's header from the frame's model (§16.7.5); the theme switch only on a page
-    with the landing page's script."""
-    switch = (
-        f'<button type="button" class="theme-toggle" data-lp-theme hidden aria-pressed="false" '
-        f'aria-label="{escape(theme, quote=True)}">◐</button>'
-        if theme is not None
-        else ""
-    )
+    that asks for it. `hidden_switch` is for a page whose own script unhides the button
+    (landing.js). The app shell leaves it visible and disabled, so a visitor without script
+    still has the same layout slot, without a focusable control that does nothing
+    (tsk-d0ktrdakakhp)."""
+    if theme is None:
+        switch = ""
+    elif hidden_switch:
+        switch = (
+            f'<button type="button" class="theme-toggle" data-lp-theme hidden aria-pressed="false" '
+            f'aria-label="{escape(theme, quote=True)}">◐</button>'
+        )
+    else:
+        switch = (
+            f'<button type="button" class="theme-toggle" data-lp-theme disabled aria-disabled="true" '
+            f'aria-label="{escape(theme, quote=True)}">◐</button>'
+        )
     sign_in = model["header"]["sign_in"]
     return (
         '<header class="site-header dz"><div class="wrap">'
@@ -949,21 +961,31 @@ class Frame(NamedTuple):
 
 
 def public_frame(
-    model: dict[str, Any], lang: str, *, theme: bool = False, query: str = ""
+    model: dict[str, Any],
+    lang: str,
+    *,
+    theme: bool = False,
+    query: str = "",
+    theme_script: bool | None = None,
 ) -> Frame:
     """The frame for a page in `lang`, from `chrome`'s model. The mark comes without its
     `style` attributes, which a policy without inline styles would block: `public-pages.css`
     colours it. Where the frame's words are in another language than the page (the landing page
     has no `lang`), header and footer say theirs. With `theme`, the header has the landing
-    page's light/dark switch and the head its script (`landing.js`), for a page whose policy
-    allows the hub's own script; `query` goes before `lang=` in the footer's language links."""
+    page's light/dark switch; `theme_script` (default: the same as `theme`) also puts
+    `landing.js` in the head, which unhides the button, for a page whose policy allows the
+    hub's own script (a stored page with `?as=public`). The app shell already has its own
+    script, so it asks for the button without `landing.js`, visible and disabled, and a visitor
+    without script still has the same layout slot, without a focusable control that does
+    nothing (tsk-d0ktrdakakhp). `query` goes before `lang=` in the footer's language links."""
     nav = "".join(
         f'<a href="{escape(item["href"], quote=True)}">{escape(item["label"])}</a>'
         for item in model["header"]["nav"]
     )
     cta = _button(model["header"]["cta"], "btn-primary") if model["header"]["cta"] else ""
     switch = catalog.section("frame", model["language"])["theme"] if theme else None
-    header = _site_header(model, nav, cta, switch)
+    include_script = theme if theme_script is None else theme_script
+    header = _site_header(model, nav, cta, switch, hidden_switch=include_script)
     footer = _landing_footer(model, on_landing=False, query=query)
     mark = landing_files.svg("mark.svg")
     header = header.replace(mark, re.sub(r'\s+style="[^"]*"', "", mark), 1)
@@ -972,7 +994,7 @@ def public_frame(
         footer = footer.replace("<footer ", f'<footer lang="{escape(model["language"])}" ', 1)
     sheets = _frame_sheet_urls()
     head = frame_sheets()
-    script = landing_files.url("landing.js") if theme else None
+    script = landing_files.url("landing.js") if include_script else None
     if script:
         head += f'<script src="{escape(script, quote=True)}" defer></script>'
     return Frame(header, footer, head, "" if all(sheets) else STYLE)
@@ -1165,7 +1187,28 @@ STORED_PAGE = re.compile(
     r"<main class=\"wrap\">(?P<main>.*)</main></body>",
     re.DOTALL,
 )
-_STORED_LANG = re.compile(r'<html lang="(?P<lang>[^"]*)">')
+STORED_LANG = re.compile(r'<html lang="(?P<lang>[^"]*)">')
+
+
+_EMPTY_CTA_SLOT = '<span class="cta-slot"></span>'
+
+
+def with_hero_cta(html: str, model: dict[str, Any]) -> str:
+    """Fill the hero's empty call-to-action slot from the frame's model (tsk-d0ktrdakakhp):
+    the same link `js/visitor.js` puts there, a plain `<a>` in the served HTML, so a visitor
+    without script can follow it. Unchanged when the landing page has no CTA or the page has
+    no slot (a person, an agent, an organisation). The label is `frame.hero_try` in the
+    frame's language; the address is the header's CTA."""
+    cta = (model.get("header") or {}).get("cta")
+    if not cta or _EMPTY_CTA_SLOT not in html:
+        return html
+    label = catalog.section("frame", model.get("language") or "en")["hero_try"]
+    filled = (
+        '<span class="cta-slot">'
+        f'<a class="btn btn-primary" href="{escape(cta["href"], quote=True)}">{escape(label)}</a>'
+        "</span>"
+    )
+    return html.replace(_EMPTY_CTA_SLOT, filled)
 
 
 def stored_in_frame(
@@ -1176,6 +1219,7 @@ def stored_in_frame(
     stats: dict[str, Any] | None,
     lang: str | None,
     accept_language: str | None,
+    query: str = "as=public",
 ) -> str | None:
     """A stored public page in the frame of §16.7.5, put around it when it is served: the
     landing page's header and footer in the visitor's language (`?lang`, else the reader's),
@@ -1183,24 +1227,27 @@ def stored_in_frame(
     its own language, and the frame says its own where that differs. The frame is the landing
     page's in full (the maintainer's decision req-q34v0gr2rbw2): the footer's language switch,
     whose links (`?as=public&lang=`) change the frame's language and never the content's, and
-    the header's light/dark switch with the landing page's script. No `hreflang` links: the page
+    the header's light/dark switch with the landing page's script. `query` is the state the
+    footer's language links keep (`as=public` and any other pair the request already had).
+    No `hreflang` links: the page
     exists in one language, its content's. None when `stored` is not of the shape
     `page_document` writes: the caller serves it bare."""
     found = STORED_PAGE.search(stored)
-    tagged = _STORED_LANG.search(stored)
+    tagged = STORED_LANG.search(stored)
     if found is None or tagged is None:
         return None
     page_lang = unescape(tagged["lang"])
     model = chrome(setting, legal, lang=lang, accept_language=accept_language, stats=stats)
-    frame = public_frame(model, page_lang, theme=True, query="as=public")
+    frame = public_frame(model, page_lang, theme=True, query=query)
     # The stored head parts are already escaped; only the title passes `_document`'s escape.
     head = (found["meta"] or "") + found["canonical"] + (found["robots"] or "") + frame.head
+    main = with_hero_cta(framed_main(found["main"]), model)
     return _document(
         lang=page_lang,
         title=unescape(found["title"]),
         description="",
         head=head,
-        body=frame.header + f"<main>{_framed_main(found['main'])}</main>" + frame.footer,
+        body=frame.header + f"<main>{main}</main>" + frame.footer,
         languages=[],
         style=frame.style,
     )
@@ -1217,7 +1264,7 @@ def designed(main: str) -> bool:
     return _DESIGNED.match(main) is not None
 
 
-def _framed_main(main: str) -> str:
+def framed_main(main: str) -> str:
     """The stored content as `<main>` holds it in the frame: a page in the dashboard's design as
     it is, where the dashboard puts it too; any other in the stored pages' column."""
     if designed(main):

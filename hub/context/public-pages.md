@@ -1893,3 +1893,83 @@ with either form.)
   writer and every `put`.
 - An in-process `threading` lock: it has no hook at the database commit, it is invisible to InnoDB, and it does
   not cover CLI processes writing the same database.
+
+## A visitor's page inside the shell carries the frame's header and footer in its HTML
+
+**Id:** 6df67d47-c909-4866-9f28-580c202a7e6f
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-d0ktrdakakhp and its screenshots (2026-11-28, the maintainer: header and footer empty without JavaScript, "public pages must stand on their own without JavaScript"); `hub/src/maity_hub/public_pages.py` `_shell_frame`, `shell.py` `page_in_shell`, `web/js/site-chrome.js`; `hub/tests/test_public_no_script.py`
+**Revisit when:** a visitor's page stops coming inside the app shell, or the frame's model gets inputs that differ per visitor beyond language
+**Verification:** corroborated
+
+A visitor without a session gets a stored page inside the app shell (the decision above), and the shell's
+header and footer were drawn by `js/site-chrome.js` alone: without script the page had the app's bare bar (the
+mark only), no frame links and no footer. `public_pages.answer` now asks `_shell_frame` for the same
+`render.public_frame` that `?as=public` uses, from the inputs as they are now (landing setting, legal pages,
+counters, `?lang` or `Accept-Language`), and `shell.page_in_shell` puts it into the document: the header after
+the app's bar (which is `hidden`), the footer after `<main>`, the frame's stylesheets in the head and the root
+marked `public-frame`, for every kind of page, the organisation page (not in the dashboard's design) included.
+Three differences from `?as=public`'s frame: Sign in carries `next=<this page>`, as the dashboard's header link
+does; a footer link that is a bare query (the languages) is this page's own path first, since the shell's
+`<base href="/assets/">` would lead `?lang=de` into `/assets/`, and it keeps the page's other query, as
+`js/site-chrome.js` does (a page opened with `?report=1` keeps that flag on a language change, in the shell
+and with `?as=public`); and the theme switch stands in the header visible and disabled, without `landing.js`
+(the shell already has its own script, which replaces the served header with a working switch). A visitor
+without script still has the same layout slot, and the button is not a focusable control that does nothing;
+it does not change the theme until a script runs. The hero's empty `cta-slot` is filled at the same time, from the frame's
+CTA, as a plain `btn-primary` link whose label is `frame.hero_try` in the frame's language: a
+visitor without script can follow it. The stored `body` stays empty of the link, so a change of the
+landing CTA does not re-render every page. `js/visitor.js` still draws the same link over it. The header's section links and the footer's extra columns are whatever
+the landing page and the legal pages are configured to show: a hub with only a hero and no `nav_label`
+sections has none, which is configuration, not the frame leaving them out. `js/site-chrome.js` takes the elements over (`data-served-frame`):
+once its read of `/site/chrome` answers it replaces them with its own drawing of the same frame, leaves them
+standing where the read fails (the frame is then still there, not the app's bar), and removes them when a view
+leaves the frame. The served elements carry `data-served-path` of the route that supplied them: on a later
+`enter()` to another public page, Sign in (`next=`) and the language links are rewritten to that route while
+the frame still stands, so a failed read after an in-app move does not send the visitor back. The answer's tag
+covers the frame, and it varies by `Accept-Language` as the framed page does.
+`@media (scripting: none)` shows the dashboard's invisible `.hub-page` at once instead of after three seconds.
+
+**No page is rendered again for this:** the stored `body` and `data` are unchanged (the frame is put around
+them when they are served, as for `?as=public`), so `FORMAT` did not move for it and no row needs a refresh.
+
+**Reason:** the frame depends on the landing page's setting, the legal pages, the counters and the visitor's
+language; none of them belongs in a stored page, which is a pure function of its `data`, and a change of any of
+them would have to render every row again.
+
+**Rejected alternatives:**
+- The frame inside each stored `body`: a change of the landing page, a legal page or a counter would render every
+  page again, the stored page would no longer be a function of its `data` alone, and the visitor's language
+  could not be chosen per request.
+- A static header and footer in `web/index.html`: it cannot know the operator's landing sections, legal pages,
+  social links or the visitor's language, which the frame's model holds.
+- Serving the framed page of `?as=public` to every visitor instead of the shell: the dashboard could no longer take
+  the page over at the same address (the decision above).
+- Letting `site-chrome.js` remove the served frame whenever its read fails: a failed read would then leave the
+  page without links again.
+
+## The crumb of a project's page links the owner and the project
+
+**Id:** 5c8d3dce-a0ac-4084-92d9-0c74e75e4edf
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the maintainer's addition on card tsk-d0ktrdakakhp (2026-11-28: the owner part to the owner's public page, person or organisation, the project part to the project page itself, both as plain links in the served HTML); `public_design.hero`, `web/js/visitor.js` `hero`
+**Revisit when:** a visitor reports a crumb link that leads to a page that does not exist, or `data` gains a field for the owner's page
+**Verification:** uncorroborated
+
+`owner / slug` above the title is `<a href="/owner">owner</a> / <a href="/owner/slug">slug</a>` on the project's
+pages and a card's (`aria-current="page"` on the project part where it is the page itself, the Overview); the
+dashboard's drawing is the same. The stored HTML changed, so `FORMAT` is 4 and every row of format 3 is rendered
+again by `refresh`. What is confirmed is the maintainer's request; that the owner link is always there is the
+implementer's reading of it.
+
+**Reason:** the stored page is a pure function of its `data` (`public_design.page`), which holds no field for
+whether the owner has a page; the address `/{handle}` is the one place a person's or an organisation's page lives.
+
+**Rejected alternative:** link the owner only where the owner has a page. It needs a new `data` field (the
+contract's keys are tested one by one) and every toggle of a person's profile or an organisation's page would have
+to render the owner's projects' pages again, which no `dependents` hook does today. Cost of the choice: an owner
+with no public page is a link to a page that is not found (the dashboard's "not found" with sign-in one link away).

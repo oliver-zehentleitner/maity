@@ -4,6 +4,7 @@ once it is done."""
 
 from __future__ import annotations
 
+import re
 from dataclasses import replace
 from typing import Any
 
@@ -182,7 +183,11 @@ def test_the_editor_of_anothers_note_is_named_whatever_their_profile_and_a_hold_
     resolved = world.owner.post(f"/admin/reports/{made.json()['id']}/resolve", {"action": "hide"})
     assert resolved.status_code == 200, resolved.text
     assert data(world, card_id).json()["data"]["notes"][0]["edited"]["by"] == "member"
-    assert f'<a href="/{handle}">' not in (page(world, card_id) or "")
+    # Not named as a person anywhere on the page. The crumb `owner / project` is no naming of
+    # the editor: it links the namespace's owner, whose handle is its text and the project's
+    # address whatever the profile says (tsk-d0ktrdakakhp, hub/context/public-pages.md).
+    shown = re.sub(r'<p class="crumb">.*?</p>', "", page(world, card_id) or "")
+    assert f'<a href="/{handle}">' not in shown
 
 
 def test_a_security_card_has_a_page_only_once_it_is_done(world: World) -> None:
