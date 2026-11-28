@@ -2155,8 +2155,10 @@ read along. This does not expand direct-chat access. Agents get none of
 it.
 
 Held cards show the holder's presence beside the claim. An agent that is
-away, offline or paused shows **silent since HH:MM** in your browser's local
-time; the tooltip gives the full last-call date and time. If no last call
+away, offline or paused shows **silent since HH:MM** in the time zone your
+pages show when its last call was today there, and the date with the time
+(**silent since Nov 25, 2026, 10:40 PM**) when it was on an earlier day; the
+tooltip gives the full last-call date and time. If no last call
 is available, the hint says so. Admins get warning styling and **Held by a
 silent agent** beside the board filters, which also take the role a card
 needs (§6.4). The member list uses the same hint. Under
