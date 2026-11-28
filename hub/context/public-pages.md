@@ -1913,10 +1913,12 @@ the app's bar (which is `hidden`), the footer after `<main>`, the frame's styles
 marked `public-frame`, for every kind of page, the organisation page (not in the dashboard's design) included.
 Three differences from `?as=public`'s frame: Sign in carries `next=<this page>`, as the dashboard's header link
 does; a footer link that is a bare query (the languages) is this page's own path first, since the shell's
-`<base href="/assets/">` would lead `?lang=de` into `/assets/`; and the theme switch stands in the header
-without `hidden` and without `landing.js` (the shell already has its own script, which replaces the served
-header with a working switch). A visitor without script still has the same layout slot; the button does not
-change the theme until a script runs. The hero's empty `cta-slot` is filled at the same time, from the frame's
+`<base href="/assets/">` would lead `?lang=de` into `/assets/`, and it keeps the page's other query, as
+`js/site-chrome.js` does (a page opened with `?report=1` keeps that flag on a language change, in the shell
+and with `?as=public`); and the theme switch stands in the header visible and disabled, without `landing.js`
+(the shell already has its own script, which replaces the served header with a working switch). A visitor
+without script still has the same layout slot, and the button is not a focusable control that does nothing;
+it does not change the theme until a script runs. The hero's empty `cta-slot` is filled at the same time, from the frame's
 CTA, as a plain `btn-primary` link whose label is `frame.hero_try` in the frame's language: a
 visitor without script can follow it. The stored `body` stays empty of the link, so a change of the
 landing CTA does not re-render every page. `js/visitor.js` still draws the same link over it. The header's section links and the footer's extra columns are whatever
@@ -1924,7 +1926,10 @@ the landing page and the legal pages are configured to show: a hub with only a h
 sections has none, which is configuration, not the frame leaving them out. `js/site-chrome.js` takes the elements over (`data-served-frame`):
 once its read of `/site/chrome` answers it replaces them with its own drawing of the same frame, leaves them
 standing where the read fails (the frame is then still there, not the app's bar), and removes them when a view
-leaves the frame. The answer's tag covers the frame, and it varies by `Accept-Language` as the framed page does.
+leaves the frame. The served elements carry `data-served-path` of the route that supplied them: on a later
+`enter()` to another public page, Sign in (`next=`) and the language links are rewritten to that route while
+the frame still stands, so a failed read after an in-app move does not send the visitor back. The answer's tag
+covers the frame, and it varies by `Accept-Language` as the framed page does.
 `@media (scripting: none)` shows the dashboard's invisible `.hub-page` at once instead of after three seconds.
 
 **No page is rendered again for this:** the stored `body` and `data` are unchanged (the frame is put around

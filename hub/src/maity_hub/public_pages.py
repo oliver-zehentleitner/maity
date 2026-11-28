@@ -269,6 +269,22 @@ def answer(
     return HTMLResponse(served, headers=headers)
 
 
+def _language_query(request: Request, extra: list[tuple[str, str]] | None = None) -> str:
+    """The query the footer's language links keep, as `js/site-chrome.js` does: every pair
+    the request already has, except `lang` itself (each link then sets `lang=`). `extra`
+    comes first (`as=public` on a stored page served in the frame)."""
+    from urllib.parse import quote
+
+    pairs: list[tuple[str, str]] = list(extra or [])
+    seen = {key for key, _ in pairs}
+    for key, value in request.query_params.multi_items():
+        if key == "lang" or key in seen:
+            continue
+        pairs.append((key, value))
+        seen.add(key)
+    return "&".join(f"{quote(key, safe='')}={quote(value, safe='')}" for key, value in pairs)
+
+
 def _in_frame(request: Request, body: str) -> str | None:
     """The stored page in the frame of the pages without a session (§16.7.5), from the frame's
     inputs as they are now; None for a stored page of another shape, served bare."""
@@ -283,6 +299,7 @@ def _in_frame(request: Request, body: str) -> str | None:
             stats=landing_stats.for_frame(conn, setting),
             lang=request.query_params.get("lang"),
             accept_language=request.headers.get("accept-language"),
+            query=_language_query(request, extra=[("as", "public")]),
         )
 
 
@@ -294,9 +311,12 @@ def _shell_frame(request: Request, body: str) -> tuple[str, render.Frame] | None
     them over. None for a stored page of another shape. Three differences from `_in_frame`'s:
     Sign in comes back to this page (`?next=`, as the dashboard's header link does, §16.7.5);
     a link that is a bare query (the footer's languages) is this page's own path first, which
-    the shell's `<base href="/assets/">` would otherwise lead into `/assets/`; and the theme
-    switch is in the header without `hidden` and without `landing.js`, which the shell must
-    not load (its own script draws a working switch). The returned body is `body` with the
+    the shell's `<base href="/assets/">` would otherwise lead into `/assets/`, and it keeps the
+    page's other query (`report=`, and so on), as `js/site-chrome.js` does; and the theme
+    switch is in the header visible and disabled, without `landing.js`, which the shell must
+    not load (its own script draws a working switch). Each served element carries
+    `data-served-path` of this page, so a later drawing can rewrite the route's links if
+    the chrome read fails after a move. The returned body is `body` with the
     hero's call-to-action slot filled from the model, a plain link, so a visitor without
     script can follow it."""
     from urllib.parse import quote
@@ -324,10 +344,22 @@ def _shell_frame(request: Request, body: str) -> tuple[str, render.Frame] | None
             f"#{place}" if place else ""
         )
     # The theme switch stands in the header, without landing.js (the shell has its own
-    # script) and without `hidden`, so a visitor without script still has the layout slot.
-    frame = render.public_frame(model, unescape(tagged["lang"]), theme=True, theme_script=False)
+    # script), visible and disabled, so a visitor without script still has the layout slot
+    # and no focusable control that does nothing.
+    frame = render.public_frame(
+        model,
+        unescape(tagged["lang"]),
+        theme=True,
+        theme_script=False,
+        query=_language_query(request),
+    )
     own = escape(path, quote=True)
     frame = frame._replace(footer=frame.footer.replace('href="?', f'href="{own}?'))
+    attr = f' data-served-path="{own}"'
+    frame = frame._replace(
+        header=frame.header.replace("<header ", f"<header{attr} ", 1),
+        footer=frame.footer.replace("<footer ", f"<footer{attr} ", 1),
+    )
     return render.with_hero_cta(body, model), frame
 
 

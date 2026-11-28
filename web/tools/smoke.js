@@ -146,7 +146,11 @@ const document = {
   head,
   body,
   documentElement: new El("html"),
-  getElementById: (id) => ({ header, main, "product-line": productLine })[id],
+  getElementById: (id) => {
+    const known = { header, main, "product-line": productLine }[id];
+    if (known) return known;
+    return body.all().find((e) => e.id === id) || null;
+  },
   querySelector: (s) => header.querySelector(s) || main.querySelector(s),
   addEventListener: (t, f) => { docListeners[t] = f; },
   removeEventListener: (t, f) => { if (docListeners[t] === f) delete docListeners[t]; },
@@ -12311,6 +12315,75 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && lpLegal && lpLegal.querySelectorAll("a").map((a) => a.getAttribute("href") + "=" + text(a)).join() === "/impressum=Imprint",
     "frame: a failed read draws the login without it, the app's bar shown, the legal pages linked under the form, the product line at the end");
   win.Maity.api.get = frGet;
+  // A served frame (the hub put it in the first HTML) stays when the chrome read fails, scoped
+  // to the route that supplied it: a move to another public page rewrites Sign in and the
+  // languages; a later successful read takes it over; leave() removes it (A2820).
+  const frServed = (path) => {
+    ["site-header", "site-footer"].forEach((id) => {
+      const el = document.getElementById(id);
+      if (el && el.getAttribute("data-served-frame") != null) el.remove();
+    });
+    const mk = (tag, id, cls) => {
+      const el = document.createElement(tag);
+      el.setAttribute("id", id);
+      el.setAttribute("data-served-frame", "");
+      el.setAttribute("data-served-path", path);
+      el.className = cls;
+      return el;
+    };
+    const sh = mk("header", "site-header", "site-header dz");
+    const sign = document.createElement("a");
+    sign.className = "signin";
+    sign.setAttribute("href", "/login?lang=en&next=" + encodeURIComponent(path));
+    sign.textContent = "Sign in";
+    sh.appendChild(sign);
+    const sf = mk("footer", "site-footer", "site-footer");
+    const langs = document.createElement("p");
+    langs.className = "langs";
+    const de = document.createElement("a");
+    de.setAttribute("lang", "de");
+    de.setAttribute("href", path + "?lang=de");
+    de.textContent = "Deutsch";
+    langs.appendChild(de);
+    sf.appendChild(langs);
+    body.insertBefore(sh, main);
+    body.insertBefore(sf, main.nextSibling);
+    header.hidden = true;
+    return { sh, sf };
+  };
+  const frIsServed = (el) => !!(el && el.getAttribute("data-served-frame") != null);
+  win.Maity.api.get = (p) => (p.startsWith("/site/chrome") ? Promise.reject(Object.assign(new Error("down"), { status: 503 })) : frGet(p));
+  const frKept = frServed("/stranger/tool");
+  const frFirstFail = await win.Maity.siteChrome.enter("/stranger/tool", undefined, { next: "/stranger/tool" });
+  expect(!frFirstFail && frIsServed(document.getElementById("site-header")) && frIsServed(document.getElementById("site-footer"))
+    && document.getElementById("site-header") === frKept.sh
+    && document.getElementById("site-header").querySelector("a.signin").getAttribute("href") === "/login?lang=en&next=" + encodeURIComponent("/stranger/tool")
+    && document.getElementById("site-footer").querySelector("p.langs a").getAttribute("href") === "/stranger/tool?lang=de"
+    && document.getElementById("site-header").getAttribute("data-served-path") === "/stranger/tool"
+    && header.hidden === true,
+    "frame: a failed first read keeps the served frame of this route, Sign in and the languages on it, the app's bar hidden");
+  const frMovedFail = await win.Maity.siteChrome.enter("/alice/maity", undefined, { next: "/alice/maity" });
+  expect(!frMovedFail && frIsServed(document.getElementById("site-header")) && document.getElementById("site-header") === frKept.sh
+    && document.getElementById("site-header").querySelector("a.signin").getAttribute("href") === "/login?lang=en&next=" + encodeURIComponent("/alice/maity")
+    && document.getElementById("site-footer").querySelector("p.langs a").getAttribute("href") === "/alice/maity?lang=de"
+    && document.getElementById("site-header").getAttribute("data-served-path") === "/alice/maity"
+    && document.getElementById("site-footer").getAttribute("data-served-path") === "/alice/maity"
+    && header.hidden === true,
+    "frame: a failed read after a move to another public page keeps the served frame and rewrites Sign in and the languages to the new route");
+  win.Maity.api.get = (p) => (p.startsWith("/site/chrome") ? Promise.resolve(frModel({})) : frGet(p));
+  const frTook = await win.Maity.siteChrome.enter("/alice/maity", undefined, { next: "/alice/maity" });
+  const frTookHead = frHead(), frTookFoot = frFoot();
+  expect(frTook && frTookHead && frTookFoot && !frIsServed(frTookHead) && !frIsServed(frTookFoot)
+    && body.childNodes.filter((x) => x.tagName === "HEADER" && x.className === "site-header dz").length === 1
+    && body.childNodes.filter((x) => x.tagName === "FOOTER" && x.className === "site-footer").length === 1
+    && (frTookHead.querySelector("a.signin").getAttribute("href") || "").includes("next=" + encodeURIComponent("/alice/maity"))
+    && header.hidden === true,
+    "frame: a successful later read takes the served frame over with one of its own");
+  win.Maity.siteChrome.leave();
+  expect(!frHead() && !frFoot() && !document.getElementById("site-header") && !document.getElementById("site-footer")
+    && header.hidden === false && productLine.querySelectorAll("a").length === 5,
+    "frame: leaving after a served frame removes it and brings the app's bar and the product line back");
+  win.Maity.api.get = frGet;
   // Another view leaves it: stylesheets off, the class gone, the frame's elements gone.
   await go("#/invite/open-xxxxxxxxxxxxxxxx1"); for (let k = 0; k < 4; k++) await tick();
   expect(!frHead() && !frFoot() && !frOn() && frSheets().length === 3 && frSheets().every((l) => l.disabled === true) && header.hidden === false
@@ -19134,7 +19207,11 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       viPages["/public/pages/stranger/tool"] = plain;
       await go("#/stranger/tool/team"); for (let k = 0; k < 4; k++) await tick();
       const h3 = viView().querySelector("section.phero");
-      expect(viView().getAttribute("data-kind") === "team" && h3 && text(h3.querySelector("h1")) === "tool" && text(h3.querySelector("p.crumb a:last-child")) === "tool"
+      const crumbAs = h3 && h3.querySelector("p.crumb") ? h3.querySelector("p.crumb").querySelectorAll("a") : [];
+      const crumbHref = (a) => (a.getAttribute("href") || "").replace(/^#/, "");
+      expect(viView().getAttribute("data-kind") === "team" && h3 && text(h3.querySelector("h1")) === "tool"
+        && crumbAs.length === 2 && text(crumbAs[0]) === "stranger" && crumbHref(crumbAs[0]) === "/stranger"
+        && text(crumbAs[1]) === "tool" && crumbHref(crumbAs[1]) === "/stranger/tool"
         && text(h3.querySelector("span.pmark")) === "T" && !viView().querySelector("section.band") && !h3.querySelector("span.chip")
         && viView().querySelector("nav.ptabs").querySelectorAll("a.view-tab").filter((a) => a.getAttribute("aria-current") === "page").length === 1
         && h3.querySelector("div.cta a.btn.btn-primary") && text(h3.querySelector("div.cta a.btn.btn-primary")) === "Try it — create your account"

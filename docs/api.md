@@ -26948,7 +26948,7 @@ link in its head, for a page in the dashboard's design the frame's
 stylesheets (§16.7.5) linked there too, after the shell's own, its text
 in `<main>` between the frame's header and footer (§16.7.5, the same
 links, layout and language as `?as=public` has, the footer's language
-links on the page's own path; Sign in comes back to the page, and the
+links on the page's own path, keeping the page's query; Sign in comes back to the page, and the
 app's own bar is hidden), no `noindex`, so that a crawler reads it, a reader sees it at once
 in its final design, and the dashboard then draws the same view read-only from
 "What visitors read in the dashboard" below, in the same structure; the shell's own security policy applies and the
@@ -27492,7 +27492,7 @@ footer carry a `lang` of their own where the frame's differs. The
 frame has the landing page's controls: the header's light/dark switch,
 with the landing page's one script (§16.7, `/assets/landing/landing.js`,
 the only script the page loads), and the footer's language row, whose
-links keep `as=public` and set `lang`, changing the frame's language,
+links keep `as=public` and the rest of the page's query and set `lang`, changing the frame's language,
 not the page's. A change to the frame (the landing
 page, the legal pages, the counters, the hub's stylesheets) shows on
 the next answer, with no render. A stored page of another shape is

@@ -63,9 +63,33 @@ window.Maity = window.Maity || {};
   // maity_hub/shell.py `page_in_shell`): the same frame as drawn below, so a visitor without
   // script has the links. Drawn once the read answers, they are replaced by this file's own;
   // while the read is pending or fails, they stay. A view that leaves the frame removes them.
+  // Sign in (`next=`) and the footer's language links belong to the route that supplied the
+  // frame (`data-served-path`). A later enter() on another public path rewrites those while
+  // they stand, so a failed read after an in-app move does not send the visitor back (A2820).
   function served() {
     return ["site-header", "site-footer"].map((id) => document.getElementById(id))
       .filter((el) => el && el.getAttribute("data-served-frame") != null);
+  }
+  function retargetServed(path) {
+    if (!path || typeof path !== "string") return;
+    served().forEach((el) => {
+      const from = el.getAttribute("data-served-path");
+      if (!from || from === path) return;
+      el.querySelectorAll("a").forEach((a) => {
+        const href = a.getAttribute("href") || "";
+        const cut = href.indexOf("#");
+        const before = cut < 0 ? href : href.slice(0, cut);
+        const hash = cut < 0 ? "" : href.slice(cut);
+        if (/^\/login(?:\?|$)/.test(before) && /[?&]next=/.test(before)) {
+          a.setAttribute("href", before.replace(/([?&])next=[^&]*/, "$1next=" + encodeURIComponent(path)) + hash);
+          return;
+        }
+        if (before === from || before.startsWith(from + "?")) {
+          a.setAttribute("href", path + before.slice(from.length) + hash);
+        }
+      });
+      el.setAttribute("data-served-path", path);
+    });
   }
   function drop() {
     if (header) header.remove();
@@ -191,6 +215,7 @@ window.Maity = window.Maity || {};
   // comes back to (a visitor's page).
   async function enter(current, drawn, options) {
     const mine = ++round;
+    retargetServed((options && options.next) || current);
     // Every read holds the line back until it decides, also one a page starts itself without
     // render() (the login's language picker), after an earlier read failed and let it go.
     line(undefined, true);

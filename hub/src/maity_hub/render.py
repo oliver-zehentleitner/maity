@@ -335,7 +335,8 @@ def _document(
 
 def _language_link(tag: str, query: str = "") -> str:
     """A language of the footer: this page with `?lang=<tag>`, after `query` where the page's
-    address needs one to stay itself (a stored page's `as=public`)."""
+    address needs one to stay itself (a stored page's `as=public`, or any other query the
+    request already had)."""
     name = LANGUAGE_NAMES.get(tag, tag)
     href = f"?{query}&lang={tag}" if query else f"?lang={tag}"
     return f'<a href="{escape(href, quote=True)}" lang="{escape(tag)}">{escape(name)}</a>'
@@ -707,15 +708,21 @@ def _site_header(
 ) -> str:
     """The landing page's header from the frame's model (§16.7.5); the theme switch only on a page
     that asks for it. `hidden_switch` is for a page whose own script unhides the button
-    (landing.js); the app shell leaves it visible, so a visitor without script still has the
-    same layout slot (tsk-d0ktrdakakhp)."""
-    hidden = " hidden" if hidden_switch else ""
-    switch = (
-        f'<button type="button" class="theme-toggle" data-lp-theme{hidden} aria-pressed="false" '
-        f'aria-label="{escape(theme, quote=True)}">◐</button>'
-        if theme is not None
-        else ""
-    )
+    (landing.js). The app shell leaves it visible and disabled, so a visitor without script
+    still has the same layout slot, without a focusable control that does nothing
+    (tsk-d0ktrdakakhp)."""
+    if theme is None:
+        switch = ""
+    elif hidden_switch:
+        switch = (
+            f'<button type="button" class="theme-toggle" data-lp-theme hidden aria-pressed="false" '
+            f'aria-label="{escape(theme, quote=True)}">◐</button>'
+        )
+    else:
+        switch = (
+            f'<button type="button" class="theme-toggle" data-lp-theme disabled aria-disabled="true" '
+            f'aria-label="{escape(theme, quote=True)}">◐</button>'
+        )
     sign_in = model["header"]["sign_in"]
     return (
         '<header class="site-header dz"><div class="wrap">'
@@ -968,9 +975,9 @@ def public_frame(
     page's light/dark switch; `theme_script` (default: the same as `theme`) also puts
     `landing.js` in the head, which unhides the button, for a page whose policy allows the
     hub's own script (a stored page with `?as=public`). The app shell already has its own
-    script, so it asks for the button without `landing.js` and without `hidden`, and a visitor
-    without script still has the same layout slot (tsk-d0ktrdakakhp). `query` goes before
-    `lang=` in the footer's language links."""
+    script, so it asks for the button without `landing.js`, visible and disabled, and a visitor
+    without script still has the same layout slot, without a focusable control that does
+    nothing (tsk-d0ktrdakakhp). `query` goes before `lang=` in the footer's language links."""
     nav = "".join(
         f'<a href="{escape(item["href"], quote=True)}">{escape(item["label"])}</a>'
         for item in model["header"]["nav"]
@@ -1212,6 +1219,7 @@ def stored_in_frame(
     stats: dict[str, Any] | None,
     lang: str | None,
     accept_language: str | None,
+    query: str = "as=public",
 ) -> str | None:
     """A stored public page in the frame of §16.7.5, put around it when it is served: the
     landing page's header and footer in the visitor's language (`?lang`, else the reader's),
@@ -1219,7 +1227,9 @@ def stored_in_frame(
     its own language, and the frame says its own where that differs. The frame is the landing
     page's in full (the maintainer's decision req-q34v0gr2rbw2): the footer's language switch,
     whose links (`?as=public&lang=`) change the frame's language and never the content's, and
-    the header's light/dark switch with the landing page's script. No `hreflang` links: the page
+    the header's light/dark switch with the landing page's script. `query` is the state the
+    footer's language links keep (`as=public` and any other pair the request already had).
+    No `hreflang` links: the page
     exists in one language, its content's. None when `stored` is not of the shape
     `page_document` writes: the caller serves it bare."""
     found = STORED_PAGE.search(stored)
@@ -1228,7 +1238,7 @@ def stored_in_frame(
         return None
     page_lang = unescape(tagged["lang"])
     model = chrome(setting, legal, lang=lang, accept_language=accept_language, stats=stats)
-    frame = public_frame(model, page_lang, theme=True, query="as=public")
+    frame = public_frame(model, page_lang, theme=True, query=query)
     # The stored head parts are already escaped; only the title passes `_document`'s escape.
     head = (found["meta"] or "") + found["canonical"] + (found["robots"] or "") + frame.head
     main = with_hero_cta(framed_main(found["main"]), model)

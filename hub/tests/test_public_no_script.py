@@ -285,6 +285,26 @@ def test_the_languages_of_the_footer_stay_on_this_page(world: World, migrated: E
     assert langs and all(h.startswith(f"{path}?lang=") for h in langs)
 
 
+def test_the_footers_languages_keep_the_pages_query(world: World) -> None:
+    """A language change keeps the page's other query, as `js/site-chrome.js` does: a page
+    opened with `?report=1` does not lose that flag from the footer's language links, in
+    the shell and with `?as=public` (A2820)."""
+    path = families(world)["project"]
+    langs = [
+        h
+        for _, h in Frame(world.anyone.get(f"{path}?report=1").text).footer
+        if h.startswith(f"{path}?report=1&lang=")
+    ]
+    assert langs
+
+    kept = [
+        h
+        for _, h in Frame(world.anyone.get(f"{path}?as=public&report=1").text, served=False).footer
+        if h.startswith("?as=public&report=1&lang=")
+    ]
+    assert kept
+
+
 def test_the_frame_is_part_of_the_pages_tag(world: World) -> None:
     """A change of the frame's words changes the bytes, so it changes the tag: a cache is never
     given a 304 for another language's page."""
@@ -346,10 +366,14 @@ def test_a_configured_landing_puts_its_nav_and_columns_in_the_served_html(world:
         ("FAQ", "#s4"),
     ):
         assert by_label[label].endswith(anchor) and by_label[label].startswith("/"), label
-    # Theme switch in the served header, visible without script (layout slot).
+    # Theme switch in the served header: visible (layout slot) and disabled, so it is not a
+    # focusable control that does nothing until the client replaces it (A2820).
     header = html.split("<header ", 2)[2].split("</header>", 1)[0]  # the site-header, after the bar
-    assert 'class="theme-toggle"' in header and "data-lp-theme" in header
-    assert " hidden" not in header and "hidden " not in header.split("theme-toggle", 1)[1][:80]
+    switch = re.search(r'<button[^>]*class="theme-toggle"[^>]*>', header)
+    assert switch is not None and "data-lp-theme" in switch.group(0)
+    assert " hidden" not in switch.group(0) and "hidden " not in switch.group(0)
+    assert " disabled" in switch.group(0) and 'aria-disabled="true"' in switch.group(0)
+    assert "aria-pressed" not in switch.group(0)
     # Footer columns as production has them.
     foot = html.split('<footer id="site-footer"', 1)[1].split("</footer>", 1)[0]
     for title in ("Platform", "Open source", "Legal", "Follow"):
