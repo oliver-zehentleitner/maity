@@ -1159,7 +1159,7 @@ events on it because a member's name stands on the card pages they hold, which i
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** card tsk-qq4y8kw23jrz, point 10 of the clean-up audit of rendering and stored public pages (tsk-hgnbapyw7hnh, read at 80647565) and the lead's go for a local implementation of 2026-11-27; `public_cards.naming`, `public_projects.pages_of_member`
+**Source:** card tsk-qq4y8kw23jrz, point 10 of the clean-up audit of rendering and stored public pages (tsk-hgnbapyw7hnh, read at 80647565) and the lead's go for a local implementation of 2026-11-27; review A2805 of 2026-11-28 (statement counts when mine is not empty, and when the editor's project mapping is read); `public_cards.naming`, `public_projects.pages_of_member`
 **See:** public-pages.md#a-member-change-takes-off-and-renders-only-the-card-pages-that-name-that-member — fe966f9c-3557-4473-a0d6-14aa4d714a43 — as of 2026-11-27
 **Revisit when:** a card page names a member in a further way (an assignee, a reviewer), or a membership's project is made to agree with its card's project by a constraint
 
@@ -1167,7 +1167,9 @@ events on it because a member's name stands on the card pages they hold, which i
 `public_projects.pages_of_member` (the same for a person) each had their own queries for the cards whose page names
 a membership: as claim holder, as the author of a note, or as the latest editor of a note. They now share two
 readers in `public_cards`: `held_or_noted_by` and `edited_by`. The two callers do not share one membership-id
-strategy: each keeps the snapshot boundary it already had.
+strategy: `naming` still freezes its membership ids once, and `pages_of_member` still freezes mine for the editor
+while holder and author re-read memberships. That is not the same as when the editor's project mapping is read,
+which is described with `pages_of_member` below.
 
 `naming` reads the principal's memberships in the one project, active or not, and returns if that set is empty.
 The same ids then go to the holder, the authors and the latest editors of that project's cards. A frozen
@@ -1175,14 +1177,21 @@ collection is cut at `chunks.CHUNK`. On a one-chunk set this is one statement wh
 and four when not (ids, holder, authors, edited notes).
 
 `pages_of_member` keeps the former order of statements: the public projects first, then mine (the person's and
-their agents' active memberships in a project with a page, frozen with their project ids), then the editors of
-cards in those projects, then holder and author. The editor's projects are the project ids of the frozen mine
-rows, not a second selection that would re-check active, owner or public_page. Holder and author take a SELECT
-of the person's active memberships (any project) as a subquery, re-evaluated in each of those two statements
-as the former joins were, for cards of a project with a page. There is no frozen holding set and no extra
-statement to load one. On a one-chunk world this is five statements when mine is not empty (projects, mine,
-edited notes, holder, authors). When mine is empty the edited-notes read is skipped, so the path is four
-statements; the former query always ran that read and was five.
+their agents' active memberships in a project with a page), then the editors of cards in those projects, then
+holder and author. The membership selection for the editor is still frozen at mine, as it already was. The
+project mapping that filters the edit scan is not read at the same moment as before: the former editor SQL
+re-read `project_id` for those frozen membership ids during the edit scan. The new code reads `id` and
+`project_id` together in the mine statement and uses those stored project ids, even on a one-chunk set. Neither
+the former subquery nor the new mine read re-checks active, owner or project visibility at that point. A normal
+membership removal keeps the row and its `project_id` (it only clears `active`), and no supported project move
+or hard deletion was found, so the lists agree on unchanged data; this is a documentation distinction, not a
+change of which pages are selected. Holder and author take a SELECT of the person's active memberships (any
+project) as a subquery, re-evaluated in each of those two statements as the former joins were, for cards of a
+project with a page. There is no frozen holding set and no extra statement to load one. When mine is not empty
+the statement count is four plus one edited-notes statement per distinct-project chunk: five on a one-chunk set
+(projects, mine, one edited-notes read, holder, authors), and nine when ten distinct projects are cut at
+`CHUNK=2`. When mine is empty the edited-notes read is skipped, so the path is four statements; the former
+query always ran that read and was five.
 
 `edited_by` matches the editor in Python from one read of the edited notes for a given card filter; a further
 membership chunk does not scan the notes again, a further project chunk (the card filter) does.
@@ -1191,18 +1200,19 @@ When an IN list is split into more than one chunk, each chunk is a new statement
 COMMITTED, a new snapshot, where the former query used one statement and one snapshot for the whole list.
 For `naming` that is a further holder statement and a further author statement per extra membership chunk
 (the edited notes stay one read). For `pages_of_member` that is a further edited-notes statement per extra
-project-id chunk (holder and author stay one statement each, with no bound list). A concurrent change of a
-card, a note or a membership between those chunks can make a later chunk see a different world than an earlier
-one. The default `chunks.CHUNK` is 500, so this window only opens when a principal has hundreds of memberships
+project-id chunk (holder and author stay one statement each, with no bound list). No membership read happens
+between those chunks: `naming`'s ids are already frozen, and `pages_of_member`'s editor project ids already
+come from the mine rows. A concurrent change of a card or a note between those chunks can make a later chunk
+see a different world than an earlier one. The default `chunks.CHUNK` is 500, so this window only opens when a principal has hundreds of memberships
 in one project (`naming`) or a person is in hundreds of public projects (the editor's project list). It is
 accepted because an uncut IN list hits the engine's limit on bound parameters, and a window of the same class
 already stood between the successive statements of both former callers (holder then author; mine then edited
 notes then holder then author). A test holds the ordered statement kinds and the counts with a lowered CHUNK,
 and the bound-parameter cap on a fresh SQLite connection.
 
-The result is the same list as before, in the same order (naming sorted, the person's pages the projects first
-and the cards by id); the pages that need a render, the order and the public routes are unchanged. The existing
-removal query-count gates are unchanged.
+The result is the same list as before on an unchanged data set, in the same order (naming sorted, the person's
+pages the projects first and the cards by id); the pages that need a render, the order and the public routes are
+unchanged. The existing removal query-count gates are unchanged.
 
 **Reason:** the two copies of the queries and of the JSON scan could drift: a removal of a member's pages depends on
 `naming` finding every card that names them, and a person's pages on `pages_of_member`, so a rule changed in one
@@ -1210,15 +1220,16 @@ place would leave a name on a public page or render pages for nothing, and nothi
 Python match of one read of the edited notes, since the JSON comparison is not portable in SQL across the engines
 and a read per membership or per chunk of membership ids would scan every edited note again. `naming` still
 freezes its ids once, as it already did, so a concurrent removal cannot make its later statements see a different
-set than the first read. `pages_of_member` still freezes mine for the editor (and takes the editor's projects
-from those rows), and still lets holder and author re-read memberships, as its former joins did. The IN lists
-are cut at `chunks.CHUNK` so a person with many agent memberships does not pass the engine's limit on bound
-parameters (`mine` was such a list, and `naming`'s frozen ids can be, once former rows of the same principal
-are counted). A first cut on this card froze a holding set for `pages_of_member` as well and described that as
+set than the first read. `pages_of_member` still freezes the editor's membership selection at mine, as it already
+did, and still lets holder and author re-read memberships, as its former joins did. The editor's project ids now
+come from that same mine read, rather than from a second lookup of `project_id` for the frozen ids during the
+edit scan, which is the distinction above. The IN lists are cut at `chunks.CHUNK` so a person with many agent
+memberships does not pass the engine's limit on bound parameters (`mine` was such a list, and `naming`'s frozen
+ids can be, once former rows of the same principal are counted). A first cut on this card froze a holding set for `pages_of_member` as well and described that as
 what both callers already did; that was inaccurate for this caller, whose former holder and author joins
 re-read memberships in each statement, and it added a sixth statement and moved those two snapshot boundaries.
-The hybrid form restores that caller's former order and cost when mine is not empty. A test holds these
-statement counts, the ordered kinds, and the former lists.
+The hybrid form restores that caller's former order, and the one-chunk cost when mine is not empty (five
+statements). A test holds these statement counts, the ordered kinds, and the former lists.
 
 **Rejected alternatives:**
 - One list of membership ids for both callers, as the audit proposed first: the person's queries do not select the
@@ -1232,7 +1243,7 @@ statement counts, the ordered kinds, and the former lists.
   concurrent removal could then make `naming` disagree with its former result.
 - Freezing a holding set for `pages_of_member` as well (the first cut after the subquery form): it moved the
   holder and author snapshot boundaries (those statements no longer re-evaluated memberships as the former
-  joins did) and raised the non-empty path from five statements to six.
+  joins did) and raised the one-chunk non-empty path from five statements to six.
 - Comparing the editor in SQL with the engine's JSON operators: the three engines differ, and the page's own rule
   (`render_card`) reads the JSON in Python.
 - Folding the cards each caller already hands to `_dependents` into the same change: the card is only the shared

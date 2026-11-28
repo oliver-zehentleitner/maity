@@ -2,7 +2,7 @@
 (`public_cards.held_or_noted_by`, `public_cards.edited_by`): `public_cards.naming` for a change
 of one member and `public_projects.pages_of_member` for a change of a person (§16.9).
 
-`OLD_NAMING` and `OLD_PAGES` below are the two functions as they stood before the collector
+`old_naming` and `old_pages` below are the two functions as they stood before the collector
 was shared, each with its own copy of the queries. The tests hold the shared form to them on
 one world of projects, memberships and cards, row for row and in the same order, so that a
 change of what the collector finds, or of which project's cards it looks at, fails here."""
@@ -106,7 +106,9 @@ class Cards:
 
     def __init__(self, engine: Engine) -> None:
         self.engine = engine
-        self.human = {name: factory.human(engine, name) for name in ("me", "other", "nobody")}
+        self.human = {
+            name: factory.human(engine, name) for name in ("me", "other", "nobody", "owner")
+        }
         self.project = {
             "public-one": self._project(engine, "public-one", "on"),
             "public-two": self._project(engine, "public-two", "on"),
@@ -116,6 +118,7 @@ class Cards:
         self.agent = {
             "mine": self._agent("mine", self.human["me"]),
             "other": self._agent("other", self.human["other"]),
+            "owned": self._agent("owned", self.human["owner"]),
         }
         self.member: dict[str, int] = {}
         for project, who, principal in [
@@ -130,6 +133,7 @@ class Cards:
             ("public-two", "other", {"human_id": self.human["other"]}),
             ("private", "other", {"human_id": self.human["other"]}),
             ("public-one", "other-agent", {"agent_id": self.agent["other"]}),
+            ("public-one", "owned", {"agent_id": self.agent["owned"]}),
         ]:
             role = "member"
             self.member[f"{who}@{project}"] = factory.membership(
@@ -185,7 +189,7 @@ class Cards:
                     id=new_id("note"),
                     card_id=self.cards[label],
                     author=self.member[author],
-                    author_kind="agent" if author.startswith(("mine", "other-agent")) else "human",
+                    author_kind="agent" if author.split("@", 1)[0] in self.agent else "human",
                     body="x",
                     state="open",
                     created_at=clock.now(),
@@ -202,7 +206,8 @@ class Cards:
 @pytest.fixture
 def cards(migrated: Engine) -> Cards:
     """One world: `me` and their agent `mine`, `other` and their agent, in a private project
-    and three public ones, two members of them removed; and a card for each way a page can
+    and three public ones, two members of them removed; a non-member `owner` whose agent
+    `owned` is an active member of a public project; and a card for each way a page can
     name a member, with the ones that do not."""
     world = Cards(migrated)
     for project in ("public-one", "public-two", "public-three", "private"):
@@ -216,6 +221,7 @@ def cards(migrated: Engine) -> Cards:
     world.card("one: held by mine", "public-one", "mine@public-one")
     world.card("one: held by other", "public-one", "other@public-one")
     world.card("one: held by other agent", "public-one", "other-agent@public-one")
+    world.card("one: held by owned", "public-one", "owned@public-one")
     world.card("two: held by removed mine", "public-two", "mine@public-two")
     world.card("private: held by mine", "private", "mine@private")
     # authors and latest editors
@@ -231,6 +237,8 @@ def cards(migrated: Engine) -> Cards:
     world.note(
         "one: note by other, edited by mine", "other@public-one", edited_by="mine@public-one"
     )
+    world.card("one: note by owned", "public-one")
+    world.note("one: note by owned", "owned@public-one")
     world.card("two: edited by removed mine", "public-two")
     world.note("two: edited by removed mine", "other@public-two", edited_by="mine@public-two")
     world.card("two: edited by me", "public-two")
@@ -280,7 +288,7 @@ def cards(migrated: Engine) -> Cards:
     return world
 
 
-PRINCIPALS = ["me", "mine", "other", "other-agent", "nobody"]
+PRINCIPALS = ["me", "mine", "other", "other-agent", "nobody", "owner", "owned"]
 
 
 def principal_ids(world: Cards) -> dict[str, str]:
@@ -290,6 +298,8 @@ def principal_ids(world: Cards) -> dict[str, str]:
         "other": world.human["other"],
         "other-agent": world.agent["other"],
         "nobody": world.human["nobody"],
+        "owner": world.human["owner"],
+        "owned": world.agent["owned"],
     }
 
 
@@ -309,7 +319,11 @@ def test_naming_finds_the_cards_the_former_query_found(cards: Cards, migrated: E
     assert sum(1 for got in found.values() if got) >= 10
     assert found[("public-two", "mine")] != [], "a removed membership still names its cards"
     assert found[("public-one", "nobody")] == []
+    assert found[("public-one", "owner")] == []  # the person is not a member
     assert found[("public-three", "mine")] == []  # no membership there
+    owned_cards = found[("public-one", "owned")]
+    assert owned_cards
+    assert cards.cards["one: held by owned"] in owned_cards
 
 
 def test_naming_covers_holder_author_and_latest_editor_once_each(
@@ -339,7 +353,7 @@ def test_the_pages_of_a_person_are_what_the_former_query_found(
     who = principal_ids(cards)
     answers = {}
     with migrated.connect() as conn:
-        for name in ("me", "other", "nobody"):
+        for name in ("me", "other", "nobody", "owner"):
             got = public_projects.pages_of_member(conn, who[name])
             assert got == old_pages(conn, who[name]), name
             answers[name] = got
@@ -349,6 +363,13 @@ def test_the_pages_of_a_person_are_what_the_former_query_found(
     assert answers["nobody"] == []
     assert cards_of["me"] == sorted(cards_of["me"]) and len(cards_of["me"]) > 5
     ids = cards.cards
+    # owner is not a member; pages come only from their active agent in a public project
+    assert ("project", cards.project["public-one"]) in answers["owner"]
+    assert ("project_views", cards.project["public-one"]) in answers["owner"]
+    assert ids["one: held by owned"] in cards_of["owner"]
+    assert ids["one: note by owned"] in cards_of["owner"]
+    assert ids["one: held by mine"] not in cards_of["owner"]
+    assert ids["one: held by other"] not in cards_of["owner"]
     # a removed agent's and a private project's cards are named by the former rules only
     assert ids["two: held by removed mine"] not in cards_of["me"]
     assert ids["private: held by mine"] not in cards_of["me"]
