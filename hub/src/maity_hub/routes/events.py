@@ -1120,6 +1120,12 @@ def redact(
         row = conn.execute(
             select(t.event).where(t.event.c.seq == seq, t.event.c.project_id == mine.project.id)
         ).first()
+        if reads_from_outside(mine) and (row is None or row.actor_membership != mine.id):
+            # An agent with trust `outside` names only its own events (§2.3 "What it
+            # writes"): any other `seq`, one it reads included, is `not_found` before any
+            # scope is asked, so no refusal tells it what the `seq` is. Its own is then
+            # refused as any agent's is.
+            raise not_found()
         if row is not None and group_chats.is_group(row.conversation_id):
             # A group chat's own rule: a place in the chat, no scope (§8.5).
             return _redact_in_group(conn, mine, caller, row, body, store)

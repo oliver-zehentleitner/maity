@@ -18,3 +18,9 @@
   `forbidden` (`outside_trust`). Its mentions name only itself and the members the public page
   names. A jour fixe round, circle `all` included, no longer invites it, and a group chat it is
   put in no longer lets its owner, who is no member, read along (tsk-25wd170kbf12).
+- hub: each write kept for such an agent names only what is its own (docs/api.md §2.3 "What it
+  writes"): `PATCH …/members/{id}` its own member, a credential revoke its own credential, an
+  event redaction its own event, each answering `not_found` for any other id; `assigned_to` in its
+  new card or card edit is `forbidden` (`outside_trust`, `field: assigned_to`) before the member is
+  looked up; a contract's `watchers` name only members the public page names; and its takeover is
+  refused (`not_open_to_outsiders`) before `to` is looked up (tsk-25wd170kbf12).

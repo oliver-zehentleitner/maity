@@ -184,9 +184,26 @@ def _awaits_owner_consent(conn: Connection, caller: Caller, slug: str, member_id
     return not line_lead
 
 
+def _refuse_outside_target(conn: Connection, caller: Caller, slug: str, member_id: str) -> None:
+    """An agent with trust `outside` names only its own member in `PATCH …/members/{id}`
+    (§2.3 "What it writes"): any other id, a member it reads or not and one that does not
+    exist alike, answers `not_found` before the body or the member is judged, so the route
+    tells it nothing of a member it does not read."""
+    if caller.kind != "agent":
+        return
+    try:
+        mine = membership(conn, caller, slug)
+    except ApiError:
+        return  # the route's own answer stands
+    if access.reads_from_outside(mine) and member_id != mine.principal_id:
+        raise not_found()
+
+
 def _reject_foreign_tokens(slug: str, member_id: str, request: Request, caller: AnyCaller) -> None:
     """Before `MemberPatch` reads the body (§6.2). A fraction pydantic would reject, and a
     `1.0` it would accept as `true`, are both `not_an_integer` here."""
+    with engine_of(request).begin() as conn:
+        _refuse_outside_target(conn, caller, slug, member_id)
     raw: bytes = request.scope["state"].get("body", b"")
     if not raw:
         return
@@ -967,6 +984,7 @@ def patch_member(
     given = body.model_fields_set
 
     def action(conn: Connection) -> idempotency.Outcome:
+        _refuse_outside_target(conn, caller, slug, member_id)  # again, inside the call
         # Again inside the call, before `dormant` returns and before a policy error: the
         # raw tokens, in case the target is foreign only as the call runs.
         if _awaits_owner_consent(conn, caller, slug, member_id):
@@ -1883,6 +1901,10 @@ def revoke_credential(
             )
         ).first()
         if row is None or row.project_id != mine.project.id:
+            raise not_found()
+        if access.reads_from_outside(mine) and (mine.bridged or row.membership_id != mine.id):
+            # Only its own credentials, as it lists them (§2.3 "What it writes", §10): any
+            # other is `not_found`, as one that does not exist.
             raise not_found()
         target = conn.execute(
             select(t.membership).where(t.membership.c.id == row.membership_id)

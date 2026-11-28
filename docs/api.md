@@ -1390,7 +1390,45 @@ and no other: `POST …/tasks`, `PATCH …/tasks/{id}`, a card's `claim`,
 …/members/{id}` (§6.2), `POST …/credentials/{id}/revoke` (§10), and
 `POST …/memory` and `DELETE …/memory/{id}`, which answer it as
 "Outside" says. Each keeps its own checks — its scopes, the card it
-reads, §6.5's refusal of its own claim. Every other write of the
+reads, §6.5's refusal of its own claim — and is scoped as follows
+(the lead's rulings on #2236 of 2026-11-28):
+
+- a card write names only a card it reads; any other answers
+  `not_found`. It edits a card it created or holds; releases,
+  checkpoints and reports on only a card it holds (and reports again
+  on a `done` card only where the report it replaces is its own, §6.6);
+  ticks a release checklist only as the card's holder; and never moves
+  a card (`tasks:admin`);
+- `assigned_to` in its `POST …/tasks` or `PATCH …/tasks/{id}`, any
+  value and `null` included, is `forbidden` with `details.reason:
+  outside_trust` and `details.field: assigned_to`, before the member
+  it names is looked up, as `open_to_outsiders` is refused (§6.4);
+- a contract's `watchers` (§6.8) name only itself and the members the
+  public page names; any other id is `invalid` with
+  `contract.watchers: not_a_member`, as an unknown one;
+- it edits only its own notes, resolves notes only on a card it
+  created, and redacts none (§6.16);
+- its `POST …/tasks/{id}/takeover` is `forbidden` with
+  `details.reason: not_open_to_outsiders` once the card is read,
+  before `to` is looked up; it answers, withdraws or escalates a
+  takeover only as its party, the holder of the card (§6.19);
+- its watch is its own, on a card it reads (§6.4);
+- `PATCH …/members/{id}` names only its own member, and
+  `POST …/credentials/{id}/revoke` only a credential of its own: any
+  other id, of a member it reads or not and one that does not exist,
+  answers `not_found` before the body is judged; on its own, both are
+  refused as for any agent, since `members:admin` and
+  `credentials:admin` are a human's scopes;
+- `POST …/events/{seq}/redact` names only an event it wrote; any other
+  `seq`, one it reads included, answers `not_found` before any scope
+  is asked; its own is refused as for any agent, since an agent
+  redacts no event (§8.5);
+- a memory write is `forbidden` with `details.reason: outside_trust`
+  for every store, its own team's included, and a memory delete
+  answers `not_found`. Both stay on the list so that the write keeps
+  the answer "Outside" contracts for it.
+
+Every other write of the
 project, a route added later included, answers it `not_found` before
 its body is read: among them the import (§6.14) and a card's links
 (`POST` and `DELETE …/tasks/{id}/links`, §6.13), whose forge reads the

@@ -11,7 +11,7 @@ from fastapi.responses import JSONResponse
 from pydantic import Field
 from sqlalchemy import Connection, and_, or_, select
 
-from maity_hub import idempotency, paging, takeovers
+from maity_hub import idempotency, outsiders, paging, takeovers
 from maity_hub import tables as t
 from maity_hub.access import Membership, membership, reads_from_outside
 from maity_hub.deps import AnyCaller, engine_of
@@ -98,6 +98,11 @@ def open_takeover(
         # A card a human holds is never taken over, by anyone: said before the scope and
         # the lease, as on the card routes (§2.3, §6.19).
         takeovers.refuse_human_holder(conn, card)
+        if reads_from_outside(mine):
+            # An outsider's agent opens no takeover, for itself or for anyone it names
+            # (§6.5, "Until the claim request is built"; §2.3 "What it writes"): refused
+            # before `to` is looked up, so the answer says nothing of the member it names.
+            outsiders.refuse_taking(mine.row, mine, takeover=True)
         mine.require("tasks:write")
         row, status = takeovers.open_takeover(conn, mine, caller, card, body.reason, body.to)
         return _outcome(conn, row.id, status)

@@ -815,6 +815,21 @@ Not changed: a report's pull request is still observed by the probe for such an 
 the work it delivers needs it; whether that observation tells it more than it should is a
 question for the lead (the review's next round).
 
+**Each kept write names only its own (2026-11-28).** Before the push the lead asked how each
+write on the list is scoped. Several answered for an id the agent does not own before they
+refused it, and the kind of refusal told it whether a member it does not read exists:
+`PATCH …/members/{id}`, a credential revoke and an event redaction answered `forbidden` for
+another's id and `not_found` for an unknown one; `assigned_to`, a takeover's `to` and a
+contract's `watchers` looked the member up first, and a hidden member was accepted as a
+watcher. So the first three answer any id but its own `not_found` before anything else is
+judged, `assigned_to` is `forbidden` `outside_trust` as `open_to_outsiders` is, its takeover
+is refused before `to` is read, and `watchers` take only members the public page names.
+**Rejected:** taking the members, credential and redaction routes off the list, since none of
+them ever succeeds for an agent: the lead's ruling of that day scopes them to its own rather
+than removing them, and the member and credential reads already open its own entries to it,
+so the writes answer the same way. The memory routes stay on the list for the answer §2.3 contracts for them (`forbidden`
+`outside_trust` for a write), which a `not_found` from the gate would replace.
+
 On 2026-11-26 the owner decided that an outside writer editing a card whose
 parent reads as null can clear it as a no-op, and receives the same field
 error for every non-null replacement. A hidden parent and an absent parent

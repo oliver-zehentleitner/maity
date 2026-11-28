@@ -279,3 +279,109 @@ def test_its_own_work_stays_open(team: Team, switch: str) -> None:
     released = team.agent.post(f"{P}/tasks/{team.open}/release", {})
     assert released.status_code == 200, released.text
     assert outsiders.JOINS_ON is (switch == "on")
+
+
+# --- the scope of each kept write ---------------------------------------------------------------
+
+
+UNKNOWN = "agt-zzzzzzzzzzzz"
+
+
+def _refused(answer: Any, details: dict[str, Any]) -> None:
+    assert answer.status_code == 403, answer.text
+    assert answer.json()["error"]["details"] == details, answer.text
+
+
+def test_a_member_patch_names_only_its_own_member(team: Team, switch: str) -> None:
+    """Another member, a hidden one included, and an unknown id answer alike: `not_found`
+    before any field is judged. Its own member is refused as a member's agent is refused."""
+    hold_profile(team.engine, team.owner.id, "profile", team.member.id)  # hidden from outside
+    for target in (team.member.id, team.owner.id, UNKNOWN):
+        _gone(team.agent.patch(f"{P}/members/{target}", {"briefing": "mine now"}))
+    own = team.agent.patch(f"{P}/members/{team.agent.id}", {"briefing": "mine now"})
+    assert own.status_code == 403, own.text
+    # The counter-check: a member's agent learns the scope it lacks for another member.
+    theirs = team.member.patch(f"{P}/members/{team.agent.id}", {"briefing": "x"})
+    assert theirs.status_code == 403, theirs.text
+
+
+def test_a_revoke_names_only_its_own_credential(team: Team, switch: str) -> None:
+    _gone(team.agent.post(f"{P}/credentials/{team.member.credential_id}/revoke", {}))
+    _gone(team.agent.post(f"{P}/credentials/crd-zzzzzzzzzzzz/revoke", {}))
+    own = team.agent.post(f"{P}/credentials/{team.agent.credential_id}/revoke", {})
+    assert own.status_code == 403, own.text  # credentials:admin, a human's scope
+    theirs = team.member.post(f"{P}/credentials/{team.agent.credential_id}/revoke", {})
+    assert theirs.status_code == 403, theirs.text  # the counter-check
+    assert team.agent.get(f"{P}/tasks").status_code == 200  # still its credential
+
+
+def test_a_redaction_names_only_its_own_event(team: Team, switch: str) -> None:
+    theirs = team.member.post(
+        f"{P}/events", {"kind": "message", "type": "notice", "to": team.agent.id, "body": "hi"}
+    )
+    assert theirs.status_code == 201, theirs.text
+    mine = team.agent.post(
+        f"{P}/events", {"kind": "message", "type": "notice", "to": team.agent.id, "body": "me"}
+    )
+    assert mine.status_code == 201, mine.text
+    for seq in (theirs.json()["seq"], 999_999):
+        _gone(team.agent.post(f"{P}/events/{seq}/redact", {"reason": "secret"}))
+    own = team.agent.post(f"{P}/events/{mine.json()['seq']}/redact", {"reason": "secret"})
+    assert own.status_code == 403, own.text  # events:admin, a human's scope
+    member = team.member.post(f"{P}/events/{mine.json()['seq']}/redact", {"reason": "x"})
+    assert member.status_code == 403, member.text  # the counter-check
+
+
+def test_assigned_to_is_refused_on_a_new_card_and_on_a_patch(team: Team, switch: str) -> None:
+    """As `open_to_outsiders`: `forbidden` `outside_trust` before the member it names is
+    looked up, so a hidden member and an unknown id answer alike."""
+    hold_profile(team.engine, team.owner.id, "profile", team.member.id)
+    refusal = {"reason": "outside_trust", "field": "assigned_to"}
+    for target in (team.member.id, UNKNOWN, team.agent.id, None):
+        _refused(team.agent.post(f"{P}/tasks", {"title": "Mine", "assigned_to": target}), refusal)
+        _refused(team.agent.patch(f"{P}/tasks/{team.open}", {"assigned_to": target}), refusal)
+    _refused(team.agent.patch(f"{P}/tasks/{team.open}", {"open_to_outsiders": True}), {
+        "reason": "outside_trust"
+    })  # fmt: skip
+    # The counter-check: a member's agent is told what it lacks, not `outside_trust`.
+    theirs = team.member.post(f"{P}/tasks", {"title": "Theirs", "assigned_to": team.agent.id})
+    assert theirs.status_code == 403, theirs.text
+    assert theirs.json()["error"]["details"] == {"scope": "tasks:admin"}
+
+
+def test_a_contract_watcher_is_only_a_member_it_reads(team: Team, switch: str) -> None:
+    hold_profile(team.engine, team.owner.id, "profile", team.member.id)
+    for watcher in (team.member.id, UNKNOWN):
+        hidden = team.agent.post(
+            f"{P}/tasks", {"title": "C", "kind": "contract", "contract": {"watchers": [watcher]}}
+        )
+        assert hidden.status_code == 400, hidden.text
+        assert hidden.json()["error"]["details"] == {
+            "fields": {"contract.watchers": "not_a_member"}
+        }
+    made = team.agent.post(
+        f"{P}/tasks", {"title": "C", "kind": "contract", "contract": {"watchers": [team.owner.id]}}
+    )
+    assert made.status_code == 201, made.text
+    card = made.json()["id"]
+    patched = team.agent.patch(f"{P}/tasks/{card}", {"contract": {"watchers": [team.member.id]}})
+    assert patched.status_code == 400, patched.text
+    assert patched.json()["error"]["details"] == {"fields": {"contract.watchers": "not_a_member"}}
+    # The counter-check: a member's agent names the hidden member.
+    theirs = team.member.post(
+        f"{P}/tasks", {"title": "C", "kind": "contract", "contract": {"watchers": [team.member.id]}}
+    )
+    assert theirs.status_code == 201, theirs.text
+
+
+def test_its_takeover_is_refused_before_the_receiver_is_looked_up(team: Team, switch: str) -> None:
+    given = team.owner.post(f"{P}/tasks/{team.open}/claim", {"holder": team.member.id})
+    assert given.status_code == 200, given.text
+    hold_profile(team.engine, team.owner.id, "profile", team.member.id)
+    refusal = {"reason": "not_open_to_outsiders"}
+    for to in (None, team.member.id, UNKNOWN, team.owner.id):
+        body = {"reason": "mine", **({"to": to} if to else {})}
+        _refused(team.agent.post(f"{P}/tasks/{team.open}/takeover", body), refusal)
+    # The counter-check: an unknown receiver is `invalid` for a member's agent.
+    theirs = team.member.post(f"{P}/tasks/{team.open}/takeover", {"reason": "x", "to": UNKNOWN})
+    assert theirs.status_code == 400, theirs.text
