@@ -29415,7 +29415,8 @@ rules that make a position safe to resume from:
   the project switcher, since the human cannot open the project. The sum of
   the entries' `inbox`, plus the open personal requests with `project:
   null` (the owner's digest of away instances §5.3, a preference proposal §19.4, an
-  organisation's invitation §6.26, an instance admin's report request §16.8) and the open `registration_pending`,
+  organisation's invitation §6.26, an instance admin's report request §16.8, a request to chat
+  with one's agents §9.6) and the open `registration_pending`,
   `mail_disabled` and `agents_not_listening` items, which belong to no
   project, is `counts.inbox`: no request is counted twice or left out. `security`
   belongs to no project and appears only in `counts`.

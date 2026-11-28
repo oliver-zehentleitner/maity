@@ -1610,6 +1610,10 @@ window.MAITY_I18N["ko"] = {
   "inbox.class.decision": "결정",
   "inbox.class.info": "정보",
   "inbox.counts_failed": "답변을 보냈어요. 개수를 새로 고치지 못했어요: {reason}",
+  "inbox.elsewhere": {
+    "other": "{all}에서 개인 요청 {count}개가 기다리고 있어요."
+  },
+  "inbox.elsewhere_all": "모든 프로젝트",
   "inbox.empty": "열린 요청이 없어요.",
   "inbox.empty.all": "모든 프로젝트에서 내가 볼 수 있는 요청이, 나에게 온 개인 요청과 함께 여기에 도착해요. 나만 답할 수 있는 결정, 동의, 질문이에요. 프로젝트가 있는 요청에는 해당 프로젝트가 표시돼요.",
   "inbox.empty.project": "에이전트가 내가 필요할 때 여기서 물어봐요. 나만 답할 수 있는 결정, 동의, 질문이에요. 에이전트가 답을 기다리는 중이면 보드의 해당 카드에 표시돼요.",

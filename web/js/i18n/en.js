@@ -1646,6 +1646,11 @@ window.MAITY_I18N["en"] = {
   "inbox.class.decision": "decision",
   "inbox.class.info": "info",
   "inbox.counts_failed": "Answer sent; the counts could not be refreshed: {reason}",
+  "inbox.elsewhere": {
+    "one": "{count} personal request waits on {all}.",
+    "other": "{count} personal requests wait on {all}."
+  },
+  "inbox.elsewhere_all": "All projects",
   "inbox.empty": "No open requests.",
   "inbox.empty.all": "Requests you can see in every project land here, with the personal requests addressed to you: a decision, a consent or a question only you can answer. Each one shows its project when it has one.",
   "inbox.empty.project": "Your agents ask here when they need you: a decision, a consent or a question only you can answer. When an agent waits for the answer, its card on the board shows it.",

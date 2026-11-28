@@ -13852,25 +13852,48 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     // The live fixture store (as for Leave project below): the request is put in and taken out again.
     const caFx = win.Maity.api.fixturesLive();
     const caItems = caFx["personal-requests.json"].items;
-    const caAllow = [["allow_hour", "Allow for an hour"], ["allow_day", "Allow for a day"], ["allow_week", "Allow for a week"], ["allow_always", "Allow always"]];
+    const caAllow = [["allow_hour", "Allow for an hour"], ["allow_day", "Allow for a day"], ["allow_week", "Allow for a week"], ["allow_always", "Always allow"]];
     caItems.push({ id: "req-ch01", class: "consent", title: "guest and their agents want to chat with your agents",
       summary: "agent-x waits in “Launch” (ada/elsewhere), added by guest.", tried: null, options: [],
       replies: caAllow.map(([id, label]) => ({ id, label })).concat([{ id: "no", label: "No" }, { id: "block", label: "Block" }]),
       priority: "normal", to: "human:" + caFx["me.json"].member.id, filed_by: "hub", asked_by: null, on_behalf_of: null,
       task_id: null, task: null, while_open: "wait", needs_in_session: null, ktw_ref: null, report: null, personal: true,
-      status: "open", answer: null, created_at: "2026-10-23T06:00:00Z", answered_at: null, project: null,
+      status: "open", answer: null, created_at: "2026-10-23T06:00:00Z", answered_at: null, project: null, org: null,
       chat_access_request: { side: { id: "hum-guest", handle: "guest" }, their_human_in_chat: true,
         agents: [{ id: "agt-x", handle: "agent-x", waiting: true, held: false }, { id: "agt-y", handle: "agent-y", waiting: false, held: true }] } });
     const caList = await win.Maity.api.get("/requests");
     expect(caList.items.some((r) => r.id === "req-ch01") && !caList.items.some((r) => "chat_access_request" in r),
       "chat request: listed without its boxes, which only GET /requests/{id} carries (§9.6)");
+    // A project's inbox never lists it (it is about no project), but says how many such wait on All
+    // projects, with a link there, at the top of its list (tsk-v8z45qae5627).
+    const caElsewhere = caItems.filter((r) => r.personal && r.status === "open" && !r.project).length;
+    await go("#/maintainer/maity/inbox"); await hgSettle();
+    const caPointer = () => main.querySelector("p.inbox-elsewhere");
+    expect(!text(main).includes("want to chat with your agents") && caElsewhere >= 2 && caPointer()
+      && text(caPointer()) === caElsewhere + " personal requests wait on All projects."
+      && caPointer().querySelector("a").getAttribute("href") === "#/all"
+      && main.querySelector(".entries-box").childNodes[0] === caPointer(),
+      "chat request: not in a project's inbox, whose list starts with how many personal requests wait on All projects, linked");
+    const caAll = win.Maity.api.getAll;
+    win.Maity.api.getAll = (p) => (p === "/requests" ? caAll(p).then((r) => Object.assign({}, r, { items: r.items.filter((x) => !x.personal || x.project) })) : caAll(p));
+    await go("#/all"); await go("#/maintainer/maity/inbox"); await hgSettle();
+    const caPointerNone = !caPointer() && !!main.querySelector(".entries-box");
+    win.Maity.api.getAll = (p) => (p === "/requests" ? caAll(p).then((r) => Object.assign({}, r, { items: r.items.filter((x) => !x.personal || x.project || x.id === "req-ch01") })) : caAll(p));
+    await go("#/all"); await go("#/maintainer/maity/inbox"); await hgSettle();
+    const caPointerOne = caPointer() && text(caPointer()) === "1 personal request waits on All projects.";
+    win.Maity.api.getAll = caAll;
+    expect(caPointerNone && caPointerOne, "chat request: no line without a personal request about no project; one says it in the singular");
     const caCalls = [];
     win.Maity.api.post = (p, b) => { caCalls.push([p, b]); return p === "/requests/req-ch01/answer" && b.reply_id === "no"
       ? Promise.reject(new win.Maity.api.ApiError("no", 503, p, "unavailable", {})) : psPost(p, b); };
     await go("#/all"); await hgSettle();
+    expect(!caPointer(), "chat request: All projects itself says nothing of personal requests elsewhere");
     const caHead = () => main.querySelectorAll(".entry-head").find((b) => b.textContent.includes("want to chat with your agents"));
     if (caHead().attrs["aria-expanded"] !== "true") { caHead().click(); await tick(); }
     const caEntry = () => main.querySelector(".current");
+    // A consent, not the not-listening digest (§5.3): no link to one's agents, and the agents wait for it.
+    expect(!caEntry().querySelector("a.digest-agents") && text(caEntry()).includes("Meanwhilethe agent waits for the answer"),
+      "chat request: not drawn as the digest, no link to one's agents, and it says the agents wait");
     const caBox = (id) => caEntry().querySelectorAll("input").find((i) => i.id === "chat-access-req-ch01-" + id);
     const caAllowBtns = () => caAllow.map(([, label]) => btn(caEntry(), label));
     expect(caEntry().querySelector(".chat-access") && caBox("agent-agt-x").checked && caBox("agent-agt-y").checked && !caBox("human").checked,
@@ -17337,7 +17360,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const dgReq = { id: "req-dg01", class: "info", title: "2 of your agent instances are not listening",
     summary: "agent-b (wqe2) in maintainer/maity, since 2026-10-29 14:00 (UTC)\nagent-c (k3pa) in maintainer/maity, since 2026-10-29 14:20 (UTC)\n\nTheir harness may have stopped its wait loop.",
     tried: null, options: [{ id: "seen", label: "Seen" }], replies: [{ id: "seen", label: "Seen" }], priority: "normal", to: "human:hum-maintainer",
-    asked_by: null, filed_by: "hub", on_behalf_of: null, task_id: null, task: null, while_open: "proceed", needs_in_session: null, ktw_ref: null,
+    asked_by: null, filed_by: "hub", on_behalf_of: null, task_id: null, task: null, while_open: "wait", needs_in_session: null, ktw_ref: null,
     personal: true, status: "open", answer: null, created_at: "2026-10-29T15:00:00Z", answered_at: null, project: null, org: null };
   win.Maity.api.getAll = (p) => (p === "/requests" ? dgAll(p).then((r) => Object.assign({}, r, { items: [dgReq].concat(r.items) })) : dgAll(p));
   win.Maity.api.get = (p) => (p === "/requests/req-dg01" ? Promise.resolve(dgReq) : dgGet(p));
@@ -17347,8 +17370,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const dgOpen = main.querySelectorAll("li.entry").find((li) => li.getAttribute("data-request") === "req-dg01");
   expect(dgOpen && text(dgOpen.querySelector(".entry-head")).includes("Maity") && text(dgOpen).includes("Maity, on its own")
     && dgOpen.querySelectorAll("a").some((a) => a.classList.contains("digest-agents") && a.getAttribute("href") === "#/agents")
-    && !text(dgOpen).includes("the agent waits") && text(dgOpen).includes("agent-c (k3pa) in maintainer/maity"),
-    "not listening: the digest is Maity's, lists the instances, links to one's agents, and says no agent waits");
+    && !text(dgOpen).includes("Meanwhile") && text(dgOpen).includes("agent-c (k3pa) in maintainer/maity"),
+    "not listening: the digest is Maity's, lists the instances, links to one's agents, and has no Meanwhile line though the hub sets while_open wait");
   win.Maity.api.getAll = dgAll; win.Maity.api.get = dgGet;
 
   // Sessions (docs/api.md §2.6.5, §2.6.7): where one is signed in, This was me, End, a held address change.
@@ -21243,8 +21266,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(rqOpen && rqOpen.getAttribute("href") === "#/admin/reports/rpt-0002" && text(rqOpen) === "Open report"
     && !rqHead("Report: spam — profile").querySelector("textarea") && !btn(rqHead("Report: spam — profile"), "Withdraw")
     && !btn(rqHead("Report: spam — profile"), "Talk") && !btn(rqHead("Report: spam — profile"), "Send")
-    && !rqHead("Report: spam — profile").querySelector("a.digest-agents"),
-    "reports: its request offers Open report to /admin/reports/<id>, no answer field, no Talk, no Send, no withdrawal, no digest's agents");
+    && !rqHead("Report: spam — profile").querySelector("a.digest-agents") && !text(rqHead("Report: spam — profile")).includes("Meanwhile"),
+    "reports: its request offers Open report to /admin/reports/<id>, no answer field, no Talk, no Send, no withdrawal, no digest's agents, no Meanwhile");
   for (const verb of ["withdraw", "answer"]) {
     const rqRefused = await win.Maity.api.post("/requests/req-r002/" + verb, verb === "answer" ? { text: "done" } : {}).then(() => null, (e) => e);
     expect(rqRefused && rqRefused.code === "resolve_the_report" && rqRefused.details.report === "rpt-0002",

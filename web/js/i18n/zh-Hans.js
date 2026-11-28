@@ -1610,6 +1610,10 @@ window.MAITY_I18N["zh-Hans"] = {
   "inbox.class.decision": "决定",
   "inbox.class.info": "信息",
   "inbox.counts_failed": "回答已发送；无法刷新计数： {reason}",
+  "inbox.elsewhere": {
+    "other": "{all}中有 {count} 个个人请求在等待。"
+  },
+  "inbox.elsewhere_all": "所有项目",
   "inbox.empty": "没有待处理的请求。",
   "inbox.empty.all": "你在每个项目中能看到的请求，连同发给你的个人请求，都会汇集到这里：只有你能做出的决定、同意或回答的问题。请求属于某个项目时，会显示其所属项目。",
   "inbox.empty.project": "你的智能体在需要你时会在这里提出：只有你能做出的决定、同意或回答的问题。智能体在等待回答时，看板上它的卡片会显示出来。",

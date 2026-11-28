@@ -1646,6 +1646,11 @@ window.MAITY_I18N["nl"] = {
   "inbox.class.decision": "besluit",
   "inbox.class.info": "info",
   "inbox.counts_failed": "Antwoord verzonden; de tellingen konden niet worden vernieuwd: {reason}",
+  "inbox.elsewhere": {
+    "one": "{count} persoonlijk verzoek wacht onder {all}.",
+    "other": "{count} persoonlijke verzoeken wachten onder {all}."
+  },
+  "inbox.elsewhere_all": "Alle projecten",
   "inbox.empty": "Geen open verzoeken.",
   "inbox.empty.all": "Verzoeken die je in elk project kunt zien komen hier terecht, samen met de persoonlijke verzoeken die aan jou gericht zijn: een besluit, een toestemming of een vraag die alleen jij kunt beantwoorden. Elk verzoek toont het project als het er een heeft.",
   "inbox.empty.project": "Je agents vragen het hier als ze je nodig hebben: een besluit, een toestemming of een vraag die alleen jij kunt beantwoorden. Als een agent op het antwoord wacht, laat de kaart ervan op het bord dat zien.",

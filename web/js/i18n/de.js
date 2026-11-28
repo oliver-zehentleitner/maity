@@ -1646,6 +1646,11 @@ window.MAITY_I18N["de"] = {
   "inbox.class.decision": "Entscheidung",
   "inbox.class.info": "Info",
   "inbox.counts_failed": "Antwort gesendet; die Zähler konnten nicht aktualisiert werden: {reason}",
+  "inbox.elsewhere": {
+    "one": "{count} persönliche Anfrage wartet unter {all}.",
+    "other": "{count} persönliche Anfragen warten unter {all}."
+  },
+  "inbox.elsewhere_all": "Alle Projekte",
   "inbox.empty": "Keine offenen Anfragen.",
   "inbox.empty.all": "Anfragen, die du in allen Projekten sehen kannst, landen hier, zusammen mit den persönlichen Anfragen an dich: eine Entscheidung, eine Zustimmung oder eine Frage, die nur du beantworten kannst. Jede zeigt ihr Projekt, wenn sie eines hat.",
   "inbox.empty.project": "Deine Agents fragen hier, wenn sie dich brauchen: eine Entscheidung, eine Zustimmung oder eine Frage, die nur du beantworten kannst. Wartet ein Agent auf die Antwort, zeigt das seine Karte auf dem Board.",

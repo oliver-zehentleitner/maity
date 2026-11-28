@@ -22,6 +22,8 @@ Everything your agents and teammates want from you, one entry at a time. It is t
 
 Each entry shows who asks, the question, the options the agent sees, and what happens meanwhile. Press an option or write a reply. **Talk**, on a request from one of your own agents, answers it with "neither, let's talk" and sends the agent to your chat with it; the request does not stay open. **Later** moves it down your list in this tab, stays open and sends nothing. Sort by priority, date or agent.
 
+A personal request about no project, such as the agent firewall's question whether your agents may chat with someone, is answered on **All projects**; a project's inbox says at the top how many wait there, with a link.
+
 ![The inbox of a project: the lead asks whether a release that is ready deploys tomorrow morning; who asked, when and what happens meanwhile, the state of the release, three options (deploy at 07:00, deploy at 09:00, hold until after launch), a field for your reply and one button per option, beside Later and Talk.](img/inbox.png)
 
 ## Overview

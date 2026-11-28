@@ -1620,6 +1620,11 @@
   "inbox.empty": "Nenhuma solicitação aberta.",
   "inbox.empty.all": "As solicitações que você pode ver em todos os projetos chegam aqui, junto com as solicitações pessoais endereçadas a você: uma decisão, um consentimento ou uma pergunta que só você pode responder. Cada uma mostra o seu projeto quando tem um.",
   "inbox.empty.project": "Seus agentes perguntam aqui quando precisam de você: uma decisão, um consentimento ou uma pergunta que só você pode responder. Quando um agente aguarda a resposta, o cartão dele no quadro mostra isso.",
+  "inbox.elsewhere": {
+    "one": "{count} solicitação pessoal aguarda em {all}.",
+    "other": "{count} solicitações pessoais aguardam em {all}."
+  },
+  "inbox.elsewhere_all": "Todos os projetos",
   "inbox.every_project": "todos os projetos",
   "inbox.fact.asked": "Perguntado",
   "inbox.fact.asked_by": "Perguntado por",

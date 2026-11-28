@@ -48,10 +48,15 @@ window.Maity = window.Maity || {};
   // A request the hub files itself (asked_by null, filed_by "hub": an
   // outage, an unconfirmed commitment, the not-listening digest, §5.3, §7).
   const byHub = (req) => !req.asked_by && req.filed_by === "hub";
-  // The not-listening digest (§5.3): the hub's, personal, about no project
-  // and no organisation; it leads to one's agents.
-  // A report's request (§16.8) is the hub's too, without project or organisation, but no digest.
-  const digest = (req) => byHub(req) && req.personal && !req.project && !req.org && !req.report;
+  // The not-listening digest (§5.3): the hub's, personal, class info, about no
+  // project and no organisation; it leads to one's agents.
+  // A report's request (§16.8) is the hub's info too, without project or organisation, but no
+  // digest; the request to chat with one's agents (§9.6) is the hub's, about neither, but a consent.
+  const digest = (req) => byHub(req) && req.class === "info" && req.personal && !req.project && !req.org && !req.report;
+  // Whether anyone waits on the request: the hub sets while_open "wait" on all it files (the
+  // column is never empty), so on its own notices (the digest, a report's request) nobody
+  // does; a consent always waits (§7), the hub's request to chat with one's agents too.
+  const nobodyWaits = (req) => byHub(req) && req.class !== "consent";
 
   function asker(req) {
     const by = req.asked_by ? req.asked_by.display_name : byHub(req) ? "Maity" : "—";
@@ -397,8 +402,7 @@ window.Maity = window.Maity || {};
           : h("a", { href: ctx.projectLink(req.slug, "tasks", req.task.id) }, cardLine(M.ids.ref(req.slug, req.task.id, ctx.scope !== "project"), req.task)))]
         : null,
       digest(req) ? [h("dt", null, M.t("inbox.fact.your_agents")), h("dd", null, h("a", { class: "digest-agents", href: "/agents" }, M.t("inbox.fact.see_agents")))] : null,
-      // Nobody waits on one the hub filed itself.
-      byHub(req) ? null : [h("dt", null, M.t("inbox.fact.meanwhile")), h("dd", null, req.while_open === "proceed_provisionally"
+      nobodyWaits(req) ? null : [h("dt", null, M.t("inbox.fact.meanwhile")), h("dd", null, req.while_open === "proceed_provisionally"
         ? M.t("inbox.fact.proceeds")
         : M.t("inbox.fact.waits"))],
       req.ktw_ref ? [h("dt", null, M.t("inbox.fact.reasoning")), h("dd", null, h("code", null, req.ktw_ref))] : null));
@@ -630,15 +634,21 @@ window.Maity = window.Maity || {};
       // the list shows what the tab counts.
       // A failed read of them is said in the list's status line (load's
       // personalError), never an empty list short of the tab.
+      // The open personal requests about no project (a request to chat with one's agents, §9.6)
+      // are answered on All projects only: counted from the same answer, for the line that says so.
       let personalError = null;
+      let elsewhere = 0;
       const [requests, personal] = await Promise.all([M.api.getAll(ctx.base + "/requests?status=open"),
-        M.api.getAll("/requests").then((r) => r.items.filter((x) => x.personal && x.status === "open" && x.project && x.project.full_name === ctx.slug),
-          (err) => { personalError = err; return []; })]);
+        M.api.getAll("/requests").then((r) => {
+          elsewhere = r.items.filter((x) => x.personal && x.status === "open" && !x.project).length;
+          return r.items.filter((x) => x.personal && x.status === "open" && x.project && x.project.full_name === ctx.slug);
+        }, (err) => { personalError = err; return []; })]);
       requests.items.forEach((r) => { r.slug = ctx.slug; });
       personal.forEach((r) => { r.slug = ctx.slug; });
       await Promise.all(personal.map(readInFull));
       const all = requests.items.concat(personal);
       all.personalError = personalError;
+      all.elsewhere = elsewhere;
       return all;
     }
     const requests = await M.api.getAll("/requests");
@@ -778,6 +788,12 @@ window.Maity = window.Maity || {};
       const open = shown.filter((r) => r.status === "open");
       if (!shown.some((r) => keyOf(r) === ui.current)) ui.current = open.length ? keyOf(open[0]) : null;
       M.dom.clear(list);
+      // A project's inbox never lists a personal request about no project: how many wait on All
+      // projects is said first, or one looks for them here (tsk-v8z45qae5627).
+      if (items.elsewhere) {
+        append(list, h("p", { class: "muted inbox-elsewhere", role: "note" }, M.tn("inbox.elsewhere", {
+          count: items.elsewhere, all: h("a", { href: "/all" }, M.t("inbox.elsewhere_all")) })));
+      }
       // A filter outlives a reload: what it hides is said, or a new request elsewhere looks like no reload at all.
       const hiddenByFilter = projectFilter() ? items.filter((r) => r.status === "open" && !passes(r)).length : 0;
       if (hiddenByFilter) {

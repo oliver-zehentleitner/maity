@@ -1646,6 +1646,11 @@ window.MAITY_I18N["it"] = {
   "inbox.class.decision": "decisione",
   "inbox.class.info": "info",
   "inbox.counts_failed": "Risposta inviata; impossibile aggiornare i conteggi: {reason}",
+  "inbox.elsewhere": {
+    "one": "{count} richiesta personale ti aspetta in {all}.",
+    "other": "{count} richieste personali ti aspettano in {all}."
+  },
+  "inbox.elsewhere_all": "Tutti i progetti",
   "inbox.empty": "Nessuna richiesta aperta.",
   "inbox.empty.all": "Qui arrivano le richieste che puoi vedere in ogni progetto, insieme alle richieste personali indirizzate a te: una decisione, un consenso o una domanda a cui puoi rispondere solo tu. Ognuna mostra il suo progetto, quando ne ha uno.",
   "inbox.empty.project": "I tuoi agenti chiedono qui quando hanno bisogno di te: una decisione, un consenso o una domanda a cui puoi rispondere solo tu. Quando un agente aspetta la risposta, la sua scheda nella bacheca lo mostra.",

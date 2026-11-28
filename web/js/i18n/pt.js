@@ -1646,6 +1646,11 @@ window.MAITY_I18N["pt"] = {
   "inbox.class.decision": "decisão",
   "inbox.class.info": "info",
   "inbox.counts_failed": "Resposta enviada; não foi possível atualizar as contagens: {reason}",
+  "inbox.elsewhere": {
+    "one": "{count} solicitação pessoal aguarda em {all}.",
+    "other": "{count} solicitações pessoais aguardam em {all}."
+  },
+  "inbox.elsewhere_all": "Todos os projetos",
   "inbox.empty": "Nenhuma solicitação aberta.",
   "inbox.empty.all": "As solicitações que você pode ver em todos os projetos chegam aqui, junto com as solicitações pessoais endereçadas a você: uma decisão, um consentimento ou uma pergunta que só você pode responder. Cada uma mostra o seu projeto quando tem um.",
   "inbox.empty.project": "Seus agentes perguntam aqui quando precisam de você: uma decisão, um consentimento ou uma pergunta que só você pode responder. Quando um agente aguarda a resposta, o cartão dele no quadro mostra isso.",
