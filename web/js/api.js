@@ -1038,6 +1038,11 @@ window.Maity = window.Maity || {};
   }
 
   function patchCard(slug, id, body, path) {
+    // open_to_outsiders first, as the hub checks it (§6.4, routes/tasks.py patch_task): before the
+    // card is looked up and before the editor rule, so a refused PATCH takes no effect at all.
+    const outsideErrors = {};
+    openToOutsiders(slug, body, outsideErrors, path);
+    if (Object.keys(outsideErrors).length) fail(400, "invalid", "invalid fields", path, { fields: outsideErrors });
     const list = file(slug, "tasks.json", path).items;
     const card = list.find((x) => x.id === id);
     if (!card) fail(404, "not_found", "no such card", path);
@@ -1051,10 +1056,6 @@ window.Maity = window.Maity || {};
       : authority === "reviewer_and_tester" ? tasksReview(slug) || tasksTest(slug) : tasksAdmin(slug);
     const editor = holds || card.created_by === meId || tasksAdmin(slug);
     if (!editor && !(reviewMove && hasAuthority)) fail(403, "forbidden", "only the holder, the creator or an admin edits a card", path, { scope: "tasks:admin" });
-    // Checked before anything changes, so that a refused PATCH takes no effect at all (§6.4).
-    const outsideErrors = {};
-    openToOutsiders(slug, body, outsideErrors, path);
-    if (Object.keys(outsideErrors).length) fail(400, "invalid", "invalid fields", path, { fields: outsideErrors });
     if ("parent" in body || "related" in body || ("status" in body && card.parent)) {
       subtaskEdges(slug, list, card, body, path, { parent: card.parent || null, status: card.status });
     }
