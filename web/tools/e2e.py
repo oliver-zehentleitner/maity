@@ -6428,6 +6428,8 @@ def visitor_step(run: Run, page: Page) -> None:
     not_found = guest.locator("section.view-not-found")
     expect(not_found).to_be_visible()
     expect(guest.locator("#login-email")).to_have_count(0)
+    # Its sign-in comes back to the address (js/route.js withNext).
+    expect(not_found.get_by_role("link", name="Sign in, if you have access", exact=True)).to_have_attribute("href", "/login?next=%2Fno-such-page-here")
     not_found.get_by_role("link", name="Public projects", exact=True).click()
     expect(guest).to_have_url(f"{run.base}/explore")
     expect(guest.locator("h1")).to_have_text("Public projects")
@@ -6448,7 +6450,10 @@ def visitor_step(run: Run, page: Page) -> None:
     expect(guest.locator('section.view-visitor[data-kind="board"]')).to_be_visible()
     visitor_layout(run, page.context.browser)
     profile_layout(run, page.context.browser)
-    # The way to sign in leads to the form, and the address it came from is kept.
+    # The way to sign in leads to the form, and the address it came from is kept: after the
+    # link's own query, if it has one (js/route.js withNext).
+    href = guest.locator("header.site-header a.signin").get_attribute("href") or ""
+    assert re.fullmatch(r"/login(\?[^#]*&|\?)next=%2Fowner%2Fe2e-alpha%2Fboard", href), href
     guest.locator("header.site-header a.signin").click()
     expect(guest.locator("#login-email")).to_be_visible()
     assert "next=" in guest.url, guest.url

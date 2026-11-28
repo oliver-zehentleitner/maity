@@ -233,5 +233,13 @@ window.Maity = window.Maity || {};
   // An anchored route's href: the route as `href` writes it, the place after it.
   const anchoredHref = (value) => { const x = splitAnchor(value); return x ? href(x.path) + "#" + x.anchor : null; };
 
-  M.route = { fixture, isRoute, isAnchored, anchoredHref, isHubPage, current, href, go, load, startPage, hubDrawn, listen, layer, dropFragment, jump, seqTarget };
+  // A link to sign in or register that comes back to `next`: a query of its own (the
+  // language) kept, ?next= after it, and a place stays last, where a browser reads it.
+  function withNext(value, next) {
+    const cut = value.indexOf("#");
+    const before = cut < 0 ? value : value.slice(0, cut);
+    return before + (before.includes("?") ? "&" : "?") + "next=" + encodeURIComponent(next) + (cut < 0 ? "" : value.slice(cut));
+  }
+
+  M.route = { fixture, isRoute, isAnchored, anchoredHref, isHubPage, current, href, go, load, startPage, hubDrawn, listen, layer, dropFragment, jump, seqTarget, withNext };
 })(window.Maity);

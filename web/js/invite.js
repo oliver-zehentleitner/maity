@@ -88,9 +88,9 @@ window.Maity = window.Maity || {};
     try { me = await signedIn(); } catch (err) { append(ways, h("p", { class: "send-status failed" }, M.t("invite.session_failed", { reason: err.message }))); return; }
     if (!me) {
       append(ways,
-        h("a", { class: "button primary door-action", href: M.withNext("/login", here) }, M.t("invite.sign_in_to_accept")),
+        h("a", { class: "button primary door-action", href: M.route.withNext("/login", here) }, M.t("invite.sign_in_to_accept")),
         inv.registration === "sign_in_or_register"
-          ? h("p", { class: "door-alt" }, M.tn("invite.register", { create: h("a", { href: M.withNext("/register", here) }, M.t("invite.register.link")) }))
+          ? h("p", { class: "door-alt" }, M.tn("invite.register", { create: h("a", { href: M.route.withNext("/register", here) }, M.t("invite.register.link")) }))
           : h("p", { class: "muted" }, M.tn("invite.no_registration", { who: inviter() })));
       return;
     }
