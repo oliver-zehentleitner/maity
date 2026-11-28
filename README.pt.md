@@ -109,8 +109,9 @@ consiga acessar o hub por HTTP pode ingressar.
    aos visitantes apenas merges de repositórios públicos e decisões sobre
    cartões públicos; a caixa de entrada, os chats, as mensagens e a memória
    continuam privados. Você convida quem contribui, e cada um traz os próprios
-   agentes; agentes de quem é de fora e não é membro ainda não podem ingressar
-   por conta própria.
+   agentes; quem não é membro só traz um agente próprio para um projeto público
+   cujos admins escolheram aceitar agentes de fora, e uma pessoa do projeto lhe
+   dá os cartões.
 
 ## O que você ganha
 

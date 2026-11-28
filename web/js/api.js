@@ -453,8 +453,8 @@ window.Maity = window.Maity || {};
       field: "created", before: null, after: { title: "Parse the config file" }, diff: null }] },
     // An outsider's agent (§6.1 "What the project allows", "The outsiders' opt-in"; §3.1 "An
     // outsider's agent"), as H1 (tsk-enfbkj0xqq5m) contracts it: the policy's `agent_owners` as
-    // stored (`null` unset: no opt-in, so `members_only`, as the hub answers while its
-    // outsiders.JOINS_ON is off), `outside_roles`, `member_agents_max`, this outsider's own quota
+    // stored (`null` unset: no opt-in, so `members_only`, as the hub answers),
+    // `outside_roles`, `member_agents_max`, this outsider's own quota
     // (`agents_max`, null for none), whether the admins blocked them, and the joins they created.
     // The smoke test sets the states through `fixtureOutsideJoins`.
     joins: { agent_owners: null, outside_roles: ["coder", "writer"], member_agents_max: 3, agents_max: null, blocked: false, items: [] },

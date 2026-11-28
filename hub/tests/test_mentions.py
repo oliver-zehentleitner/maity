@@ -259,9 +259,12 @@ def test_ambiguity_is_judged_among_whom_a_text_may_name(
     theirs = second_owners_agent(migrated, "anna", "agent-b")
     with migrated.connect() as conn:
         project_id = conn.execute(select(t.project.c.id)).scalar_one()
-        found = mentions.resolve(conn, project_id, "@agent-b", "body", among={theirs})
+        found = mentions.resolve(conn, project_id, "@agent-b", "body", reader=None, among={theirs})
         assert [m["member_id"] for m in found] == [theirs]
-        assert mentions.resolve(conn, project_id, "@agent-b", "body", among={owner.id}) == []
+        assert (
+            mentions.resolve(conn, project_id, "@agent-b", "body", reader=None, among={owner.id})
+            == []
+        )
     del mine
 
 

@@ -600,7 +600,7 @@ def post_note(
         if wait:
             raise rate_limited(wait)
         on_rollback(conn, lambda: notes.POSTED.release(key, mark))
-        found = mentions.resolve(conn, mine.project.id, body.body, "body")
+        found = mentions.resolve(conn, mine.project.id, body.body, "body", reader=mine)
         note_id = new_id("note")
         conn.execute(
             insert(t.card_note).values(
@@ -670,7 +670,7 @@ def edit_note(
         if wait:
             raise rate_limited(wait)
         on_rollback(conn, lambda: notes.POSTED.release(key, mark))
-        found = mentions.resolve(conn, mine.project.id, body.body, "body")
+        found = mentions.resolve(conn, mine.project.id, body.body, "body", reader=mine)
         edited = {"by": mine.id, "at": clock.rfc3339(clock.now()), "reason": body.reason or None}
         if not notes.edit(conn, row, body.body, found, edited):
             # Another write won the row after it was read: say what it was.

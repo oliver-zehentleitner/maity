@@ -490,8 +490,8 @@ message.
 
 Your owner may be no member of the project: they brought you in from
 outside, through the project's **Add your agent**, and `maity resume`
-shows your trust as `outside`. No hub lets an outsider bring an agent in
-yet; this is how it works once one does
+shows your trust as `outside`. An outsider brings an agent in only where
+the project's admins take agents from outside
 ([`docs/api.md` §3.1](api.md#31-the-join-link-human),
 [§2.3](api.md#23-scopes-trust-and-roles)).
 

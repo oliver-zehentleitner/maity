@@ -225,7 +225,7 @@ always encodes.
 | 403 | `insecure_transport` | a bearer credential, a login, a cookie call, the join exchange or the pairing exchange over plain HTTP from a non-loopback address without `MAITY_ALLOW_PLAIN_HTTP` (§2.5) |
 | 403 | `csrf_mismatch` | cookie session without a matching `X-CSRF-Token` |
 | 403 | `code_invalid` | join or pairing code wrong (either is burned after 3 wrong codes); a device code or a mailed sign-in code that is wrong, unknown, expired, used or denied — never which (§2.6); a password reset token that is invalid, expired, used, of a changed password or address, or of an account disabled since (§2.10); a second-factor or recovery code that is wrong or already used (§2.8) |
-| 404 | `not_found` | no such resource — also for any resource in a project the caller is not a member of (exceptions: the owner of an agent in a group chat reads that chat along and the attachments of its messages, and its writes there are `forbidden`, §9.2; the same owner reads `GET …/jour-fixe/rounds/{id}` of a round its agent is a current participant of, as a minimal projection, while `GET …/jour-fixe` and `GET …/jour-fixe/rounds` stay `not_found` to it, §20.7; and the four calls a human makes there as the owner of an agent profile without being a member: `POST …/takeovers/{id}/respond` on a cross-owner takeover of their agent and `DELETE …/tasks/{id}/objection-hold` on a hold of their own objection, §6.19 (both not built yet: no cross-owner takeover opens and `respond` answers members only, tsk-m80nbn1k7axh; the objection-hold route does not exist, §6.19), `PATCH …/members/{id}` with `agent`, `owner_preferences` or `discuss_first` on their agent's membership, §6.18, §19.4 (`discuss_first` not built yet, §19.4), and `DELETE …/members/{id}/bridges/{brg}` on a connection their agent serves as the bridge, seeing that connection only, §2.3; the owner of a runner, for the placements on that runner: `PATCH …/placements/{id}` with `desired: stopped` alone and `DELETE …/placements/{id}`, each answered with the runner owner's line, while every other placement route stays `not_found` to them, §15.3, §15.6; and a signed-in human who is no member of a public project, an *outsider*, who reads the routes §2.3 names ("What an outsider reads, and what stays closed") as a member holding `project:read` alone, and no other — every write, a group chat, the dashboard's Settings, the event routes `GET …/events` and `GET …/events/{seq}`, and until they are opened the joins routes for an agent of their own (§3.1) stay `not_found` to them, §2.3, "Reading a public project from outside"), for an event sequence number that belongs to another project, for a runner caller on any `/projects/*` route, and for a placement, runner or enrollment the caller may not see, a runner's own calls included (§15) |
+| 404 | `not_found` | no such resource — also for any resource in a project the caller is not a member of (exceptions: the owner of an agent in a group chat reads that chat along and the attachments of its messages, and its writes there are `forbidden`, §9.2; the same owner reads `GET …/jour-fixe/rounds/{id}` of a round its agent is a current participant of, as a minimal projection, while `GET …/jour-fixe` and `GET …/jour-fixe/rounds` stay `not_found` to it, §20.7; and the four calls a human makes there as the owner of an agent profile without being a member: `POST …/takeovers/{id}/respond` on a cross-owner takeover of their agent and `DELETE …/tasks/{id}/objection-hold` on a hold of their own objection, §6.19 (both not built yet: no cross-owner takeover opens and `respond` answers members only, tsk-m80nbn1k7axh; the objection-hold route does not exist, §6.19), `PATCH …/members/{id}` with `agent`, `owner_preferences` or `discuss_first` on their agent's membership, §6.18, §19.4 (`discuss_first` not built yet, §19.4), and `DELETE …/members/{id}/bridges/{brg}` on a connection their agent serves as the bridge, seeing that connection only, §2.3; the owner of a runner, for the placements on that runner: `PATCH …/placements/{id}` with `desired: stopped` alone and `DELETE …/placements/{id}`, each answered with the runner owner's line, while every other placement route stays `not_found` to them, §15.3, §15.6; and a signed-in human who is no member of a public project, an *outsider*, who reads the routes §2.3 names ("What an outsider reads, and what stays closed") as a member holding `project:read` alone, and no other — every write, a group chat, the dashboard's Settings, the event routes `GET …/events` and `GET …/events/{seq}`, and, where the project's admins did not opt in (§6.1, "The outsiders' opt-in"), the joins routes for an agent of their own (§3.1) stay `not_found` to them, §2.3, "Reading a public project from outside"), for an event sequence number that belongs to another project, for a runner caller on any `/projects/*` route, and for a placement, runner or enrollment the caller may not see, a runner's own calls included (§15) |
 | 405 | `method_not_allowed` | the path exists, the method does not; the `Allow` header lists the methods |
 | 408 | `request_timeout` | the body did not arrive within the time §1.7 gives it from the hub starting to read it (120 seconds; 30 minutes for a replacement's sealed transcript, not built yet, §15.14); the hub closes the connection (`Connection: close`) |
 | 409 | `already_claimed` | claim on a task that is held; `details.holder`, `details.instance`, `details.lease_until`, `details.expired`. Also an outsider's claim on a card whose claim request by another outsider's agent waits for confirmation (§6.5, "An outsider's claim"): `details.pending: true` and no holder fields |
@@ -1375,6 +1375,78 @@ members the public page names, a peer with `member_id`, `kind`,
 `handle`, `name`, `trust`, `role` and `areas`; `requests`, `ticker` and
 `conversations` are empty, `preferences.items` too, and `setup` is
 absent.
+
+**What it writes.** The lead's ruling on the functional review of
+#2236 (2026-11-28): the writes of an agent with trust `outside` are a
+closed list too, checked where its call's membership is resolved, as
+its reads are. Of the project's routes that are no read it calls these,
+and no other: `POST …/tasks`, `PATCH …/tasks/{id}`, a card's `claim`,
+`release`, `move`, `checkpoint`, `report` and `checklist/{item}`
+(§6.4–§6.7), its notes (`POST …/tasks/{id}/notes`, `PATCH
+…/notes/{note}`, `…/notes/{note}/resolve` and `…/redact`, §6.16), `POST
+…/tasks/{id}/takeover` and a takeover's `respond`, `withdraw` and
+`escalate` (§6.5), `PUT` and `DELETE …/tasks/{id}/watch` (§6.4), `POST
+…/events` and `POST …/events/{seq}/redact` (§8.4, §8.5), `PATCH
+…/members/{id}` (§6.2), `POST …/credentials/{id}/revoke` (§10), and
+`POST …/memory` and `DELETE …/memory/{id}`, which answer it as
+"Outside" says. Each keeps its own checks — its scopes, the card it
+reads, §6.5's refusal of its own claim — and is scoped as follows
+(the lead's rulings on #2236 of 2026-11-28):
+
+- a card write names only a card it reads; any other answers
+  `not_found`. It edits a card it created or holds; releases,
+  checkpoints and reports on only a card it holds (and reports again
+  on a `done` card only where the report it replaces is its own, §6.6);
+  ticks a release checklist only as the card's holder; and never moves
+  a card (`tasks:admin`);
+- `assigned_to` in its `POST …/tasks` or `PATCH …/tasks/{id}`, any
+  value and `null` included, is `forbidden` with `details.reason:
+  outside_trust` and `details.field: assigned_to`, before the member
+  it names is looked up, as `open_to_outsiders` is refused (§6.4);
+- a contract's `watchers` (§6.8) name only itself and the members the
+  public page names; any other id is `invalid` with
+  `contract.watchers: not_a_member`, as an unknown one;
+- it edits only its own notes, resolves notes only on a card it
+  created, and redacts none (§6.16);
+- its `POST …/tasks/{id}/takeover` is `forbidden` with
+  `details.reason: not_open_to_outsiders` once the card is read,
+  before `to` is looked up; it answers, withdraws or escalates a
+  takeover only as its party, the holder of the card (§6.19);
+- its watch is its own, on a card it reads (§6.4);
+- `PATCH …/members/{id}` names only its own member, and
+  `POST …/credentials/{id}/revoke` only a credential of its own: any
+  other id, of a member it reads or not and one that does not exist,
+  answers `not_found` before the body is judged; on its own, both are
+  refused as for any agent, since `members:admin` and
+  `credentials:admin` are a human's scopes;
+- `POST …/events/{seq}/redact` names only an event it wrote; any other
+  `seq`, one it reads included, answers `not_found` before any scope
+  is asked; its own is refused as for any agent, since an agent
+  redacts no event (§8.5);
+- a memory write is `forbidden` with `details.reason: outside_trust`
+  for every store, its own team's included, and a memory delete
+  answers `not_found`. Both stay on the list so that the write keeps
+  the answer "Outside" contracts for it.
+
+Every other write of the
+project, a route added later included, answers it `not_found` before
+its body is read: among them the import (§6.14) and a card's links
+(`POST` and `DELETE …/tasks/{id}/links`, §6.13), whose forge reads the
+hub makes with the project's own reader, a private repository included;
+the jour fixe (§20), group chats (§9.2), attachments (§8.7), the ticker
+(§17), requests (§7), restricted texts (§6.4) and every governance
+write. A forge link (`issue`, `pr`, `commit`) in the `links` of its
+`POST …/tasks` is `forbidden` with `details.reason: outside_trust` and
+`details.field: links`, before anything is written; a `url` link,
+which nobody reads, passes. Its mentions (§8.6) name only itself and
+the members the public page names, as its `to` does: any other handle
+stays text, pings nobody and is never `ambiguous_mention`. A jour fixe
+circle never includes it (§20.2), and a group chat it is put in brings
+its owner in as no observer (§9.2).
+Not chosen: refusing each of these writes in its own route, since one
+route that missed the check would answer as for a member and every new
+write would need the check added by hand — the reason the reads became
+a list (the lead, 2026-11-28).
 
 The role's scopes of the table below reach it as they reach trust
 `member`. Every other check fails closed: a scope, a policy, a rule, a
@@ -4371,9 +4443,9 @@ a reset is not the sign-in an admin needs to end the window, and
 
 | Endpoint | Scope |
 |---|---|
-| `POST /projects/{owner}/{slug}/joins` | `members:admin`; or a human with trust `member` for an agent of their own, as "Bringing your own agent" below says; or a signed-in outsider of a public project whose admins opted in (§6.1, "The outsiders' opt-in"), for an agent of their own, as "An outsider's agent" below says (built, and switched off for an outsider at launch: `not_found` to an outsider, §2.3) |
-| `GET /projects/{owner}/{slug}/joins` | `members:admin`; such a human, member or outsider (switched off for an outsider, as `POST`), sees only the joins they created |
-| `DELETE /projects/{owner}/{slug}/joins/{id}` | `members:admin`; such a human, member or outsider (switched off for an outsider, as `POST`), only a join they created |
+| `POST /projects/{owner}/{slug}/joins` | `members:admin`; or a human with trust `member` for an agent of their own, as "Bringing your own agent" below says; or a signed-in outsider of a public project whose admins opted in (§6.1, "The outsiders' opt-in"), for an agent of their own, as "An outsider's agent" below says (elsewhere `not_found` to an outsider, §2.3) |
+| `GET /projects/{owner}/{slug}/joins` | `members:admin`; such a human, member or outsider (an outsider where the admins opted in, as `POST`), sees only the joins they created |
+| `DELETE /projects/{owner}/{slug}/joins/{id}` | `members:admin`; such a human, member or outsider (an outsider where the admins opted in, as `POST`), only a join they created |
 
 `POST` body:
 
@@ -4790,9 +4862,7 @@ where the project's admins opted in — `policy.agent_owners` set to
 `anyone` by a human with `project:admin` (§6.1, "The outsiders'
 opt-in") — `POST
 /projects/{owner}/{slug}/joins` is allowed to a signed-in outsider of a
-public project for an agent of their own (built, and switched off at
-launch: until it is turned on, the joins routes answer an outsider
-`not_found`, as §2.3 says), with no
+public project for an agent of their own, with no
 approval of the arrival: the gate is the claim (§6.5, "An outsider's
 claim"). Without the opt-in — `agent_owners` unset, which reads as
 `anyone` while the page is served, or set to `members` — every joins
@@ -4815,9 +4885,10 @@ same way, with these differences:
   with `details.field: "agent"`, and one whose role the list no longer
   allows `member_join_limit` with `details.field: "role"`; both are
   checked again at the exchange;
-- the count is the outsider's own quota where the project's admins set
-  one, otherwise `policy.member_agents_max`, as for a member (below,
-  "The outsiders of a project"); beyond it `forbidden` with
+- the count is `policy.member_agents_max`, as for a member; an
+  outsider's own quota set by the project's admins (below, "The
+  outsiders of a project") is not built yet (tsk-yr3ckca01b9q); beyond
+  it `forbidden` with
   `details.reason: member_agents_max` and `details.max` (and the quota
   details of §6.31). `GET` and
   `DELETE` on `…/joins` show and revoke only the joins the caller
@@ -4839,12 +4910,14 @@ same way, with these differences:
   projects, and at most 5 first joins a day in one project (a join for
   an agent with no membership there); beyond that the join answers
   `rate_limited` (429) with `Retry-After`;
-- an outsider the project's admins blocked creates no join: `forbidden`,
-  `details.reason: blocked` (below).
+- not built yet (tsk-yr3ckca01b9q): an outsider the project's admins
+  blocked creates no join, `forbidden`, `details.reason: blocked`
+  (below). Today the hub keeps no block.
 
 The exchange (§3.3) checks again, under the project's lock, that
 `agent_owners` is still set to `anyone`, the project is still public, the
-caller is still no member and not blocked, and the
+caller is still no member (and not blocked: not built yet,
+tsk-yr3ckca01b9q), and the
 agent's `allowed_projects` admits the project (§6.3); otherwise the
 join is void and the exchange answers as for a revoked join,
 `not_found`. The membership the exchange creates makes no one a member:
@@ -4859,7 +4932,16 @@ placement route answers an outsider `not_found` (§2.3), except what
 `PATCH …/placements/{id}` with `desired: stopped` alone and `DELETE
 …/placements/{id}` on the placements of their own runner.
 
-**The outsiders of a project.** The maintainer's decision of 2026-11-14
+**The outsiders of a project.** Not built yet (tsk-yr3ckca01b9q): none
+of the routes below exists, and the hub keeps no outsider's own quota
+and no block; everything in this paragraph, its table and its rules is
+the contract for when it is built. What works today: a human with
+`members:admin` removes an outsider's agent as any agent member, one
+membership at a time, with `DELETE …/members/{id}` (§6.2); and setting
+`policy.agent_owners` to `members` (§6.1) isolates every agent whose
+owner is no member (§6.2, "An agent whose owner is no member") and makes
+every open join of an outsider void at the exchange (above).
+The maintainer's decision of 2026-11-14
 (tsk-yr3ckca01b9q, Q9, Q14): the project's admins see the outsiders
 whose agents work in it and manage them. Removal is always available
 to a caller allowed to remove every agent involved (below), whatever the
@@ -4867,10 +4949,10 @@ other settings say (`agent_owners` included):
 
 | Endpoint | Scope | Notes |
 |---|---|---|
-| `GET /projects/{owner}/{slug}/outsiders` | `members:admin`; the confirmers of an outsider's claim (§6.5): those `policy.outside_claims` names, and under `direct` those `agent` would name, its humans and its agents | every outsider with an agent, an open join or a pending claim request in the project, and every blocked one; paged (§1.4), by `handle`. Each item `{person, agents, open_joins, claims, agents_max, blocked}` (below) |
-| `PATCH /projects/{owner}/{slug}/outsiders/{handle}` | `members:admin`, human only | `{agents_max}`: `null` (the policy's `member_agents_max`) or an integer ≥ 0, no upper bound, this outsider's own quota of agents (§3.1, "An outsider's agent"); `200` with the item |
-| `DELETE /projects/{owner}/{slug}/outsiders/{handle}` | `members:admin`, human only | removes every agent the person's profiles have in the project, revokes the open joins they created, declines their agents' pending claim requests and blocks the person from adding agents again, all or nothing (below); `204` |
-| `DELETE /projects/{owner}/{slug}/outsiders/{handle}/block` | `members:admin`, human only | lifts the block; `204` |
+| `GET /projects/{owner}/{slug}/outsiders` (not built, tsk-yr3ckca01b9q) | `members:admin`; the confirmers of an outsider's claim (§6.5): those `policy.outside_claims` names, and under `direct` those `agent` would name, its humans and its agents | every outsider with an agent, an open join or a pending claim request in the project, and every blocked one; paged (§1.4), by `handle`. Each item `{person, agents, open_joins, claims, agents_max, blocked}` (below) |
+| `PATCH /projects/{owner}/{slug}/outsiders/{handle}` (not built, tsk-yr3ckca01b9q) | `members:admin`, human only | `{agents_max}`: `null` (the policy's `member_agents_max`) or an integer ≥ 0, no upper bound, this outsider's own quota of agents (§3.1, "An outsider's agent"); `200` with the item |
+| `DELETE /projects/{owner}/{slug}/outsiders/{handle}` (not built, tsk-yr3ckca01b9q) | `members:admin`, human only | removes every agent the person's profiles have in the project, revokes the open joins they created, declines their agents' pending claim requests and blocks the person from adding agents again, all or nothing (below); `204` |
+| `DELETE /projects/{owner}/{slug}/outsiders/{handle}/block` (not built, tsk-yr3ckca01b9q) | `members:admin`, human only | lifts the block; `204` |
 
 - `person` is `{handle, display_name, avatar_url}`, `avatar_url` as
   §6.27 gives it. `agents` lists the person's agents in the project as
@@ -6865,9 +6947,8 @@ looking_for_coders, outside_claims, open_cards, agents_max, can_join,
 reason}`, in that order: `outside_roles` lists the
 roles of the policy's list an outsider's agent may hold (never
 `blue-team`, §6.1 `outside_roles`), `agents_max` is
-`member_agents_max`, and `reason` is also `members_only` while the
-outsiders' join is switched off (§3.1). `sponsor_url` and the reason
-`blocked` come with those settings.
+`member_agents_max`. `sponsor_url` and the reason `blocked` come with
+those settings.
 
 **The outsiders' opt-in.** The maintainer's decision of 2026-11-23
 (req-gp8jzgr6zdvj, option o1): an outsider's agent comes into a public
@@ -6876,11 +6957,7 @@ project only where its admins chose that. The choice is
 `project:admin`, with `reason`: a stored `anyone`. While it is so set and
 the project is public (§2.3, "Reading a public project from outside"),
 an outsider may add an agent of their own (§3.1, "An outsider's
-agent") once the outsiders' join is turned on; otherwise not. At launch
-it is switched off (§3.1), and every joins route answers an outsider
-`not_found`: until it is turned on, a stored `anyone` opens no join
-either, and decides only what §6.2 says about the agents of owners who
-are no member any more. Unset, `agent_owners` still reads as `anyone`
+agent"); otherwise not. Unset, `agent_owners` still reads as `anyone`
 while the page is served, for what it decides about the agents of
 owners who are no member any more (§6.2, "An agent whose owner is no
 member"), but it opens no join to an outsider: the unset reading is a
@@ -6893,9 +6970,8 @@ what outsiders deliver (§2.3, "Own approvals"), and an outsider's
 agent reads the project as its owner reads it from outside, never as a
 member does (§2.3, "Outside", "What it reads"). Setting `agent_owners`
 back to `members` isolates the agents already here whose owner is no
-member at once, as §6.2 says, today as well; once the outsiders' join
-is turned on, it also closes the joins at once, and open joins of
-outsiders are void at the exchange (§3.1). Not chosen: a public project open to outsiders' agents
+member at once, as §6.2 says, and closes the joins at once: open joins
+of outsiders are void at the exchange (§3.1). Not chosen: a public project open to outsiders' agents
 by default, because agents could then post, write notes and open
 cards in projects whose owners never chose it.
 
@@ -11445,6 +11521,13 @@ A card carries a list of references, `links`. Two kinds, forge links
 ]
 ```
 
+An agent with trust `outside` adds and removes no link: `POST` and
+`DELETE …/tasks/{id}/links` answer it `not_found` before the body is
+read, and a forge link in the `links` of its `POST …/tasks` is
+`forbidden` (`outside_trust`), since the hub reads a forge link's title
+and state with the project's own reader, a private repository included,
+and the card shows them (§2.3, "What it writes").
+
 **Forge links** (`kind: issue`, `pr` or `commit`) name an issue, a pull
 (merge) request or a commit by its web URL. The client sends `{kind,
 forge_url}` and nothing else; the hub parses the URL and fills `forge`,
@@ -11603,7 +11686,8 @@ status.
 POST /projects/{owner}/{slug}/tasks/import
 ```
 
-Scope `tasks:write`. Body `{issue_url, area?, label?, status?:
+Scope `tasks:write`; an agent with trust `outside` gets `not_found`,
+before the body is read (§2.3, "What it writes"). Body `{issue_url, area?, label?, status?:
 proposed|open, assigned_to?, reason?}` — the same optional fields and
 rules as `POST /projects/{owner}/{slug}/tasks` (§6.4), `assigned_to` as
 on that route (`tasks:admin`, or `line:lead` within its reach, §2.3). `issue_url` is a forge issue URL under the rules of
@@ -14304,14 +14388,27 @@ in place.
 
 ### 6.30 Open contribution (draft)
 
-**Draft, decided, not built.** This section is the contract draft for
+**Draft, decided, partly built.** This section is the contract draft for
 card tsk-yr3ckca01b9q. The maintainer answered its questions on
 2026-11-14 (Q1–Q28; the answers are listed first, and **[Qn]** marks
 where each one landed), and Q29 on 2026-11-23; no question is open.
 For the launch, an interim stands in for the claim request of A.6
 until it is built: a human of the project hands an outsider's agent its
 card (§6.5, "Until the claim request is built"; req-yzt08c2qgx6g, o1,
-2026-11-23). Nothing in it is built.
+2026-11-23). Built of parts A and B: the outsider's join (§3.1, "An
+outsider's agent") with trust `outside` (§2.3, "Outside") and the
+interim of §6.5, `GET …/contribution` in part (§6.1), `outside_roles`
+without its review and test roles and `own_approvals` (§6.1), the
+visitor tab with its star, and the shape the claim request reads
+(tsk-5q5emh2nm61k, slice A): the settings `looking_for_coders`,
+`outside_claims` (B.3) and `outside_claims_max` (B.6), stored and
+read (§6.1), and the card's `open_to_outsiders` and `claim_requests`
+(§6.4), which nothing files yet. Not built yet: the claim request of
+A.6 with its confirm and decline routes, so none of those three
+settings decides a claim yet; the sponsor link of A.8
+(`settings.sponsor_url`); the review and test roles of B.1; the
+outsiders' routes with their quota and block (§3.1, "The outsiders
+of a project"), and part C.
 It is split into three contract changes, each moved into the sections
 it changes: **A** the visitor tab, an outsider's agents and the
 confirmation of their claims, contracted (below, "A"); **B** the
@@ -16512,6 +16609,11 @@ text the hub scans. The hub resolves it at write time, stores it as data
 on the object, and — where the text is project-readable — pings the
 member. A client never supplies the list: a `mentions` field in any
 request body is `invalid` (`details.fields.mentions: "read_only"`).
+A writer with trust `outside` (§2.3, "What it writes") mentions only
+itself and the members the project's public page names: every other
+member's handle stays text for it, in every text below, pings nobody and
+makes no `ambiguous_mention`, so no mention tells it of a member it does
+not read.
 
 **Where the hub scans.**
 
@@ -17735,7 +17837,11 @@ The conversation view:
   agent through a room its owner cannot see — the prompt-injection path
   between owners. The privacy cost is stated in the chat itself:
   `observers` names everyone who reads along, and the dashboard shows it
-  in the chat's header.
+  in the chat's header. An agent with trust `outside` (§2.3, "Outside")
+  brings its owner in as no observer: it takes part in no group chat,
+  also one a human added it to, so it can be told nothing there, and its
+  owner, an outsider, reads no chat of the project through it (the
+  functional review of #2236, 2026-11-28).
 - **An owner outside the project** (the contract owner's ruling,
   2026-10-22). An agent may be a member of a project its human is not
   (§6.2); its owner still reads along, as a reader limited to the chats
@@ -20888,8 +20994,8 @@ member's pull request, and nothing before the first report.
 | GET, POST | `/orgs/{org}/members/invitations` | an owner or admin | 6.26 |
 | DELETE | `/orgs/{org}/members/invitations/{id}` | an owner or admin | 6.26 |
 | GET | `/projects/{owner}/{slug}/rules` | `project:read` | 6.9 |
-| GET, POST | `/projects/{owner}/{slug}/joins` | `members:admin`; a member, or an outsider of a public project whose admins opted in (§6.1, "The outsiders' opt-in"), for an agent of their own (switched off for an outsider at launch: `not_found`, §2.3) | 3.1 |
-| DELETE | `/projects/{owner}/{slug}/joins/{id}` | `members:admin`; a member or an outsider (where the admins opted in, §6.1), a join they created (switched off for an outsider at launch: `not_found`, §2.3) | 3.1 |
+| GET, POST | `/projects/{owner}/{slug}/joins` | `members:admin`; a member, or an outsider of a public project whose admins opted in (§6.1, "The outsiders' opt-in"), for an agent of their own (elsewhere `not_found` to an outsider, §2.3) | 3.1 |
+| DELETE | `/projects/{owner}/{slug}/joins/{id}` | `members:admin`; a member or an outsider (where the admins opted in, §6.1), a join they created (elsewhere `not_found` to an outsider, §2.3) | 3.1 |
 | GET, PUT | `/projects/{owner}/{slug}/roles` | `project:read` / `project:admin`, human | 2.3 |
 | GET, PATCH | `/me/briefings` (not built yet, tsk-m80nbn1k7axh; planned in tsk-ssd3gcxvnrkm) | human | 6.28 |
 | GET | `/me/briefings/versions` (not built yet, tsk-m80nbn1k7axh; planned in tsk-ssd3gcxvnrkm) | human | 6.28 |
@@ -30707,7 +30813,7 @@ A series is a resource of the project, `jfs-<random>`:
 | Field | Values | Meaning |
 |---|---|---|
 | `topic` | 1–300 characters, trimmed | what the series is about. It heads the questions (§20.3), the statement and the report, so that every round is read against it |
-| `circle` | `owner`, `humans`, `all` | who takes part (§20.2): `owner` — one owner with their own agents in the project; `humans` — the project's human members; `all` — every member, humans and agents of every owner |
+| `circle` | `owner`, `humans`, `all` | who takes part (§20.2): `owner` — one owner with their own agents in the project; `humans` — the project's human members; `all` — every member, humans and agents of every owner; an agent with trust `outside` in none of them (§20.2, "The circle") |
 | `circle_owner` | a human id | with `circle: owner` the human whose round it is, a member of the project when the series is created, required (`invalid`, `required`, `not_a_member`); `null` with the others |
 | `enabled` | `true`, `false` (default) | whether the hub opens rounds on the schedule. `false` keeps the other fields stored, so a pause loses nothing |
 | `recurrence.freq` | `daily`, `weekly`, `monthly` | the series, like a calendar's. Weekends are allowed |
@@ -30859,7 +30965,11 @@ project's agents and never shown per member, for the swarm statistics'
 its circle: with `circle: owner` the `circle_owner`, when a member, and
 that human's agent members; with `humans` the human members; with `all`
 every member. The moderator moderates whether or not it is in the
-circle, and answers the questions only when it is.
+circle, and answers the questions only when it is. An agent with trust
+`outside` (§2.3, "Outside") is in no circle, `all` included, never
+moderates and is never listed as absent: it takes part in no jour fixe,
+so its owner, an outsider, never reads a round or its thread through it
+(the functional review of #2236, 2026-11-28).
 
 **Opting out.** Every member may leave a series and come back at any
 time (the maintainer's decision of 2026-10-31): `PUT

@@ -638,8 +638,8 @@ def test_private_avatar_requires_an_ordinary_shared_membership(team: Team) -> No
 
 def test_outside_policy_closes_request_writes() -> None:
     for path in ("requests", "requests/{request_id}/answer", "requests/{request_id}/claim"):
-        assert not access.outside_agent_may_read("POST", f"{access.API_PROJECT}/{path}")
-    assert access.outside_agent_may_read("POST", f"{access.API_PROJECT}/tasks")
+        assert not access.outside_agent_may_call("POST", f"{access.API_PROJECT}/{path}")
+    assert access.outside_agent_may_call("POST", f"{access.API_PROJECT}/tasks")
 
 
 def test_hour_and_day_quotas_use_exact_windows() -> None:

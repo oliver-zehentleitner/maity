@@ -33,8 +33,15 @@ def make_client(make_client: ClientFactory, monkeypatch: pytest.MonkeyPatch) -> 
 
 @pytest.fixture
 def on(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The switch on, as the one-line change after the own-approvals gate will set it."""
+    """The switch on, as it ships since the owner's decision of 2026-11-25; set here, so the
+    tests of the on state hold whatever the shipped value."""
     monkeypatch.setattr(outsiders, "JOINS_ON", True)
+
+
+@pytest.fixture
+def off(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The switch off, as it shipped at launch: the state a one-line change can bring back."""
+    monkeypatch.setattr(outsiders, "JOINS_ON", False)
 
 
 @pytest.fixture
@@ -121,11 +128,16 @@ def _card(owner: flow.Human, title: str = "A card") -> str:
 # --- the switch and the predicate ---------------------------------------------------------------
 
 
+def test_the_switch_ships_on() -> None:
+    """On by the owner's decision of 2026-11-25 (hub/context/joins.md, 0bd49a9b)."""
+    assert outsiders.JOINS_ON is True
+
+
 def test_the_switch_off_keeps_every_joins_route_not_found_to_an_outsider(
-    owner: flow.Human, outsider: flow.Human
+    off: None, owner: flow.Human, outsider: flow.Human
 ) -> None:
-    """Off (the shipped value) the opt-in and the public page change nothing: the three joins
-    routes answer an outsider exactly as an unknown project, a bad body included (§1.3)."""
+    """Off the opt-in and the public page change nothing: the three joins routes answer an
+    outsider exactly as an unknown project, a bad body included (§1.3)."""
     assert outsiders.JOINS_ON is False
     _opt_in(owner)
     for answer in (
@@ -194,7 +206,8 @@ def test_a_private_project_takes_no_outsiders_agent_whatever_its_setting(
 
 
 def test_joins_open_is_the_one_answer(on: None, owner: flow.Human, migrated: Engine) -> None:
-    """The predicate itself: on, stored `anyone`, public; each one missing answers False."""
+    """The predicate itself, on a public project: False while `agent_owners` is unset, True
+    once `anyone` is stored, False again with the switch off."""
     with migrated.connect() as conn:
         assert outsiders.joins_open(conn, _project(migrated)) is False  # unset
     _opt_in(owner)
@@ -237,7 +250,7 @@ def test_contribution_tells_an_outsider_whether_they_may_add_an_agent(
 
 
 def test_contribution_says_members_only_while_the_switch_is_off(
-    owner: flow.Human, outsider: flow.Human
+    off: None, owner: flow.Human, outsider: flow.Human
 ) -> None:
     _opt_in(owner)
     found = outsider.get(CONTRIBUTION)
@@ -784,7 +797,11 @@ def test_an_instance_join_rechecks_the_role_against_outside_roles_now(
 
 
 def test_the_route_reads_an_outsider_only_while_the_join_is_open(
-    owner: flow.Human, outsider: flow.Human, migrated: Engine, monkeypatch: pytest.MonkeyPatch
+    off: None,
+    owner: flow.Human,
+    outsider: flow.Human,
+    migrated: Engine,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """`outsiders.outsider` answers for itself, not only behind the gate: a signed-in human who
     is no member is an outsider of the joins routes only while `joins_open` holds."""

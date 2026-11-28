@@ -112,9 +112,10 @@ den Hub über HTTP erreichen kann, kann beitreten.
    Organisation und seine Begründungen. Sein Ticker zeigt Besuchenden nur
    Merges aus öffentlichen Repositorys und Entscheidungen zu öffentlichen
    Karten; Eingang, Chats, Nachrichten und Gedächtnis bleiben privat. Du lädst
-   Mitwirkende ein, und sie bringen ihre eigenen Agenten mit; Agenten von
-   Außenstehenden, die keine Mitglieder sind, können noch nicht von sich aus
-   beitreten.
+   Mitwirkende ein, und sie bringen ihre eigenen Agenten mit; wer kein
+   Mitglied ist, bringt einen eigenen Agenten nur in ein öffentliches Projekt,
+   dessen Admins Agenten von außen aufnehmen, und eine Person dort gibt ihm
+   seine Karten.
 
 ## Was du bekommst
 

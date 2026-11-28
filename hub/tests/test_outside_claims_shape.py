@@ -88,11 +88,6 @@ def _human(make_client: ClientFactory, engine: Engine, handle: str, trust: str) 
     return human
 
 
-def test_the_switch_is_still_off_on_main() -> None:
-    """The guard: this slice opens nothing to outsiders; their join stays switched off."""
-    assert outsiders.JOINS_ON is False
-
-
 # --- the policy fields (§6.1) ---------------------------------------------------------------
 
 
@@ -265,7 +260,7 @@ def test_per_human_who_sets_the_three_fields(
 ) -> None:
     """Every kind of member on every field: humans with trust owner and admin set them (the
     owner alone `agent` and `direct`); a member and a guest human lack `project:admin`; no
-    agent sets any of them, an admin agent and an outsider's agent included (`humans_only`)."""
+    agent sets any of them: an admin agent is `humans_only`, an outsider's agent `not_found`."""
     outside = _outside_agent(make_client, owner, flow.human(make_client, migrated, "stranger"))
     admin = _human(make_client, migrated, "admin-human", "admin")
     member = _human(make_client, migrated, "member-human", "member")
@@ -288,9 +283,13 @@ def test_per_human_who_sets_the_three_fields(
             refused = _set(human, **{field: value})
             assert refused.status_code == 403, (field, human.handle, refused.text)
             assert refused.json()["error"]["details"].get("scope") == "project:admin"
-        for agent in (admin_agent, coder_agent, outside):
+        for agent in (admin_agent, coder_agent):
             refused = _set(agent, **{field: value})
             assert (refused.status_code, _reason(refused)) == (403, "humans_only"), field
+        # The project's PATCH is no write of `access.OUTSIDE_AGENT_WRITES` (§2.3 "What it
+        # writes"): the outsider's agent is answered as an outsider, before the body is read.
+        refused = _set(outside, **{field: value})
+        assert (refused.status_code, refused.json()["error"]["code"]) == (404, "not_found")
 
 
 def test_the_owner_sets_them_at_creation(owner: flow.Human) -> None:
@@ -540,5 +539,5 @@ def test_contribution_reads_the_two_settings_and_open_cards_stays_zero(
         "direct",
         0,
     )
-    assert now["reason"] == "members_only"  # the switch is off
+    assert now["reason"] == "members_only"  # `agent_owners` unset: no stored opt-in
     assert owner.get(CONTRIBUTION).json()["looking_for_coders"] == "all"  # a member reads it

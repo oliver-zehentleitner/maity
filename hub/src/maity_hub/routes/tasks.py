@@ -391,9 +391,7 @@ def _new_contract(conn: Connection, mine: Membership, body: ContractIn) -> dict[
         mine.require("tasks:admin")  # naming another arbiter than the policy's (§6.8)
     if arbiter != "trust:admin":
         _target_id(conn, mine, arbiter, "contract.arbiter", arbiter=True)
-    watchers = list(dict.fromkeys(body.watchers))
-    for watcher in watchers:
-        _member_id(conn, mine, watcher, "contract.watchers")
+    watchers = _watchers(conn, mine, body.watchers)
     _check_contract_place(body.path, body.section)
     return {
         "arbiter": arbiter,
@@ -538,10 +536,7 @@ def _patched_contract(
             raise forbidden("tasks:admin", "only the arbiter moves a contract's state")
         contract["state"] = body.state
     if body.watchers is not None:
-        watchers = list(dict.fromkeys(body.watchers))
-        for watcher in watchers:
-            _member_id(conn, mine, watcher, "contract.watchers")
-        contract["watchers"] = watchers
+        contract["watchers"] = _watchers(conn, mine, body.watchers)
     given = body.model_fields_set
     if "path" in given and body.path is None:
         raise invalid({"contract.path": "not_a_path"})
@@ -597,6 +592,58 @@ def _open_to_outsiders(mine: Membership, given: set[str], value: Any) -> bool | 
     if not isinstance(value, bool):
         raise invalid({"open_to_outsiders": "bool_type"})
     return value
+
+
+def _refuse_outside_assignment(mine: Membership, given: set[str]) -> None:
+    """`assigned_to` in a `POST …/tasks` or `PATCH …/tasks/{id}` body of a caller with trust
+    `outside` (§2.3 "What it writes"): `forbidden` `outside_trust` with `field: assigned_to`,
+    whatever the value, `null` included, before the member it names is looked up, as
+    `open_to_outsiders` is refused. It assigns nobody (it holds neither `tasks:admin` nor
+    `line:lead`), so the refusal closes no path; it only keeps the lookup from telling it
+    whether a member it does not read exists."""
+    if "assigned_to" in given and mine.trust == OUTSIDE:
+        raise ApiError(
+            403,
+            "forbidden",
+            "a card is assigned by the project's own members",
+            {"reason": "outside_trust", "field": "assigned_to"},
+        )
+
+
+def _watchers(conn: Connection, mine: Membership, named: list[str]) -> list[str]:
+    """A contract's `watchers` (§6.8), each an active member; for a writer with trust
+    `outside`, also one the public page names, or itself, as its `to` and its mentions
+    (§2.3 "What it writes"): any other is `not_a_member`, as an unknown id."""
+    watchers = list(dict.fromkeys(named))
+    shown: set[str] | None = None
+    if access.reads_from_outside(mine) and watchers:
+        from maity_hub import public_members
+
+        listed = public_members.members(conn, mine.project.id)
+        shown = {p.principal for p in listed.values() if p.shown} | {mine.principal_id}
+    for watcher in watchers:
+        _member_id(conn, mine, watcher, "contract.watchers")
+        if shown is not None and watcher not in shown:
+            raise invalid({"contract.watchers": "not_a_member"})
+    return watchers
+
+
+def _refuse_forge_links(mine: Membership, links: list[card_links.LinkIn]) -> None:
+    """A forge link on a new card from an agent with trust `outside` (§2.3 "What it writes",
+    §6.13): `forbidden` `outside_trust` with `field: links`, before anything is written. The
+    probe reads a forge link's title and state with the project's own reader, which also
+    reads a private repository, and the card shows them to the writer, so such a link would
+    read for it what it may not read; a plain `url` link is read by nobody and passes. Its
+    route of its own, `POST …/tasks/{id}/links`, is not in `access.OUTSIDE_AGENT_WRITES`."""
+    if not access.reads_from_outside(mine):
+        return
+    if any(link.kind in card_links.FORGE_KINDS for link in links):
+        raise ApiError(
+            403,
+            "forbidden",
+            "a forge link is added by the project's own members",
+            {"reason": "outside_trust", "field": "links"},
+        )
 
 
 def _check_needs(project: Any, needs: str | None) -> None:
@@ -1150,6 +1197,8 @@ def create_card(
     mine = membership(conn, caller, slug)
     mine.require("tasks:write")
     open_to_outsiders = _open_to_outsiders(mine, body.model_fields_set, body.open_to_outsiders)
+    _refuse_outside_assignment(mine, body.model_fields_set)
+    _refuse_forge_links(mine, body.links)
     if body.kind not in cards.KINDS:
         raise invalid({"kind": "unknown"})
     if body.kind == "setup":
@@ -1193,7 +1242,7 @@ def create_card(
         if routed_cover is not None:
             extra = {**extra, "cover": routed_cover}
     assigned_instance = _assigned_instance(conn, assigned)
-    found = mentions.resolve(conn, mine.project.id, body.body, "body")
+    found = mentions.resolve(conn, mine.project.id, body.body, "body", reader=mine)
     now = clock.now()
     card_id = new_id({"release": "release", "contract": "contract"}.get(body.kind, "task"))
     status = body.status
@@ -1335,6 +1384,7 @@ def patch_task(
             mine.require("tasks:write")  # again, on the row read under the lock
         # Before every other check of the body: never a trust-`outside` caller's (§6.4).
         open_to_outsiders = _open_to_outsiders(mine, given, body.open_to_outsiders)
+        _refuse_outside_assignment(mine, given)  # as `open_to_outsiders`, before the card
         card = _project_card(conn, mine, card_id)
         new_assignee: int | None = None
         if "assigned_to" in given and body.assigned_to:
@@ -1432,7 +1482,7 @@ def patch_task(
                 values[field] = getattr(body, field)
         found = None
         if "body" in values:
-            found = mentions.resolve(conn, mine.project.id, values["body"], "body")
+            found = mentions.resolve(conn, mine.project.id, values["body"], "body", reader=mine)
             values["mentions"] = found
         if "label" in given:
             _check_label(body.label)
@@ -2500,7 +2550,7 @@ def report(
             if not (mine.may("tasks:review") and mine.may("tasks:test")):
                 empty = SimpleNamespace(approvals=None)
                 signatures = cards.sign(conn, mine, empty, None, revision)
-        found = mentions.resolve(conn, mine.project.id, body.summary, "summary")
+        found = mentions.resolve(conn, mine.project.id, body.summary, "summary", reader=mine)
         now = clock.now()
         stored = {
             "summary": body.summary,

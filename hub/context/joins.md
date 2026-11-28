@@ -524,8 +524,8 @@ said nothing.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the lead's order on card tsk-enfbkj0xqq5m, 2026-11-23 (the join lands switched off, failing closed, until the own-approvals gate of tsk-3ggnhdmgmkf3 is on main; the "may an outsider join here" predicate in one place; the refusal of an outsider's agent's own claim in one place; the membership's own trust decides whose agent is outside); the review A2245 of #2142 and the lead's findings with it (round 2); the maintainer's answers to req-gp8jzgr6zdvj and req-yzt08c2qgx6g (`context/members.md`, fee10dc5 and d20a0c4b); `docs/api.md` §3.1 "An outsider's agent", §6.1 "The outsiders' opt-in", §6.5 "Until the claim request is built"; the lead's ruling of 2026-11-24 (joins from outside stay off at launch by the owner's decision, the own-approvals gate being built, #2145)
-**Revisit when:** the owner decides to open joins from outside (they are off at launch by the owner's decision; the code no longer waits on anything before they can be turned on, the own-approvals gate is built, #2145; `outsiders.JOINS_ON` then goes on by a one-line change of its own); the claim request of §6.5 is built (`refuse_taking` gives way to it); the outsiders' block or own quota (§3.1, "The outsiders of a project") is built, which `still_holds` and the join then check as well
+**Source:** the lead's order on card tsk-enfbkj0xqq5m, 2026-11-23 (the join lands switched off, failing closed, until the own-approvals gate of tsk-3ggnhdmgmkf3 is on main; the "may an outsider join here" predicate in one place; the refusal of an outsider's agent's own claim in one place; the membership's own trust decides whose agent is outside); the review A2245 of #2142 and the lead's findings with it (round 2); the maintainer's answers to req-gp8jzgr6zdvj and req-yzt08c2qgx6g (`context/members.md`, fee10dc5 and d20a0c4b); `docs/api.md` §3.1 "An outsider's agent", §6.1 "The outsiders' opt-in", §6.5 "Until the claim request is built"; the lead's ruling of 2026-11-24 (joins from outside stay off at launch by the owner's decision, the own-approvals gate being built, #2145); the owner's decision of 2026-11-25 (joins from outside on), carried out on card tsk-25wd170kbf12 by the one-line change this entry foresaw
+**Revisit when:** the owner decides to close joins from outside again (`outsiders.JOINS_ON` back to `False`, a one-line change of its own); the claim request of §6.5 is built (`refuse_taking` gives way to it); the outsiders' block or own quota (§3.1, "The outsiders of a project") is built, which `still_holds` and the join then check as well
 **See:** https://github.com/oliver-zehentleitner/maity — fee10dc5-5922-4fb8-84f3-d1549b670a05 — as of 2026-11-23
 **See:** https://github.com/oliver-zehentleitner/maity — d20a0c4b-c785-481b-b0d8-6b972bc75441 — as of 2026-11-23
 
@@ -533,9 +533,11 @@ said nothing.
 project now. It reads the switch `outsiders.JOINS_ON`, the admins' stored
 `policy.agent_owners: anyone` and whether the project is public for outsiders. The gate
 (`access.gate`, for `access.OUTSIDE_JOINS`), the joins routes (`routes/joins.joiner`) and the
-exchange (`outsiders.still_holds`) all ask it and nothing else. `JOINS_ON` ships `False`: the
-three joins routes then answer an outsider `not_found` before the body is read, as before, and no
-exchange makes a membership with trust `outside`. `outsiders.refuse_taking` is the one check of
+exchange (`outsiders.still_holds`) all ask it and nothing else. `JOINS_ON` shipped `False` until
+the owner's decision of 2026-11-25 turned it on; on, a join still opens only where the admins
+stored `anyone` and the project is public for outsiders. Off, the three joins routes answer an
+outsider `not_found` before the body is read, and no exchange makes a membership with trust
+`outside`. `outsiders.refuse_taking` is the one check of
 a card coming to be held by such an agent: `claim`, the `assign` that moves an expired claim
 and the takeover receiver call it, each where the contract's order puts it (§6.5). Cover, which
 is not a takeover and moves cards without a call, asks the same test
@@ -546,8 +548,9 @@ contract pull request).
 **Reason:** without the own-approvals gate, an agent with trust `outside` under `done_authority:
 holder` could move its own card to `done`. The lead wanted the join built and reviewed now but
 unreachable until that gate lands, and the opt-in, then pending with the maintainer, changeable
-in one line. Either answer was then one edit, and turning the join on is one reviewable line.
-One refusal for the card keeps the interim of §6.5 in one place, to be replaced as a whole when
+in one line. Either answer was then one edit, and turning the join on was one reviewable line:
+when the owner decided on 2026-11-25 to open joins from outside, the switch went on by that line
+alone, with no new behaviour beside it. One refusal for the card keeps the interim of §6.5 in one place, to be replaced as a whole when
 the claim request is built.
 
 **Rejected alternatives:**
@@ -562,7 +565,8 @@ the claim request is built.
 
 `GET …/contribution` (§6.1) answers from the same predicate: `members_only` while
 `joins_open` does not hold, the switch off included, since the outsider's tab needs to say why
-the button is missing before the join is on (the lead, relaying the web side, 2026-11-23).
+the button is missing, as it did before the join was on (the lead, relaying the web side,
+2026-11-23).
 
 **Whose agent is outside (the lead's ruling of 2026-11-23):** every check reads the
 trust of the membership it is about: the active row, and for own approvals the active row, else
@@ -730,8 +734,8 @@ would decide what the contract says no one decides.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's decision of 2026-11-25; the lead's rulings of 2026-11-25 (the predicate, the closed list of reads, memory and group chats closed, no rules text in the resume packet, the numbers of the join limits and caps, the refusal of the cascade); card tsk-n0ef3c9j4s6f; `docs/api.md` §2.3 "Outside" ("What it reads"), §3.1 "An outsider's agent", §6.2 "Isolation", §6.3, §8.2
-**Revisit when:** the claim request of §6.5 is built and gives such an agent cards of its own choosing; the outsider's own read view gains memory, messages or requests; the outsiders' own quota or block (§3.1) is built, which the open-join cap then reads; or the security label becomes settable through the API, whose edit path the release already covers
+**Source:** the maintainer's decision of 2026-11-25; the lead's rulings of 2026-11-25 (the predicate, the closed list of reads, memory and group chats closed, no rules text in the resume packet, the numbers of the join limits and caps, the refusal of the cascade); card tsk-n0ef3c9j4s6f; the functional review of #2236 and the lead's message of 2026-11-28 (the writes, card tsk-25wd170kbf12); `docs/api.md` §2.3 "Outside" ("What it reads", "What it writes"), §3.1 "An outsider's agent", §6.2 "Isolation", §6.3, §8.2, §8.6, §9.2, §20.2
+**Revisit when:** the claim request of §6.5 is built and gives such an agent cards of its own choosing; the outsider's own read view gains memory, messages or requests; such an agent is to take part in a jour fixe, a group chat or a request, or to link forge items; the outsiders' own quota or block (§3.1) is built, which the open-join cap then reads; or the security label becomes settable through the API, whose edit path the release already covers
 **See:** joins.md#an-outsiders-join-sits-behind-one-switch-and-one-predicate-and-its-card-behind-one-refusal — 0bd49a9b-ee36-4f41-9c5b-d050bb136341 — as of 2026-11-25
 **See:** memory.md#an-outsiders-agent-reads-and-writes-no-memory-of-the-project — d8275bae-25a1-40be-bc17-c5e42342261c — as of 2026-11-25
 
@@ -781,6 +785,50 @@ cascade's refusal leaves ending an isolated membership to the project's admins, 
 - Keeping an isolated membership counted by remembering removed rows: every count of an
   owner's agents would have to read removal causes for good; refusing the cascade keeps the
   membership itself, and with it the count.
+
+**Its writes are a closed list too (2026-11-28).** The functional review of #2236, which
+switches joins from outside on, found four ways past the list of reads, all through writes,
+which the gate then let through except for requests: the import and a card's links made the
+hub read the forge with the project's own reader, a private repository included, and showed
+the issue's title (a read, and an existence oracle); a jour fixe with circle `all` invited the
+agent, so its owner, an outsider, read the round and its thread through `OWNER_CALLS`, and the
+agent could answer, post and opt out; a mention resolved every active member and so named
+members the agent does not read; and an upload and the ticker subscription stayed open though
+their reads were closed. The lead pointed to the same gate (2026-11-28), and the fix round
+closed them there, pending both legs' re-approval of #2236. So
+`access.OUTSIDE_AGENT_WRITES` names the project's writes such an agent makes — its cards,
+their notes, a claim's answers to a takeover, its watch, its messages, its own membership and
+credentials, and the memory routes, which answer it as §2.3 says — and `refuse_outside_call`
+answers every other write `not_found` before the body is read, as it does a read. Four
+behaviours that are no route went with it, each in the one place it is decided: a forge link
+in a new card's `links` is `forbidden` `outside_trust` (`tasks._refuse_forge_links`), a
+mention names only the writer and the members the public page names (`mentions.resolve`,
+whose `reader` every caller now passes), a jour fixe round asks no agent with trust
+`outside` (`rounds._members`), and a group chat it is put in brings its owner in as no
+observer (`group_chats.observers_of`).
+**Rejected:** a check in each of the six routes the review named: the review found them
+because nothing had closed them, and a write added later would again be open until someone
+noticed — the reason the reads became a list (above, "Checking each route for the agent").
+Also rejected: keeping the agent off a group chat at the add, which would change §2.3's "also
+one a human added it to"; closing who reads along keeps that sentence and closes the read.
+Not changed: a report's pull request is still observed by the probe for such an agent, as
+the work it delivers needs it; whether that observation tells it more than it should is a
+question for the lead (the review's next round).
+
+**Each kept write names only its own (2026-11-28).** Before the push the lead asked how each
+write on the list is scoped. Several answered for an id the agent does not own before they
+refused it, and the kind of refusal told it whether a member it does not read exists:
+`PATCH …/members/{id}`, a credential revoke and an event redaction answered `forbidden` for
+another's id and `not_found` for an unknown one; `assigned_to`, a takeover's `to` and a
+contract's `watchers` looked the member up first, and a hidden member was accepted as a
+watcher. So the first three answer any id but its own `not_found` before anything else is
+judged, `assigned_to` is `forbidden` `outside_trust` as `open_to_outsiders` is, its takeover
+is refused before `to` is read, and `watchers` take only members the public page names.
+**Rejected:** taking the members, credential and redaction routes off the list, since none of
+them ever succeeds for an agent: the lead's ruling of that day scopes them to its own rather
+than removing them, and the member and credential reads already open its own entries to it,
+so the writes answer the same way. The memory routes stay on the list for the answer §2.3 contracts for them (`forbidden`
+`outside_trust` for a write), which a `not_found` from the gate would replace.
 
 On 2026-11-26 the owner decided that an outside writer editing a card whose
 parent reads as null can clear it as a no-op, and receives the same field

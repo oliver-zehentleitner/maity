@@ -813,9 +813,9 @@ def create_request(
             conn, mine.project.id, mine, _audience_of(conn, mine.project.id, to)
         )
         # Links only: a mention in a request pings nobody (§8.6).
-        found = mentions.resolve(conn, mine.project.id, body.summary, "summary") + (
-            mentions.resolve(conn, mine.project.id, body.tried, "tried")
-        )
+        found = mentions.resolve(
+            conn, mine.project.id, body.summary, "summary", reader=mine
+        ) + mentions.resolve(conn, mine.project.id, body.tried, "tried", reader=mine)
         now = clock.now()
         request_id = new_id("request")
         conn.execute(
@@ -1817,7 +1817,7 @@ def answer(
             "on_behalf_of": on_behalf,
             "at": clock.rfc3339(now),
             "conversation_id": conversation_id,
-            "mentions": mentions.resolve(conn, mine.project.id, body.text, "text"),
+            "mentions": mentions.resolve(conn, mine.project.id, body.text, "text", reader=mine),
             # Given by a bridge for the answering agent (§2.3): only then.
             **({"via": caller.bridge.view()} if caller.bridge else {}),
         }
@@ -2952,7 +2952,9 @@ def answer_personal(
             "conversation_id": conversation_id,
             # Resolved for a member only: a non-member learns nobody's id through it (§6.2).
             "mentions": (
-                mentions.resolve(conn, row.project_id, body.text, "text") if member else []
+                mentions.resolve(conn, row.project_id, body.text, "text", reader=member)
+                if member
+                else []
             ),
         }
         done = conn.execute(

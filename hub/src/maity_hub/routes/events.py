@@ -745,7 +745,9 @@ def post_message(
         # Against the chat's participants only; anyone else's handle stays text, and
         # each participant mentioned but the writer counts one ping (§8.6).
         inside = {group_chats.principal(s) for s in current if not s.waiting}  # §9.6
-        mentioned = mentions.resolve(conn, mine.project.id, body.body, "body", among=inside)
+        mentioned = mentions.resolve(
+            conn, mine.project.id, body.body, "body", reader=mine, among=inside
+        )
         mentions.charge(conn, mine.id, len([m for m in mentions.members(mentioned) if m != me]))
         # An instance mention wakes the instance it comes down to, a successor when the one
         # named was replaced (§8.2, §8.6): `events.wakes` reads that token, not the written id.
@@ -764,7 +766,7 @@ def post_message(
             )
         )
     elif body.type != "chat":  # a direct chat stays between its two parties (§8.6)
-        mentioned = mentions.resolve(conn, mine.project.id, body.body, "body")
+        mentioned = mentions.resolve(conn, mine.project.id, body.body, "body", reader=mine)
         roles = _roles(conn, mine.project.id, mentions.members(mentioned))
         # Only what `to` does not reach already, judged per token (§8.2): a team mention
         # is reached by `all`, its role or its own `member:`; an instance mention only by
@@ -1118,6 +1120,12 @@ def redact(
         row = conn.execute(
             select(t.event).where(t.event.c.seq == seq, t.event.c.project_id == mine.project.id)
         ).first()
+        if reads_from_outside(mine) and (row is None or row.actor_membership != mine.id):
+            # An agent with trust `outside` names only its own events (§2.3 "What it
+            # writes"): any other `seq`, one it reads included, is `not_found` before any
+            # scope is asked, so no refusal tells it what the `seq` is. Its own is then
+            # refused as any agent's is.
+            raise not_found()
         if row is not None and group_chats.is_group(row.conversation_id):
             # A group chat's own rule: a place in the chat, no scope (§8.5).
             return _redact_in_group(conn, mine, caller, row, body, store)
