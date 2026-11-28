@@ -17,14 +17,15 @@ A public project's outsider reading the member routes (§2.3) reads the cards by
 
 from __future__ import annotations
 
-from collections.abc import Collection
+from collections.abc import Collection, Sequence
 from typing import Any
 
-from sqlalchemy import Connection, and_, case, func, or_, select
+from sqlalchemy import Connection, Select, and_, case, func, or_, select
 
 from maity_hub import clock, moderation, namespace, public_design, public_pages
 from maity_hub import tables as t
 from maity_hub.cards import CLOSED
+from maity_hub.chunks import chunks
 from maity_hub.config import Settings
 from maity_hub.public_members import holder_data, members
 from maity_hub.public_projects import served
@@ -294,36 +295,77 @@ def of_project(conn: Connection, project_id: str) -> list[str]:
     )
 
 
-def naming(conn: Connection, project_id: str, principal_id: str) -> list[str]:
-    """The cards of one project whose page names a member (`render_card`): as its claim holder,
-    a note's author or a note's latest editor, under any membership the principal held there."""
-    c, n, m = t.card.c, t.card_note.c, t.membership.c
-    held = select(m.id).where(
-        m.project_id == project_id, or_(m.agent_id == principal_id, m.human_id == principal_id)
-    )
-    ids = set(conn.execute(held).scalars())
-    if not ids:
-        return []
-    found = set(
-        conn.execute(
-            select(c.id).where(c.project_id == project_id, c.claim_holder.in_(ids))
+def held_or_noted_by(
+    conn: Connection, who: Collection[int] | Select[Any], where: Sequence[Any] = ()
+) -> set[str]:
+    """The cards whose page names one of the memberships `who` as its claim holder or as the
+    author of a note (`render_card`), among the cards that meet every condition of `where`
+    (on `t.card`: which project's cards count).
+
+    `who` is either a frozen set of membership ids (`naming`: the principal's memberships
+    in that project, already read once) or a SELECT of ids (`pages_of_member`: the person's
+    active memberships, re-evaluated in each of the two statements as the former joins were).
+    A frozen collection is cut at `chunks.CHUNK`. A SELECT is used as a subquery, with no
+    bound list to cut. No statements when a frozen collection is empty."""
+    c, n = t.card.c, t.card_note.c
+
+    def once(part: Any) -> set[str]:
+        held = conn.execute(select(c.id).where(c.claim_holder.in_(part), *where)).scalars()
+        noted = conn.execute(
+            select(n.card_id).join(t.card, c.id == n.card_id).where(n.author.in_(part), *where)
         ).scalars()
-    )
-    found |= set(
-        conn.execute(
-            select(n.card_id)
-            .join(t.card, c.id == n.card_id)
-            .where(c.project_id == project_id, n.author.in_(ids))
-        ).scalars()
-    )
-    # The editor is in JSON: the few edited notes of the project are matched here.
+        return set(held) | set(noted)
+
+    if isinstance(who, Select):
+        return once(who)
+    if not who:
+        return set()
+    found: set[str] = set()
+    for part in chunks(who):
+        found |= once(part)
+    return found
+
+
+def edited_by(conn: Connection, who: Collection[int], where: Sequence[Any] = ()) -> set[str]:
+    """The cards among those meeting `where` with a note whose latest editor is one of the
+    memberships `who` (a frozen set: `naming`'s ids, or `pages_of_member`'s mine).
+
+    The editor is in JSON (`card_note.edited["by"]`), whose comparison differs between the
+    engines in SQL: the edited notes of those cards are read once for this `where`, and
+    matched here, as a Python set. The caller cuts a large IN list in `where` (the projects)
+    at `chunks.CHUNK`, so a further membership chunk does not scan the notes again. No
+    statement when `who` is empty."""
+    if not who:
+        return set()
+    n = t.card_note.c
     edited = conn.execute(
         select(n.card_id, n.edited)
-        .join(t.card, c.id == n.card_id)
-        .where(c.project_id == project_id, n.edited.is_not(None))
+        .join(t.card, t.card.c.id == n.card_id)
+        .where(n.edited.is_not(None), *where)
     )
-    found |= {row.card_id for row in edited if row.edited["by"] in ids}
-    return sorted(found)
+    return {row.card_id for row in edited if row.edited["by"] in who}
+
+
+def naming(conn: Connection, project_id: str, principal_id: str) -> list[str]:
+    """The cards of one project whose page names a member (`render_card`): as its claim holder,
+    a note's author or a note's latest editor, under any membership the principal held there,
+    active or not (a removed member's cards are the ones to take the name off). Sorted by id.
+
+    The memberships are read once; an empty set returns here (one statement). The same ids
+    then go to the holder, the authors and the latest editors."""
+    m = t.membership.c
+    ids = set(
+        conn.execute(
+            select(m.id).where(
+                m.project_id == project_id,
+                or_(m.agent_id == principal_id, m.human_id == principal_id),
+            )
+        ).scalars()
+    )
+    if not ids:
+        return []
+    here = (t.card.c.project_id == project_id,)
+    return sorted(held_or_noted_by(conn, ids, here) | edited_by(conn, ids, here))
 
 
 def targets(conn: Connection, among: Collection[str] | None = None) -> list[str]:

@@ -312,6 +312,16 @@ def pages_with_picture(conn: Connection, owner_id: str) -> list[tuple[str, str]]
     return [(kind, project_id) for project_id in ids for kind in (KIND, VIEWS)]
 
 
+def _theirs(membership: Any, human_id: str) -> tuple[Any, ...]:
+    """The active memberships of a person, as conditions on `membership` (the table or an alias
+    of it): their own, and those of the agents whose profile they own."""
+    agents = select(t.agent_profile.c.id).where(t.agent_profile.c.owner_id == human_id)
+    return (
+        membership.c.active.is_(True),
+        (membership.c.human_id == human_id) | membership.c.agent_id.in_(agents),
+    )
+
+
 def pages_of_member(conn: Connection, human_id: str) -> list[tuple[str, str]]:
     """The public project pages that show the person: a member, or the owner of an agent that
     is one (a moderation hold on the person's profile, its lifting, a rename or a change of
@@ -321,50 +331,32 @@ def pages_of_member(conn: Connection, human_id: str) -> list[tuple[str, str]]:
     from maity_hub import public_cards
 
     m = t.membership.c
-    agents = select(t.agent_profile.c.id).where(t.agent_profile.c.owner_id == human_id)
-    theirs = (
-        m.active.is_(True),
-        (m.human_id == human_id) | m.agent_id.in_(agents),
-    )
     ids = conn.execute(
         select(t.project.c.id)
         .join(t.membership, m.project_id == t.project.c.id)
-        .where(t.project.c.public_page == "on", *theirs)
+        .where(t.project.c.public_page == "on", *_theirs(t.membership, human_id))
         .distinct()
         .order_by(t.project.c.id)
     ).scalars()
-    held = (
-        select(t.card.c.id)
-        .join(t.membership, m.id == t.card.c.claim_holder)
-        .join(t.project, t.project.c.id == t.card.c.project_id)
-        .where(t.project.c.public_page == "on", *theirs)
+    # Mine first, as the former query did: the active memberships in a project with a page,
+    # frozen with their project ids. The editor's projects are those ids, not a second
+    # selection that would re-check active, owner or public_page. Holder and author then
+    # run as a SELECT of the person's active memberships (any project), re-evaluated in
+    # each statement as the former joins were, for cards of a project with a page.
+    mine_rows = conn.execute(
+        select(m.id, m.project_id)
+        .join(t.project, t.project.c.id == m.project_id)
+        .where(t.project.c.public_page == "on", *_theirs(t.membership, human_id))
+    ).all()
+    mine = {row.id for row in mine_rows}
+    by_them: set[str] = set()
+    for part in chunks(row.project_id for row in mine_rows):
+        by_them |= public_cards.edited_by(conn, mine, (t.card.c.project_id.in_(part),))
+    public = select(t.project.c.id).where(t.project.c.public_page == "on")
+    holding = select(m.id).where(*_theirs(t.membership, human_id))
+    cards = sorted(
+        public_cards.held_or_noted_by(conn, holding, (t.card.c.project_id.in_(public),)) | by_them
     )
-    noted = (
-        select(t.card_note.c.card_id)
-        .join(t.membership, m.id == t.card_note.c.author)
-        .join(t.card, t.card.c.id == t.card_note.c.card_id)
-        .join(t.project, t.project.c.id == t.card.c.project_id)
-        .where(t.project.c.public_page == "on", *theirs)
-    )
-    # The latest editor of a note is named on the page too; `edited` keeps their membership in
-    # JSON, so the few edited notes of the person's projects are matched here.
-    mine = set(
-        conn.execute(
-            select(m.id)
-            .join(t.project, t.project.c.id == m.project_id)
-            .where(t.project.c.public_page == "on", *theirs)
-        ).scalars()
-    )
-    edited = conn.execute(
-        select(t.card_note.c.card_id, t.card_note.c.edited)
-        .join(t.card, t.card.c.id == t.card_note.c.card_id)
-        .where(
-            t.card_note.c.edited.is_not(None),
-            t.card.c.project_id.in_(select(m.project_id).where(m.id.in_(mine))),
-        )
-    )
-    by_them = {row.card_id for row in edited if row.edited["by"] in mine}
-    cards = sorted(set(conn.execute(held).scalars()) | set(conn.execute(noted).scalars()) | by_them)
     return [(kind, project_id) for project_id in ids for kind in (KIND, VIEWS)] + [
         (public_cards.KIND, card) for card in cards
     ]
